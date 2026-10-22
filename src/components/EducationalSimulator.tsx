@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { AIModelConfig, AdReplacementConfig } from '../types/index.ts';
+import { AIModelConfig, AdReplacementConfig, AVAILABLE_AI_MODELS } from '../types/index.ts';
 import {
   Sparkles,
   Send,
@@ -141,12 +141,11 @@ export const EducationalSimulator: React.FC<Props> = ({
             onChange={(e) => setSelectedModel(e.target.value)}
             className="bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200 font-mono"
           >
-            <option value="DeepSeek-V4.1-Flash">DeepSeek-V4.1-Flash (الموصى به)</option>
-            <option value="DeepSeek-V4-Flash">DeepSeek-V4-Flash</option>
-            <option value="DeepSeek-V4-Pro">DeepSeek-V4-Pro</option>
-            <option value="Qwen3.8-27B">Qwen3.8-27B</option>
-            <option value="glm-5.3">glm-5.3</option>
-            <option value="MiniMax-M3.1-Flash">MiniMax-M3.1-Flash</option>
+            {AVAILABLE_AI_MODELS.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
+              </option>
+            ))}
           </select>
 
           <button

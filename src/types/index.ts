@@ -28,16 +28,32 @@ export interface AIModelOption {
   id: string;
   name: string;
   desc: string;
+  category?: 'chat' | 'speed' | 'vision' | 'audio' | 'tools';
   recommended?: boolean;
 }
 
 export const AVAILABLE_AI_MODELS: AIModelOption[] = [
-  { id: 'DeepSeek-V4-Flash', name: 'DeepSeek-V4-Flash (الأسرع - يمنع Timeout)', desc: 'استجابة فائقة السرعة للأخبار والتنبيهات، خفيف وسريع ويمنع أخطاء انتهاء المهلة', recommended: true },
-  { id: 'Qwen3.8-27B', name: 'Qwen3.8-27B', desc: 'فهم لغوي فائق للسياق العربي الأكاديمي والجامعي بدقة عالية' },
-  { id: 'DeepSeek-V4.1-Flash', name: 'DeepSeek-V4.1-Flash', desc: 'فائق الدقة في صياغة المحتوى العربي وتنسيق المنشورات الجامعية' },
-  { id: 'DeepSeek-V4-Pro', name: 'DeepSeek-V4-Pro', desc: 'قوة استدلال وتلخيص عميقة للمنشورات الطويلة والقرارات الرسمية' },
-  { id: 'glm-5.3', name: 'glm-5.3', desc: 'صياغة جذابة ومتقنة مع تنظيم العناوين والنقاط' },
-  { id: 'MiniMax-M3.1-Flash', name: 'MiniMax-M3.1-Flash', desc: 'استخراج سريع للبيانات والمواعيد الهامة' },
+  { id: 'auto', name: 'auto (توجيه تلقائي ذكي)', desc: 'توجيه آلي ذكي يختار أسرع نموذج متاح لحظياً لتفادي المهلة', category: 'speed' },
+  { id: 'DeepSeek-V4-Flash', name: 'DeepSeek-V4-Flash (الأسرع - يمنع Timeout)', desc: 'استجابة فائقة السرعة للأخبار والتنبيهات، خفيف وسريع ويمنع أخطاء انتهاء المهلة', category: 'speed', recommended: true },
+  { id: 'DeepSeek-V4.1-Flash', name: 'DeepSeek-V4.1-Flash (دقة أكاديمية فائقة)', desc: 'فائق الدقة في صياغة المحتوى العربي وتنسيق المنشورات الجامعية', category: 'chat', recommended: true },
+  { id: 'DeepSeek-V4-Pro', name: 'DeepSeek-V4-Pro (استدلال متقدم)', desc: 'قوة استدلال وتلخيص عميقة للمنشورات الطويلة والقرارات الرسمية واللوائح', category: 'chat' },
+  { id: 'Qwen3.8-27B', name: 'Qwen3.8-27B (لغة عربية متقدمة)', desc: 'فهم لغوي فائق للسياق العربي الأكاديمي والجامعي بدقة عالية', category: 'chat' },
+  { id: 'Qwen3.8-Flash-Next', name: 'Qwen3.8-Flash-Next (الجيل الحديث)', desc: 'جيل كوين فلاش الحديث لمعالجة سريعة واستجابة آنية للنصوص', category: 'speed' },
+  { id: 'glm-5.3', name: 'glm-5.3', desc: 'صياغة جذابة ومتقنة مع تنظيم العناوين والنقاط', category: 'chat' },
+  { id: 'glm-5.3-flash', name: 'glm-5.3-flash', desc: 'نسخة فلاش فائقة السرعة للأخبار العاجلة والتنبيهات', category: 'speed' },
+  { id: 'MiMo-V2.6-Flash', name: 'MiMo-V2.6-Flash', desc: 'معالجة سريعة وخفيفة لتدفقات الرسائل التلقائية', category: 'speed' },
+  { id: 'MiniMax-M3.1-Flash', name: 'MiniMax-M3.1-Flash', desc: 'استخراج سريع للبيانات والمواعيد والجداول الهامة', category: 'speed' },
+  { id: 'longcat-2.5', name: 'longcat-2.5 (سياق طويل)', desc: 'معالجة سياقات فائقة الطول للكتب والمذكرات واللوائح الموسعة', category: 'chat' },
+  { id: 'MiniCPM-V-4.7-35B-A3B', name: 'MiniCPM-V-4.7-35B-A3B (رؤية بصرية)', desc: 'نموذج رؤية وفهم الصور والمستندات والشهادات المرفقة مع المنشورات', category: 'vision' },
+  { id: 'sensenova-6.8-flash-lite', name: 'sensenova-6.8-flash-lite', desc: 'نموذج لايت سريع للاستجابة اللحظية للأخبار', category: 'speed' },
+  { id: 'sensenova-u1.5-lite', name: 'sensenova-u1.5-lite', desc: 'معالجة خفيفة ومتعددة المهام للنصوص السريعة', category: 'speed' },
+  { id: 'step-5-preview', name: 'step-5-preview', desc: 'نموذج استدلال متقدم للمعاينة والتفكير المنطقي العميق', category: 'chat' },
+  { id: 'step-image-edit-2', name: 'step-image-edit-2 (تعديل صور)', desc: 'معالجة وتعديل الصور وإضافة العلامات المائية للوسائط', category: 'vision' },
+  { id: 'stepaudio-2.5-chat', name: 'stepaudio-2.5-chat (محادثات صوتية)', desc: 'معالجة وتوليد المحادثات الصوتية والتفاعلية', category: 'audio' },
+  { id: 'stepaudio-2.5-tts', name: 'stepaudio-2.5-tts (تحويل النص لصوت)', desc: 'تحويل النصوص الأكاديمية إلى قراءة صوتية واضحة ومخارج عربية سليمة', category: 'audio' },
+  { id: 'stepaudio-2.5-asr', name: 'stepaudio-2.5-asr (تحويل الصوت لنص)', desc: 'التعرف على الصوت وتحويل المقاطع الصوتية والمحاضرات لنصوص', category: 'audio' },
+  { id: 'stepaudio-2.5-realtime', name: 'stepaudio-2.5-realtime (صوتي لحظي)', desc: 'تفاعل صوتي فوري في الوقت الحقيقي', category: 'audio' },
+  { id: 'Qwen3-Embedding-8B', name: 'Qwen3-Embedding-8B (تضمين متجهي)', desc: 'نموذج التضمين المتجهي والبحث الدلالي عن المنشورات المتشابهة', category: 'tools' },
 ];
 
 export interface AIModelConfig {

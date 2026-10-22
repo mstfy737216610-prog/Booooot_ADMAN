@@ -196,49 +196,92 @@ export const AIEditorPanel: React.FC<Props> = ({ aiConfig, onChange }) => {
         </div>
       </div>
 
-      {/* Model Selection (All Models listed in request) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Primary Model */}
-        <div>
-          <label className="block text-xs font-semibold text-slate-300 mb-1">
-            النموذج الأساسي المطلوب (Primary Model)
+      {/* Category filter and Model Grid */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <label className="block text-xs font-bold text-slate-200">
+            اختر النموذج من القائمة الشاملة ({AVAILABLE_AI_MODELS.length} نموذجاً متاحاً في بوابتك):
           </label>
-          <select
-            value={aiConfig.primaryModel}
-            onChange={(e) => onChange({ ...aiConfig, primaryModel: e.target.value })}
-            className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono"
-          >
-            {AVAILABLE_AI_MODELS.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name} {m.recommended ? '⭐ (الموصى به)' : ''}
-              </option>
-            ))}
-          </select>
-          <span className="text-[10px] text-slate-400 mt-1 block">
-            {AVAILABLE_AI_MODELS.find(m => m.id === aiConfig.primaryModel)?.desc || ''}
-          </span>
         </div>
 
-        {/* Fallback Model */}
-        <div>
-          <label className="block text-xs font-semibold text-slate-300 mb-1">
-            النموذج البديل التلقائي عند الضغط (Fallback Model)
-          </label>
-          <select
-            value={aiConfig.fallbackModel}
-            onChange={(e) => onChange({ ...aiConfig, fallbackModel: e.target.value })}
-            className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono"
-          >
-            <option value="auto">auto (توجيه ذكي تلقائي لأسرع نموذج)</option>
-            {AVAILABLE_AI_MODELS.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.id}
-              </option>
-            ))}
-          </select>
-          <span className="text-[10px] text-slate-400 mt-1 block">
-            في حال تأخر استجابة النموذج الأساسي لأكثر من 5 ثوانٍ يتم التبديل فوراً.
-          </span>
+        {/* Model Selection Dropdown */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-1">
+              النموذج الأساسي المطلوب (Primary Model)
+            </label>
+            <select
+              value={aiConfig.primaryModel}
+              onChange={(e) => onChange({ ...aiConfig, primaryModel: e.target.value })}
+              className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-xs text-white font-mono focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+            >
+              {AVAILABLE_AI_MODELS.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name} {m.recommended ? '⭐ (موصى به)' : ''}
+                </option>
+              ))}
+            </select>
+            <span className="text-[11px] text-indigo-300 mt-1 block">
+              💡 {AVAILABLE_AI_MODELS.find(m => m.id === aiConfig.primaryModel)?.desc || ''}
+            </span>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-1">
+              النموذج الاحتياطي التلقائي عند الضغط (Fallback Model)
+            </label>
+            <select
+              value={aiConfig.fallbackModel}
+              onChange={(e) => onChange({ ...aiConfig, fallbackModel: e.target.value })}
+              className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-xs text-white font-mono focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+            >
+              <option value="auto">auto (توجيه ذكي تلقائي لأسرع نموذج)</option>
+              {AVAILABLE_AI_MODELS.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.id}
+                </option>
+              ))}
+            </select>
+            <span className="text-[10px] text-slate-400 mt-1 block">
+              في حال تأخر استجابة النموذج الأساسي لأكثر من 5 ثوانٍ يتم التبديل فوراً.
+            </span>
+          </div>
+        </div>
+
+        {/* Quick Model Selector Pills */}
+        <div className="pt-2">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[11px] font-semibold text-slate-300">النماذج الأكثر استخداماً للأخبار الجامعية:</span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+            {[
+              { id: 'DeepSeek-V4-Flash', label: '⚡ DeepSeek-V4-Flash', desc: 'الأسرع للأخبار' },
+              { id: 'DeepSeek-V4.1-Flash', label: '🚀 DeepSeek-V4.1-Flash', desc: 'أعلى دقة أكاديمية' },
+              { id: 'Qwen3.8-27B', label: '🧠 Qwen3.8-27B', desc: 'فصحى متقدمة' },
+              { id: 'glm-5.3', label: '🌐 glm-5.3', desc: 'صياغة جذابة' },
+              { id: 'MiniMax-M3.1-Flash', label: '📊 MiniMax-M3.1-Flash', desc: 'استخراج المواعيد' },
+              { id: 'auto', label: '🤖 auto', desc: 'توجيه آلي' },
+              { id: 'MiniCPM-V-4.7-35B-A3B', label: '👁️ MiniCPM-V (رؤية)', desc: 'فهم الصور والمستندات' },
+              { id: 'stepaudio-2.5-tts', label: '🎙️ stepaudio-tts', desc: 'قراءة صوتية' },
+            ].map((quick) => {
+              const isSelected = aiConfig.primaryModel === quick.id;
+              return (
+                <button
+                  key={quick.id}
+                  type="button"
+                  onClick={() => onChange({ ...aiConfig, primaryModel: quick.id })}
+                  className={`p-2.5 rounded-xl border text-right transition-all flex flex-col justify-between ${
+                    isSelected
+                      ? 'bg-indigo-600/25 border-indigo-500 text-white shadow-md shadow-indigo-950'
+                      : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:border-slate-700 hover:bg-slate-900'
+                  }`}
+                >
+                  <span className="text-xs font-bold truncate block">{quick.label}</span>
+                  <span className="text-[10px] text-slate-400 mt-1 block truncate">{quick.desc}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 

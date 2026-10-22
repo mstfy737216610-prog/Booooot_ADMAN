@@ -187,34 +187,54 @@ export const CredentialsPanel: React.FC<Props> = ({
               )}
             </div>
 
-            {/* 2. Admin ID Input Card */}
+            {/* 2. Admin ID & Username Input Card */}
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>معرّف الآدمن الجديد (Admin ID)</span>
-                  <span className="text-rose-400 font-bold">*</span>
-                </label>
-                {config.adminId && (
-                  <span
-                    className={`text-[11px] font-medium flex items-center gap-1 ${
-                      adminValidation.valid ? 'text-emerald-400' : 'text-amber-400'
-                    }`}
-                  >
-                    {adminValidation.valid ? 'معرف صالح ✅' : 'رقم غير صحيح'}
-                  </span>
-                )}
-              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>معرّف الآدمن (Admin ID)</span>
+                      <span className="text-rose-400 font-bold">*</span>
+                    </label>
+                    {config.adminId && (
+                      <span
+                        className={`text-[11px] font-medium flex items-center gap-1 ${
+                          adminValidation.valid ? 'text-emerald-400' : 'text-amber-400'
+                        }`}
+                      >
+                        {adminValidation.valid ? 'معرف صالح ✅' : 'رقم غير صحيح'}
+                      </span>
+                    )}
+                  </div>
+                  <input
+                    type="text"
+                    value={config.adminId}
+                    onChange={(e) => onChange({ ...config, adminId: e.target.value.trim() })}
+                    placeholder="7607633343"
+                    dir="ltr"
+                    className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent font-mono"
+                  />
+                </div>
 
-              <div className="relative">
-                <input
-                  type="text"
-                  value={config.adminId}
-                  onChange={(e) => onChange({ ...config, adminId: e.target.value.trim() })}
-                  placeholder="مثال: 541298762"
-                  dir="ltr"
-                  className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent font-mono"
-                />
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                      <span>يوزر المشرف (Admin Username)</span>
+                    </label>
+                    <span className="text-[11px] text-sky-400 font-mono">
+                      {config.adminUsername || '@M_S_F_G'}
+                    </span>
+                  </div>
+                  <input
+                    type="text"
+                    value={config.adminUsername}
+                    onChange={(e) => onChange({ ...config, adminUsername: e.target.value.trim() })}
+                    placeholder="@M_S_F_G"
+                    dir="ltr"
+                    className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent font-mono"
+                  />
+                </div>
               </div>
 
               <div className="flex items-center justify-between pt-1">

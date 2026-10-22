@@ -27,15 +27,27 @@ var text = "🧠 **إعدادات الذكاء الاصطناعي التفاعل
 
 var inline_keyboard = [
   [
-    { title: (current_model == "auto" ? "✅ " : "") + "🤖 auto (النموذج التلقائي - الأسرع تفادياً للمهلة)", command: "/set_model auto" }
+    { title: (current_model == "auto" ? "✅ " : "") + "🤖 auto (النموذج التلقائي الأسرع)", command: "/set_model auto" }
   ],
   [
     { title: (current_model == "DeepSeek-V4-Flash" ? "✅ " : "") + "⚡ DeepSeek-V4-Flash", command: "/set_model DeepSeek-V4-Flash" },
     { title: (current_model == "DeepSeek-V4.1-Flash" ? "✅ " : "") + "🚀 DeepSeek-V4.1-Flash", command: "/set_model DeepSeek-V4.1-Flash" }
   ],
   [
-    { title: (current_model == "Qwen3.8-27B" ? "✅ " : "") + "🧠 Qwen3.8-27B", command: "/set_model Qwen3.8-27B" },
-    { title: (current_model == "glm-5.3" ? "✅ " : "") + "🌐 glm-5.3", command: "/set_model glm-5.3" }
+    { title: (current_model == "DeepSeek-V4-Pro" ? "✅ " : "") + "🧠 DeepSeek-V4-Pro", command: "/set_model DeepSeek-V4-Pro" },
+    { title: (current_model == "Qwen3.8-27B" ? "✅ " : "") + "📚 Qwen3.8-27B", command: "/set_model Qwen3.8-27B" }
+  ],
+  [
+    { title: (current_model == "glm-5.3" ? "✅ " : "") + "🌐 glm-5.3", command: "/set_model glm-5.3" },
+    { title: (current_model == "glm-5.3-flash" ? "✅ " : "") + "⚡ glm-5.3-flash", command: "/set_model glm-5.3-flash" }
+  ],
+  [
+    { title: (current_model == "MiniMax-M3.1-Flash" ? "✅ " : "") + "📊 MiniMax-M3.1-Flash", command: "/set_model MiniMax-M3.1-Flash" },
+    { title: (current_model == "MiMo-V2.6-Flash" ? "✅ " : "") + "💫 MiMo-V2.6-Flash", command: "/set_model MiMo-V2.6-Flash" }
+  ],
+  [
+    { title: (current_model == "MiniCPM-V-4.7-35B-A3B" ? "✅ " : "") + "👁️ MiniCPM-V (رؤية)", command: "/set_model MiniCPM-V-4.7-35B-A3B" },
+    { title: (current_model == "stepaudio-2.5-tts" ? "✅ " : "") + "🎙️ stepaudio-tts", command: "/set_model stepaudio-2.5-tts" }
   ],
   [
     { title: "💬 محادثة الذكاء والبحث المباشر", command: "/chat" },

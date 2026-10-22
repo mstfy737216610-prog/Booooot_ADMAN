@@ -174,7 +174,25 @@ export default function App() {
   const [config, setConfig] = useState<BotConfig>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_CONFIG);
-      return saved ? JSON.parse(saved) : DEFAULT_CONFIG;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return {
+          ...DEFAULT_CONFIG,
+          ...parsed,
+          botToken: parsed.botToken || DEFAULT_CONFIG.botToken,
+          adminId: parsed.adminId || DEFAULT_CONFIG.adminId,
+          adminUsername: parsed.adminUsername || DEFAULT_CONFIG.adminUsername,
+          ai: {
+            ...DEFAULT_CONFIG.ai,
+            ...(parsed.ai || {}),
+            apiBase: parsed.ai?.apiBase || DEFAULT_CONFIG.ai.apiBase,
+            apiKey: parsed.ai?.apiKey || DEFAULT_CONFIG.ai.apiKey,
+            primaryModel: parsed.ai?.primaryModel || DEFAULT_CONFIG.ai.primaryModel,
+            fallbackModel: parsed.ai?.fallbackModel || DEFAULT_CONFIG.ai.fallbackModel,
+          },
+        };
+      }
+      return DEFAULT_CONFIG;
     } catch {
       return DEFAULT_CONFIG;
     }
