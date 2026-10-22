@@ -1,4 +1,5 @@
-import express, { Request, Response } from 'express';
+import express from 'express';
+import type { Request, Response } from 'express';
 import { createServer as createViteServer } from 'vite';
 import fs from 'fs';
 import path from 'path';
@@ -404,8 +405,10 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, () => {
-    console.log(`🚀 Telegram Educational Studio running on http://localhost:${PORT}`);
+  const host = '0.0.0.0';
+  const port = Number(PORT) || 3000;
+  app.listen(port, host, () => {
+    console.log(`🚀 Telegram Educational Studio running on http://${host}:${port}`);
   });
 }
 
