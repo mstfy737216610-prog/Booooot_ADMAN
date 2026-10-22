@@ -9,12 +9,6 @@
 مزود الذكاء الاصطناعي: DeepSeek-V4.1-Flash (https://api.hcnsec.cn/v1)
 مفتاح الـ API: sk-J2ky44F6VTDMkL8Q1GHL5sfmbeIpARVDayNuwMfxKI5zCdii
 ================================================================================
-سير العمل الفني:
-1. يراقب قنوات المصدر المحددة في sources.json عبر جلسة UserBot حقيقية (بدون الحاجة لرتبة مشرف).
-2. يلتقط المنشورات الجديدة فور نزولها بجميع وسائطها (صور، فيديوهات، مستندات، PDF).
-3. يرسل النص إلى https://api.hcnsec.cn/v1/chat/completions لإعادة صياغته باحترافية وتنسيقه للطلاب.
-4. ينشر المنشور الجديد مع الوسائط الأصلية في القنوات المستهدفة المحددة بدقة متناهية.
-================================================================================
 """
 
 import os
@@ -26,17 +20,40 @@ import logging
 import requests
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
+import telethon.errors
 
-# ----------------- إعدادات الاعتماد -----------------
-API_ID = int(os.getenv("TELEGRAM_API_ID", "20123456"))  # من my.telegram.org
-API_HASH = os.getenv("TELEGRAM_API_HASH", "abcdef0123456789abcdef0123456789")  # من my.telegram.org
-STRING_SESSION = os.getenv("STRING_SESSION", "")  # كود جلسة Telethon المشفرة للعمل بالسحابة بدون ملفات
-PHONE_NUMBER = os.getenv("TELEGRAM_PHONE", "+966500000000")
+logging.basicConfig(
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    level=logging.INFO
+)
+
+# ----------------- دالة تحميل ملف .env محلياً -----------------
+def load_env_file():
+    env_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    if os.path.exists(env_file):
+        try:
+            with open(env_file, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        k, v = line.split("=", 1)
+                        os.environ.setdefault(k.strip(), v.strip().strip("'\""))
+        except Exception:
+            pass
+    return env_file
+
+ENV_PATH = load_env_file()
+
+# ----------------- إعدادات الاعتماد الأساسية -----------------
+API_ID = int(os.getenv("TELEGRAM_API_ID", "20123456"))
+API_HASH = os.getenv("TELEGRAM_API_HASH", "abcdef0123456789abcdef0123456789")
+STRING_SESSION = os.getenv("STRING_SESSION", "")
+PHONE_NUMBER = os.getenv("TELEGRAM_PHONE", "")
 
 # إعدادات الـ API الخاص بكم
 AI_BASE_URL = os.getenv("AI_BASE_URL", "https://api.hcnsec.cn/v1/chat/completions")
 AI_API_KEY = os.getenv("AI_API_KEY", "sk-J2ky44F6VTDMkL8Q1GHL5sfmbeIpARVDayNuwMfxKI5zCdii")
-AI_MODEL = os.getenv("PRIMARY_MODEL", "DeepSeek-V4.1-Flash")  # متاح: DeepSeek-V4-Flash, DeepSeek-V4-Pro, Qwen3.8-27B, glm-5.3
+AI_MODEL = os.getenv("PRIMARY_MODEL", "DeepSeek-V4.1-Flash")
 
 # القنوات المصدر والقنوات المستهدفة
 SOURCE_CHANNELS = ["@KSU_News", "@moe_gov_sa"]
@@ -59,18 +76,65 @@ CUSTOM_STUDENT_AD = """🎓 خدمات طلابية معتمدة وأكاديم�
 📞 للتواصل والطلب مباشرة عبر المشرف: @M_S_F_G
 ✨ جودة أكاديمية، سرعة في الإنجاز، وأسعار مناسبة للطلاب!"""
 
-logging.basicConfig(
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    level=logging.INFO
-)
+def ensure_valid_credentials():
+    """التحقق من صحة API_ID و API_HASH وسؤال المستخدم تفاعلياً إذا كانت قيم افتراضية"""
+    global API_ID, API_HASH, PHONE_NUMBER
+
+    raw_id_str = str(API_ID).strip()
+    raw_hash_str = str(API_HASH).strip()
+
+    is_placeholder = (
+        raw_id_str in ("20123456", "0", "") or
+        raw_hash_str in ("abcdef0123456789abcdef0123456789", "0123456789abcdef0123456789abcdef", "")
+    )
+
+    if is_placeholder:
+        print("\n" + "=" * 65)
+        print("🔑 إعداد بيانات الاعتماد الخاصة بك في تيليجرام (مطلوب لأول مرة فقط)")
+        print("=" * 65)
+        print("⚠️ تنبيه: القيمة الحالية لـ API_ID هي قيمة تجريبية، ويرفضها تيليجرام.")
+        print("للحصول على بياناتك الحقيقية مجاناً في دقيقة واحدة:")
+        print("1. افتح المتصفح وادخل: https://my.telegram.org")
+        print("2. سجّل الدخول برقم هاتفك وأدخل الكود.")
+        print("3. اضغط على 'API development tools'.")
+        print("4. انسخ App api_id و App api_hash.")
+        print("-" * 65)
+
+        while True:
+            inp_id = input("👉 1. أدخل API_ID الخاص بك (أرقام فقط): ").strip()
+            if inp_id.isdigit() and len(inp_id) >= 5:
+                API_ID = int(inp_id)
+                break
+            print("❌ يجب إدخال أرقام صحيحة لـ API_ID (مثال: 28491823)")
+
+        while True:
+            inp_hash = input("👉 2. أدخل API_HASH الخاص بك: ").strip()
+            if len(inp_hash) >= 20:
+                API_HASH = inp_hash
+                break
+            print("❌ الـ API_HASH غير صحيح (يجب أن يكون شفرة نصية من my.telegram.org)")
+
+        inp_phone = input("👉 3. أدخل رقم هاتفك مع مفتاح الدولة (مثال: +966501234567): ").strip()
+        if inp_phone:
+            PHONE_NUMBER = inp_phone
+
+        # حفظ تلقائي في ملف .env
+        try:
+            with open(ENV_PATH, "a+", encoding="utf-8") as f:
+                f.write(f"\nTELEGRAM_API_ID={API_ID}\n")
+                f.write(f"TELEGRAM_API_HASH={API_HASH}\n")
+                if PHONE_NUMBER:
+                    f.write(f"TELEGRAM_PHONE={PHONE_NUMBER}\n")
+            print(f"✅ تم حفظ الإعدادات تلقائياً في {ENV_PATH} ولن تحتاج لإدخالها ثانية.")
+        except Exception as e:
+            logging.warning(f"تعذر الحفظ في .env: {e}")
+
+        print("=" * 65 + "\n")
 
 def process_post_with_ai(post_text: str) -> str:
-    """
-    إرسال النص إلى API الذكاء الاصطناعي الخاص بكم لإعادة صياغته باحترافية
-    مع الحفاظ على المعنى والروابط الأكاديمية وإزالة ترويج القنوات الأخرى.
-    """
-    if not post_text or len(post_text.strip()) < 5:
-        return post_text
+    """معالجة النص عبر API الذكاء الاصطناعي الخاص بكم حصرياً"""
+    if not post_text or not post_text.strip():
+        return ""
 
     headers = {
         "Authorization": f"Bearer {AI_API_KEY}",
@@ -83,7 +147,7 @@ def process_post_with_ai(post_text: str) -> str:
             {
                 "role": "system",
                 "content": (
-                    "أنت محرر محتوى طلابي وجامعي محترف. قم بإعادة صياغة المنشور التالي بأسلوب شيق وواضح "
+                    "أنت محرر محتوى تعليمي جامعي متميز. مهمتك إعادة صياغة المنشور التالي بأسلوب شيق وواضح "
                     "مع وضع عنوان بارز وتنسيق النقاط المهمة والمواعيد بدقة، واستخدام إيموجيات ملائمة، "
                     "مع الحفاظ على الروابط الأكاديمية الرسمية وعدم ذكر أي أسماء قنوات منافسة."
                 )
@@ -116,6 +180,8 @@ def is_competitor_ad(text: str) -> bool:
     return any(kw in text for kw in AD_KEYWORDS)
 
 async def main():
+    ensure_valid_credentials()
+
     logging.info("=" * 60)
     logging.info("🚀 تشغيل بوت النشر الآلي (Telethon UserBot)")
     logging.info(f"النموذج: {AI_MODEL} | القنوات المصدر: {len(SOURCE_CHANNELS)}")
@@ -127,7 +193,19 @@ async def main():
     else:
         client = TelegramClient("userbot_session", API_ID, API_HASH)
 
-    await client.start(phone=PHONE_NUMBER)
+    try:
+        await client.start(phone=PHONE_NUMBER if PHONE_NUMBER else None)
+    except telethon.errors.rpcerrorlist.ApiIdInvalidError:
+        print("\n" + "!" * 65)
+        print("❌ خطأ من تيليجرام: ApiIdInvalidError")
+        print("الـ API_ID أو API_HASH غير صحيح أو يحتوي على فراغات!")
+        print("💡 الحل:")
+        print("1. افتح https://my.telegram.org وسجل الدخول.")
+        print("2. انسخ App api_id و App api_hash بدقة.")
+        print(f"3. افتح ملف {ENV_PATH} وعدله، أو احذف الملف وأعد تشغيل السكريبت.")
+        print("!" * 65 + "\n")
+        sys.exit(1)
+
     me = await client.get_me()
     logging.info(f"✅ تم تسجيل دخول اليوزربوت بنجاح باسم: {me.first_name} (@{me.username or me.phone})")
 

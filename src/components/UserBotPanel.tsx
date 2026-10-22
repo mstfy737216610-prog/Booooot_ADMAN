@@ -39,7 +39,7 @@ interface Props {
 export const UserBotPanel: React.FC<Props> = ({ config, onChange, sources }) => {
   const [showSecretHash, setShowSecretHash] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [activeSection, setActiveSection] = useState<'why' | 'credentials' | 'session_helper' | 'code'>('why');
+  const [activeSection, setActiveSection] = useState<'why' | 'credentials' | 'termux' | 'session_helper' | 'code'>('termux');
 
   const comparison = getBotVsUserBotComparison();
   const apiIdValidation = validateApiId(config.telethon.apiId || '');
@@ -101,6 +101,19 @@ export const UserBotPanel: React.FC<Props> = ({ config, onChange, sources }) => 
       {/* Navigation Sub-Tabs */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs border-b border-slate-800">
         <button
+          onClick={() => setActiveSection('termux')}
+          className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-bold transition-all shrink-0 ${
+            activeSection === 'termux'
+              ? 'bg-emerald-600 text-white shadow-md'
+              : 'bg-slate-950/70 text-emerald-400 hover:text-white border border-emerald-500/30'
+          }`}
+        >
+          <Terminal className="w-3.5 h-3.5 text-emerald-300" />
+          <span className="font-extrabold">التشغيل من تطبيق Termux (أندرويد) 📱</span>
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+        </button>
+
+        <button
           onClick={() => setActiveSection('why')}
           className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-bold transition-all shrink-0 ${
             activeSection === 'why'
@@ -148,6 +161,168 @@ export const UserBotPanel: React.FC<Props> = ({ config, onChange, sources }) => 
           <span>كود البايثون الجاهز (Telethon + AI)</span>
         </button>
       </div>
+
+      {/* 0. TERMUX SECTION: How to run on Android Termux */}
+      {activeSection === 'termux' && (
+        <div className="space-y-5 animate-fadeIn">
+          {/* Main Termux Quick Banner */}
+          <div className="p-4 bg-gradient-to-r from-emerald-950/40 via-slate-900 to-indigo-950/40 border border-emerald-500/30 rounded-2xl space-y-3">
+            <div className="flex items-start gap-3">
+              <div className="p-2.5 bg-emerald-500/20 rounded-xl text-emerald-300 shrink-0 mt-0.5">
+                <Terminal className="w-5 h-5" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-sm font-bold text-emerald-200 flex items-center gap-2">
+                  <span>دليل تشغيل اليوزربوت على هاتفك الأندرويد بواسطة تطبيق Termux</span>
+                  <span className="px-2 py-0.5 text-[10px] font-mono bg-emerald-500/20 text-emerald-300 rounded-md">
+                    24/7 Background
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  تطبيق <strong>Termux</strong> يحول هاتفك الأندرويد إلى سيرفر لينكس حقيقي! يمكنك تشغيل سكريبت اليوزربوت <code className="text-emerald-300 font-mono">userbot_publisher.py</code> فيه، وسيقوم بقراءة قنوات المصدر بالخلفية وإعادة صياغتها عبر الذكاء الاصطناعي ونشرها بقناتك تلقائياً دون انقطاع.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Quick 1-Click Master Command */}
+          <div className="p-4 bg-slate-950 rounded-xl border border-slate-800 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                <Zap className="w-4 h-4 text-amber-400" />
+                <span>أمر التثبيت والتجهيز الشامل بنقرة واحدة (انسخه والصقه في ترميكس):</span>
+              </label>
+              <button
+                onClick={() =>
+                  handleCopy(
+                    'pkg update -y && pkg install -y python git && pip install telethon requests && termux-wake-lock',
+                    'termux_master'
+                  )
+                }
+                className="flex items-center gap-1 px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+              >
+                {copiedId === 'termux_master' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{copiedId === 'termux_master' ? 'تم النسخ!' : 'نسخ الأمر الشامل'}</span>
+              </button>
+            </div>
+            <pre className="p-3 bg-slate-900 border border-slate-800 rounded-lg text-emerald-400 font-mono text-xs overflow-x-auto text-left" dir="ltr">
+              <code>pkg update -y && pkg install -y python git && pip install telethon requests && termux-wake-lock</code>
+            </pre>
+            <span className="text-[11px] text-slate-400 block">
+              💡 هذا الأمر يحدّث ترميكس، يثبت بايثون ومكتبتي Telethon و Requests، ويفعّل ميزة <code className="text-sky-300">termux-wake-lock</code> لمنع نظام أندرويد من إيقاف السكريبت عند إطفاء الشاشة.
+            </span>
+          </div>
+
+          {/* Step by Step Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Step 1: Install Termux */}
+            <div className="p-4 bg-slate-950/70 border border-slate-800 rounded-xl space-y-2">
+              <div className="flex items-center gap-2 text-sky-300 font-bold text-xs">
+                <span className="w-6 h-6 rounded-full bg-sky-500/20 text-sky-300 flex items-center justify-center text-xs">1</span>
+                <span>تثبيت تطبيق Termux (تنبيه مهم)</span>
+              </div>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                لا تقم بتثبيت ترميكس من متجر جوجل بلاي لأن نسخته متوقفة منذ سنوات! حمله من المتجر المفتوح <strong className="text-white">F-Droid</strong> أو من صفحتهم على GitHub:
+              </p>
+              <a
+                href="https://f-droid.org/en/packages/com.termux/"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 text-xs text-sky-400 hover:underline font-mono"
+              >
+                <span>تحميل Termux APK من F-Droid</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            </div>
+
+            {/* Step 2: Clone repository or download script */}
+            <div className="p-4 bg-slate-950/70 border border-slate-800 rounded-xl space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-indigo-300 font-bold text-xs">
+                  <span className="w-6 h-6 rounded-full bg-indigo-500/20 text-indigo-300 flex items-center justify-center text-xs">2</span>
+                  <span>تنزيل مستودع البوت الخاص بك في ترميكس</span>
+                </div>
+                <button
+                  onClick={() =>
+                    handleCopy(
+                      'git clone https://github.com/mstfy737216610-prog/ADMIN_-.git && cd ADMIN_-',
+                      'termux_clone'
+                    )
+                  }
+                  className="text-[11px] text-indigo-400 hover:text-white flex items-center gap-1"
+                >
+                  {copiedId === 'termux_clone' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                  <span>{copiedId === 'termux_clone' ? 'تم!' : 'نسخ'}</span>
+                </button>
+              </div>
+              <pre className="p-2.5 bg-slate-900 border border-slate-800 rounded-lg text-sky-300 font-mono text-[11px] overflow-x-auto text-left" dir="ltr">
+                <code>git clone https://github.com/mstfy737216610-prog/ADMIN_-.git && cd ADMIN_-</code>
+              </pre>
+              <span className="text-[11px] text-slate-400 block">
+                سيتم تنزيل جميع الملفات والدخول لمجلد البوت مباشرة.
+              </span>
+            </div>
+
+            {/* Step 3: Run the UserBot */}
+            <div className="p-4 bg-slate-950/70 border border-slate-800 rounded-xl space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-purple-300 font-bold text-xs">
+                  <span className="w-6 h-6 rounded-full bg-purple-500/20 text-purple-300 flex items-center justify-center text-xs">3</span>
+                  <span>أمر تشغيل سكريبت اليوزربوت</span>
+                </div>
+                <button
+                  onClick={() => handleCopy('python userbot_publisher.py', 'termux_run')}
+                  className="text-[11px] text-purple-400 hover:text-white flex items-center gap-1"
+                >
+                  {copiedId === 'termux_run' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                  <span>{copiedId === 'termux_run' ? 'تم!' : 'نسخ'}</span>
+                </button>
+              </div>
+              <pre className="p-2.5 bg-slate-900 border border-slate-800 rounded-lg text-emerald-300 font-mono text-[11px] overflow-x-auto text-left" dir="ltr">
+                <code>python userbot_publisher.py</code>
+              </pre>
+              <p className="text-[11px] text-slate-300 leading-relaxed">
+                عند أول تشغيل، سيطلب منك إدخال رقم هاتفك بالصيغة الدولية (مثل: <code className="text-white">+966...</code>) ثم كود التحقق الذي يصلك على تطبيق تيليجرام الرسمي. بعد تسجيل الدخول سيعمل البوت للأبد!
+              </p>
+            </div>
+
+            {/* Step 4: Run in background 24/7 */}
+            <div className="p-4 bg-slate-950/70 border border-slate-800 rounded-xl space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-emerald-300 font-bold text-xs">
+                  <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-300 flex items-center justify-center text-xs">4</span>
+                  <span>التشغيل الدائم بالخلفية بدون إغلاق (nohup)</span>
+                </div>
+                <button
+                  onClick={() =>
+                    handleCopy('nohup python userbot_publisher.py > bot.log 2>&1 &', 'termux_nohup')
+                  }
+                  className="text-[11px] text-emerald-400 hover:text-white flex items-center gap-1"
+                >
+                  {copiedId === 'termux_nohup' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                  <span>{copiedId === 'termux_nohup' ? 'تم!' : 'نسخ'}</span>
+                </button>
+              </div>
+              <pre className="p-2.5 bg-slate-900 border border-slate-800 rounded-lg text-amber-300 font-mono text-[11px] overflow-x-auto text-left" dir="ltr">
+                <code>nohup python userbot_publisher.py &gt; bot.log 2&gt;&amp;1 &amp;</code>
+              </pre>
+              <p className="text-[11px] text-slate-300 leading-relaxed">
+                هذا الأمر يجعل السكريبت يستمر بالعمل حتى لو أغلقت نافذة تطبيق Termux. لمتابعة سجل الرسائل اكتب: <code className="text-sky-300 font-mono">tail -f bot.log</code>
+              </p>
+            </div>
+          </div>
+
+          {/* Battery optimization tip */}
+          <div className="p-3.5 bg-amber-950/30 border border-amber-500/30 rounded-xl text-xs text-amber-200 space-y-1.5">
+            <div className="font-bold flex items-center gap-1.5">
+              <span>⚠️ خطوة ضرورية في إعدادات هاتف أندرويد:</span>
+            </div>
+            <p className="text-slate-300 leading-relaxed text-[11px]">
+              ادخل على إعدادات هاتفك ➔ التطبيقات ➔ <strong>Termux</strong> ➔ البطارية ➔ اختر <strong>&quot;غير مقيّد (Unrestricted)&quot;</strong> أو عطل ميزة توفير الطاقة للتطبيق، حتى لا يقوم نظام أندرويد بإغلاقه أثناء قفل الشاشة.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* 1. WHY SECTION: Explaining why Bot API fails and why UserBot works */}
       {activeSection === 'why' && (

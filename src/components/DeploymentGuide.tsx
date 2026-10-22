@@ -118,9 +118,37 @@ export const DeploymentGuide: React.FC = () => {
             <p>pip install -r requirements.txt</p>
             <p className="text-slate-500 mt-2"># تشغيل السكريبت في جلسة خلفية منفصلة</p>
             <p className="text-emerald-400">screen -S telegram_forwarder</p>
-            <p className="text-sky-300">python3 TelegramForwarder_Arabic.py</p>
+            <p className="text-sky-300">python3 userbot_publisher.py</p>
             <p className="text-slate-500 mt-1"># اضغط Ctrl+A ثم D للخروج مع إبقاء السكريبت شغالاً</p>
           </div>
+        </div>
+      ),
+    },
+    {
+      title: '5. تشغيل اليوزربوت على الهاتف عبر تطبيق Termux (خطوة بخطوة)',
+      icon: <Terminal className="w-4 h-4 text-emerald-400" />,
+      content: (
+        <div className="space-y-2.5 text-xs leading-relaxed text-slate-300">
+          <p>
+            إذا كنت تريد تشغيل البوت مباشرة من هاتفك الأندرويد دون الحاجة لجهاز كمبيوتر أو سيرفر مدفوع:
+          </p>
+          <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 font-mono text-[11px] text-slate-300 space-y-2 text-left" dir="ltr">
+            <p className="text-slate-400 font-sans text-right">1. أمر التثبيت الشامل بضغطة واحدة في Termux:</p>
+            <p className="text-emerald-400 bg-slate-900 p-2 rounded border border-slate-800">
+              pkg update -y && pkg install -y python git && pip install telethon requests && termux-wake-lock
+            </p>
+            <p className="text-slate-400 font-sans text-right">2. سحب ملفات البوت:</p>
+            <p className="text-sky-300 bg-slate-900 p-2 rounded border border-slate-800">
+              git clone https://github.com/mstfy737216610-prog/ADMIN_-.git && cd ADMIN_-
+            </p>
+            <p className="text-slate-400 font-sans text-right">3. تشغيل اليوزربوت:</p>
+            <p className="text-amber-300 bg-slate-900 p-2 rounded border border-slate-800">
+              python userbot_publisher.py
+            </p>
+          </div>
+          <p className="text-[11px] text-emerald-300 bg-emerald-950/20 p-2 rounded border border-emerald-800/40">
+            ✓ عند أول تشغيل سيطلب رقم هاتفك وكود التأكيد، وسيتم حفظ الجلسة ويعمل البوت في الخلفية لسحب المنشورات وإعادة صياغتها ونشرها تلقائياً.
+          </p>
         </div>
       ),
     },

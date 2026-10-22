@@ -184,7 +184,62 @@ def is_competitor_ad(text: str) -> bool:
         return False
     return any(kw in text for kw in AD_KEYWORDS)
 
+def ensure_valid_credentials():
+    """التحقق من صحة API_ID و API_HASH وسؤال المستخدم تفاعلياً إذا كانت قيم افتراضية"""
+    global API_ID, API_HASH, PHONE_NUMBER
+
+    raw_id_str = str(API_ID).strip()
+    raw_hash_str = str(API_HASH).strip()
+
+    is_placeholder = (
+        raw_id_str in ("20123456", "0", "") or
+        raw_hash_str in ("abcdef0123456789abcdef0123456789", "0123456789abcdef0123456789abcdef", "YOUR_API_HASH", "")
+    )
+
+    if is_placeholder:
+        print("\\n" + "=" * 65)
+        print("🔑 مطلوب إدخال بيانات تيليجرام الخاصة بك (API_ID & API_HASH)")
+        print("=" * 65)
+        print("⚠️ تنبيه: القيمة الحالية لـ API_ID تجريبية ويرفضها سيرفر تيليجرام.")
+        print("احصل على بياناتك الحقيقية مجاناً في دقيقة واحدة من موقع تيليجرام الرسمي:")
+        print("👉 https://my.telegram.org (سجل دخول واختر API development tools)")
+        print("-" * 65)
+
+        while True:
+            inp_id = input("👉 1. أدخل API_ID الخاص بك (أرقام فقط): ").strip()
+            if inp_id.isdigit() and len(inp_id) >= 5:
+                API_ID = int(inp_id)
+                break
+            print("❌ يجب إدخال أرقام صحيحة لـ API_ID (مثال: 28491823)")
+
+        while True:
+            inp_hash = input("👉 2. أدخل API_HASH الخاص بك: ").strip()
+            if len(inp_hash) >= 20:
+                API_HASH = inp_hash
+                break
+            print("❌ يجب إدخال كود الـ API_HASH من my.telegram.org")
+
+        inp_phone = input("👉 3. أدخل رقم هاتفك مع مفتاح الدولة (مثال: +966501234567): ").strip()
+        if inp_phone:
+            PHONE_NUMBER = inp_phone
+
+        # حفظ تلقائي في ملف .env
+        env_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+        try:
+            with open(env_file, "a+", encoding="utf-8") as f:
+                f.write(f"\\nTELEGRAM_API_ID={API_ID}\\n")
+                f.write(f"TELEGRAM_API_HASH={API_HASH}\\n")
+                if PHONE_NUMBER:
+                    f.write(f"TELEGRAM_PHONE={PHONE_NUMBER}\\n")
+            print(f"✅ تم حفظ الإعدادات تلقائياً في {env_file} ولن يطلبها ثانية.")
+        except Exception:
+            pass
+
+        print("=" * 65 + "\\n")
+
 async def main():
+    ensure_valid_credentials()
+
     logging.info("=" * 60)
     logging.info("🚀 تشغيل بوت النشر الآلي (Telethon UserBot)")
     logging.info(f"النموذج: {AI_MODEL} | القنوات المصدر: {len(SOURCE_CHANNELS)}")
@@ -196,7 +251,21 @@ async def main():
     else:
         client = TelegramClient("userbot_session", API_ID, API_HASH)
 
-    await client.start(phone=PHONE_NUMBER)
+    try:
+        await client.start(phone=PHONE_NUMBER if PHONE_NUMBER else None)
+    except Exception as auth_err:
+        if "ApiIdInvalidError" in str(type(auth_err)) or "ApiIdInvalid" in str(auth_err):
+            print("\\n" + "!" * 65)
+            print("❌ خطأ من تيليجرام: ApiIdInvalidError")
+            print("الـ API_ID أو API_HASH غير صحيح أو يحتوي على فراغات إضافية!")
+            print("💡 الحل:")
+            print("1. افتح https://my.telegram.org وسجل الدخول.")
+            print("2. انسخ App api_id و App api_hash بدقة.")
+            print("3. احذف ملف .env وأعد تشغيل السكريبت لإدخالهما مجدداً.")
+            print("!" * 65 + "\\n")
+            sys.exit(1)
+        raise auth_err
+
     me = await client.get_me()
     logging.info(f"✅ تم تسجيل دخول اليوزربوت بنجاح باسم: {me.first_name} (@{me.username or me.phone})")
 
