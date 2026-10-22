@@ -250,16 +250,19 @@ app.post('/api/ai/rephrase', async (req: Request, res: Response) => {
 ## الهوية
 أنت محرر محتوى متخصص في الشؤون التعليمية الجامعية ومجموعات الطلاب. مهمتك قراءة المنشورات وإعادة صياغتها بأسلوب أوضح وأدق، مع الحفاظ على المصداقية الكاملة ومساعدة الطلاب مثل مشرفي القروبات المخلصين.
 
-## المبادئ الأساسية:
+## المبادئ الأساسية الصارمة (إلزامية 100%):
 - لا تضف أي معلومة من خيالك لم ترد في النص الأصلي.
-- لا تحذف أي معلومة جوهرية أو مواعيد أو أرقام أو شروط.
-- لا تذكر اسم المصدر لأن المنشور معاد صياغته.
-- اجعل الأسلوب شيقاً وواضحاً مع استخدام إيموجيات معتدلة (📚 🎓 📅 📌 💡).
+- لا تحذف أي معلومة جوهرية أو مواعيد أو أرقام أو شروط أو خطوات تقديم.
+- لا تذكر اسم القناة السابقة أو المصدر المنقول منه.
+- 🚨 قاعدة الروابط الرسمية (خط أحمر): جميع روابط التقديم والتسجيل والبوابات الجامعية (مثل روابط PowerApps ونماذج Forms وبوابات الكليات والبلاك بورد) يجب الحفاظ عليها 100% بنصها الكامل وإدراجها بوضوح في سطر مستقل يسبقها (🔗 رابط التقديم / البوابة:). احذف فقط معرفات وروابط قنوات تيليجرام الترويجية.
+- اجعل الأسلوب شيقاً وواضحاً مع استخدام إيموجيات معتدلة (📚 🎓 📅 📌 💡 🔗).
 
 ## التنسيق المطلوب إلزامي:
 📌 [عنوان بارز وجذاب للمنشور]
 
 [المحتوى منظم في نقاط واضحة ومباشرة مع إبراز المواعيد والشروط]
+
+🔗 [روابط التقديم والبوابات إن وجدت في النص الأصلي كاملاً]
 
 💬 [دعوة تفاعلية قصيرة للطلاب للمشاركة أو الاستفسار]
 
@@ -298,10 +301,19 @@ app.post('/api/ai/rephrase', async (req: Request, res: Response) => {
       rephrasedText = await tryCallModel(fallbackModel);
     }
 
+    let finalRephrased = rephrasedText ? rephrasedText.trim() : '';
+    // Ensure all portal/registration links from original text are preserved
+    const extLinks = extractExternalLinks(text);
+    for (const link of extLinks) {
+      if (!finalRephrased.includes(link)) {
+        finalRephrased += `\n\n🔗 **رابط التقديم / البوابة الإلكترونية المباشرة:**\n${link}`;
+      }
+    }
+
     const durationMs = Date.now() - tStart;
     res.json({
       success: true,
-      rephrasedText: rephrasedText.trim(),
+      rephrasedText: finalRephrased,
       modelUsed: usedModel,
       durationMs
     });
@@ -395,27 +407,44 @@ ${text}
   }
 });
 
+function extractExternalLinks(text: string): string[] {
+  if (!text) return [];
+  const matches = text.match(/https?:\/\/[^\s<>"]+/g) || [];
+  return matches
+    .map(u => u.replace(/[.,;!?)>\]'"]+$/, ''))
+    .filter(u => !u.includes('t.me/') && !u.includes('telegram.me/'));
+}
+
 // Fallback intelligent rephraser
 function fallbackRephrase(rawText: string, instructions?: string): string {
-  const firstLine = rawText.split('\n')[0].replace(/[•\-*]/g, '').trim();
-  const title = firstLine.length < 50 ? firstLine : 'إعلان هام للطلبة والجامعيين';
-
-  const lines = rawText
+  const extLinks = extractExternalLinks(rawText);
+  const cleanLines = rawText
     .split('\n')
     .map(l => l.trim())
-    .filter(l => l.length > 0 && !l.includes('http') && !l.includes('@'));
+    .filter(l => l.length > 0 && !l.includes('t.me/') && !l.startsWith('@'));
 
-  const bullets = lines.length > 1
-    ? lines.slice(1).map(l => `• ${l}`).join('\n')
-    : `• ${rawText.trim()}`;
+  // Separate text lines from URL lines
+  const textLines = cleanLines.filter(l => !l.startsWith('http://') && !l.startsWith('https://'));
+  const firstLine = (textLines[0] || 'إعلان أكاديمي وجامعي هام').replace(/^[•\-*#📌📢✨🎓]\s*/, '').trim();
+  const title = firstLine.length < 70 ? firstLine : firstLine.slice(0, 65) + '...';
+
+  const bodyLines = textLines.slice(1);
+  const bullets = bodyLines.length > 0
+    ? bodyLines.map(l => `• ${l}`).join('\n')
+    : `• ${firstLine}`;
+
+  let linksSection = '';
+  if (extLinks.length > 0) {
+    linksSection = `\n\n🔗 **رابط التقديم / البوابة الإلكترونية المباشرة:**\n` + extLinks.join('\n');
+  }
 
   const hashtags = '#جامعة #أخبار_التعليم #مواعيد #شؤون_الطلاب';
 
-  return `📌 ${title}
+  return `📌 **${title}**
 
-${bullets}
+${bullets}${linksSection}
 
-💬 شارك المنشور مع زملائك لتعم الفائدة، ويسعدنا الإجابة على استفساراتكم!
+💬 يسعدنا استقبال استفساراتكم ومشاركة المنشور مع زملائكم الطلاب!
 
 ${hashtags}`;
 }

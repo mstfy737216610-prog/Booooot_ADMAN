@@ -62,8 +62,8 @@ STRING_SESSION = os.getenv("STRING_SESSION", "").strip()
 
 AI_BASE_URL = os.getenv("AI_BASE_URL", "https://api.hcnsec.cn/v1").rstrip("/")
 AI_API_KEY = os.getenv("AI_API_KEY", "sk-J2ky44F6VTDMkL8Q1GHL5sfmbeIpARVDayNuwMfxKI5zCdii").strip()
-PRIMARY_MODEL = os.getenv("PRIMARY_MODEL", "DeepSeek-V4-Flash").strip()
-FALLBACK_MODEL = os.getenv("FALLBACK_MODEL", "DeepSeek-V4.1-Flash").strip()
+PRIMARY_MODEL = os.getenv("PRIMARY_MODEL", "DeepSeek-V4.1-Flash").strip()
+FALLBACK_MODEL = os.getenv("FALLBACK_MODEL", "DeepSeek-V4-Flash").strip()
 PORT = int(os.getenv("PORT", os.getenv("KEEPALIVE_PORT", "8088")))
 
 logging.basicConfig(
@@ -81,20 +81,24 @@ post_queue = queue.Queue(maxsize=100)
 
 SYSTEM_PROMPT_REPHRASE = """# الدور: الناشر والكاتب الرسمي للمحتوى التعليمي والجامعي
 ## الهوية:
-أنت الكاتب الرسمي والناشر الحصري لقناة تعليمية وجامعية رائدة.
-مهمتك كتابة وصياغة المنشورات بأسلوبك الخاص الأصيل كأنك أنت المصدر الأول والأساسي للخبر.
+أنت الكاتب الرسمي والناشر الحصري لقناة تعليمية وجامعية رائدة وموثوقة.
+مهمتك كتابة وصياغة المنشورات بأسلوبك الخاص الأصيل كأنك أنت المصدر الأول والأساسي للخبر، مع الفهم التام لاحتياجات الطلاب ومواعيدهم.
 
 ## قواعد صارمة جداً (إلزامية 100%):
 1. ممنوع منعاً باتاً ذكر اسم القناة الأصلية أو المصدر أو الحساب المنقول منه، وممنوع استخدام عبارات مثل "وفقاً للمصدر" أو "بحسب القناة" أو "معاد صياغته" أو "كما ورد" أو أي تنويه بأن المنشور منقول.
-2. احذف نهائياً أي روابط أو معرفات قنوات تيليجرام أخرى (مثل @channel أو t.me).
+2. احذف نهائياً أي روابط أو معرفات قنوات تيليجرام ترويجية أو مجموعات أخرى (مثل @channel أو t.me).
 3. اكتب بأسلوب عربي فصيح، راقٍ، منظم بنقاط واضحة ومباشرة للطلاب.
-4. حافظ بدقة تامة على الأرقام، النسب، التواريخ، والمواعيد الرسمية، والشروط دون أي تحريف.
-5. احتفظ بجميع الروابط الخارجية المفيدة للطلاب وبوابات الكليات والجامعات (مثل HCT Portal أو AUM Portal ومواقع التسجيل) واجعلها واضحة ومباشرة ليتمكن الطلاب من فتحها وتصفحها بسهولة.
+4. حافظ بدقة تامة على الأرقام، النسب، التواريخ، والمواعيد الرسمية، والشروط وخطوات التقديم دون أي تحريف أو إنقاص.
+5. 🚨 قاعدة الروابط الرسمية وبوابات التقديم (خط أحمر وإلزامية 100%):
+   جميع روابط التقديم والتسجيل والبوابات الجامعية ومواقع الأنظمة والنماذج (مثل روابط apps.powerapps.com, forms.office.com, blackboard, portals, docs.google.com, ومواقع الكليات والجامعات) يجب الاحتفاظ بها بنصها الكامل والرسمي 100% دون أي حذف أو اختصار! ضع الرابط في سطر مستقل يسبقه:
+   🔗 رابط التقديم / البوابة الإلكترونية: [الرابط الكامل]
 
 ## التنسيق المطلوب:
 📌 [عنوان بارز وجذاب بدون أي إشارة لمصادر]
 
 [المحتوى منظم في نقاط محددة وسهلة القراءة تبرز المواعيد والخطوات والشروط]
+
+🔗 [روابط التقديم الرسمية إن وجدت في المنشور كاملاً]
 
 💬 [دعوة تفاعلية قصيرة للطلاب للمشاركة أو الاستفسار]
 
@@ -198,7 +202,7 @@ class StandaloneTelegramEducationalBot:
             res = self.tg_request("sendMessage", payload)
         return res
 
-    def send_photo(self, chat_id: Any, photo: str, caption: str = "", parse_mode: Optional[str] = "HTML") -> Dict[str, Any]:
+    def send_photo(self, chat_id: Any, photo: str, caption: str = "", reply_markup: Optional[Dict] = None, parse_mode: Optional[str] = "HTML") -> Dict[str, Any]:
         safe_caption = self.to_safe_html(caption) if parse_mode == "HTML" else caption
         lead_caption = safe_caption[:1020] if len(safe_caption) > 1024 else safe_caption
 
@@ -235,6 +239,8 @@ class StandaloneTelegramEducationalBot:
                         add_field("caption", lead_caption)
                         if parse_mode:
                             add_field("parse_mode", parse_mode)
+                    if reply_markup:
+                        add_field("reply_markup", json.dumps(reply_markup))
 
                     body.extend(f'--{boundary}\r\nContent-Disposition: form-data; name="photo"; filename="image.jpg"\r\nContent-Type: image/jpeg\r\n\r\n'.encode('utf-8'))
                     body.extend(img_bytes)
@@ -250,7 +256,7 @@ class StandaloneTelegramEducationalBot:
                         res = json.loads(u_resp.read().decode("utf-8"))
                         if res.get("ok"):
                             if len(safe_caption) > 1024:
-                                self.send_msg(chat_id, safe_caption[1020:], parse_mode=parse_mode)
+                                self.send_msg(chat_id, safe_caption[1020:], reply_markup=reply_markup, parse_mode=parse_mode)
                             return res
             except Exception as e:
                 logger.warning(f"تعذر الرفع المباشر لـ bytes الصورة ({photo[:40]}...): {e}")
@@ -261,11 +267,13 @@ class StandaloneTelegramEducationalBot:
             payload["caption"] = lead_caption
             if parse_mode:
                 payload["parse_mode"] = parse_mode
+        if reply_markup:
+            payload["reply_markup"] = reply_markup
 
         res = self.tg_request("sendPhoto", payload)
         if res.get("ok"):
             if len(safe_caption) > 1024:
-                self.send_msg(chat_id, safe_caption[1020:], parse_mode=parse_mode)
+                self.send_msg(chat_id, safe_caption[1020:], reply_markup=reply_markup, parse_mode=parse_mode)
             return res
 
         # محاولة ثانية بدون parse_mode
@@ -280,12 +288,12 @@ class StandaloneTelegramEducationalBot:
         res_photo = self.tg_request("sendPhoto", {"chat_id": chat_id, "photo": photo})
         if res_photo.get("ok"):
             if caption:
-                self.send_msg(chat_id, caption, parse_mode=parse_mode)
+                self.send_msg(chat_id, caption, reply_markup=reply_markup, parse_mode=parse_mode)
             return res_photo
 
         # حماية قاطعة: إذا تعذر إرسال الصورة تماماً، ننشر النص كاملاً كرسالة حتى لا يضيع الخبر
         if caption:
-            res_msg = self.send_msg(chat_id, caption, parse_mode=parse_mode)
+            res_msg = self.send_msg(chat_id, caption, reply_markup=reply_markup, parse_mode=parse_mode)
             if res_msg.get("ok"):
                 res_msg["note"] = "fallback_text_after_photo_error"
                 return res_msg
@@ -389,20 +397,37 @@ class StandaloneTelegramEducationalBot:
         cleaned = re.sub(r'[\u07C0-\u07FF\u4E00-\u9FFF\uF000-\uFFFF]', '', cleaned)
         return cleaned.strip()
 
-    def call_ai(self, raw_text: str, custom_instruction: str = "") -> str:
+    def extract_external_links(self, text: str) -> List[str]:
+        if not text:
+            return []
+        matches = re.findall(r'https?://[^\s<>"]+', text)
+        valid = []
+        for u in matches:
+            u_clean = u.rstrip(".,;!?)>]\'\"")
+            if "t.me/" in u_clean or "telegram.me/" in u_clean:
+                continue
+            if u_clean not in valid:
+                valid.append(u_clean)
+        return valid
+
+    def call_ai(self, raw_text: str, custom_instruction: str = "", system_prompt: Optional[str] = None) -> str:
         clean_input = self.clean_text_from_sources(raw_text)
         if not clean_input:
             clean_input = raw_text
 
+        # استخراج كافة الروابط الخارجية (بوابات التقديم، PowerApps، الاستمارات، بوابات الجامعات) لضمان عدم ضياعها نهائياً
+        ext_links = self.extract_external_links(raw_text)
+
+        active_system_prompt = system_prompt or SYSTEM_PROMPT_REPHRASE
         instruction_addon = f"تعليمات إضافية من المشرف: {custom_instruction}\n\n" if custom_instruction else ""
         payload = {
             "model": PRIMARY_MODEL,
             "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT_REPHRASE},
-                {"role": "user", "content": f"{instruction_addon}صيغ هذا المحتوى الأكاديمي كمنشور رسمي أصلي لقناتك (بدون ذكر أي مصادر أو قنوات سابقة):\n\n{clean_input}"}
+                {"role": "system", "content": active_system_prompt},
+                {"role": "user", "content": f"{instruction_addon}صيغ هذا المحتوى الأكاديمي كمنشور رسمي أصلي لقناتك (بدون ذكر أي مصادر أو قنوات سابقة مع الحفاظ التام على روابط التقديم والبوابات):\n\n{clean_input}"}
             ],
             "temperature": 0.35,
-            "max_tokens": 800
+            "max_tokens": 850
         }
         headers = {
             "Authorization": f"Bearer {AI_API_KEY}",
@@ -418,7 +443,12 @@ class StandaloneTelegramEducationalBot:
                 data = json.loads(resp.read().decode("utf-8"))
                 if "choices" in data and len(data["choices"]) > 0:
                     ai_text = data["choices"][0]["message"]["content"].strip()
-                    return self.clean_text_from_sources(ai_text)
+                    cleaned_ai = self.clean_text_from_sources(ai_text)
+                    # فحص والتأكد من إدراج جميع روابط التقديم والبوابات
+                    for lk in ext_links:
+                        if lk not in cleaned_ai:
+                            cleaned_ai += f"\n\n🔗 **رابط التقديم / البوابة الإلكترونية المباشرة:**\n{lk}"
+                    return cleaned_ai
         except Exception as e:
             logger.warning(f"ملاحظة في نموذج الذكاء الأساسي {PRIMARY_MODEL}: {e}")
 
@@ -430,17 +460,29 @@ class StandaloneTelegramEducationalBot:
                 data = json.loads(resp.read().decode("utf-8"))
                 if "choices" in data and len(data["choices"]) > 0:
                     ai_text = data["choices"][0]["message"]["content"].strip()
-                    return self.clean_text_from_sources(ai_text)
+                    cleaned_ai = self.clean_text_from_sources(ai_text)
+                    for lk in ext_links:
+                        if lk not in cleaned_ai:
+                            cleaned_ai += f"\n\n🔗 **رابط التقديم / البوابة الإلكترونية المباشرة:**\n{lk}"
+                    return cleaned_ai
         except Exception as e:
             logger.warning(f"ملاحظة في النموذج البديل {FALLBACK_MODEL}: {e}")
 
-        # صياغة محلية ذكية خالية من التأخير
-        lines = [l.strip() for l in clean_input.split("\n") if l.strip() and not l.startswith("http")]
-        title = lines[0] if lines else "تحديث جامعي وأكاديمي هام"
-        if len(title) > 65:
-            title = title[:62] + "..."
-        bullets = "\n".join([f"• {l}" for l in lines[1:6]]) if len(lines) > 1 else f"• {clean_input}"
-        return f"📌 **{title}**\n\n{bullets}\n\n💬 يسعدنا استقبال استفساراتكم ومشاركة المنشور مع زملائكم الطلاب!\n\n#جامعة #أخبار_التعليم #شؤون_الطلاب #مواعيد"
+        # صياغة محلية ذكية خالية من التأخير ولا تحذف أبداً روابط التقديم والبوابات الرسمية
+        clean_lines = [l.strip() for l in clean_input.split("\n") if l.strip() and not l.startswith("@") and "t.me/" not in l]
+        text_lines = [l for l in clean_lines if not l.startswith("http://") and not l.startswith("https://")]
+        first_line = text_lines[0] if text_lines else "تحديث جامعي وأكاديمي هام"
+        first_line = re.sub(r'^[•\-\*#📌📢✨🎓]\s*', '', first_line).strip()
+        title = first_line[:62] + "..." if len(first_line) > 65 else first_line
+
+        body_lines = text_lines[1:7]
+        bullets = "\n".join([f"• {l}" for l in body_lines]) if body_lines else f"• {clean_input}"
+
+        links_block = ""
+        if ext_links:
+            links_block = "\n\n🔗 **رابط التقديم / البوابة الإلكترونية المباشرة:**\n" + "\n".join(ext_links)
+
+        return f"📌 **{title}**\n\n{bullets}{links_block}\n\n💬 يسعدنا استقبال استفساراتكم ومشاركة المنشور مع زملائكم الطلاب!\n\n#جامعة #أخبار_التعليم #شؤون_الطلاب #مواعيد"
 
     # ----------------- المعالج غير المتزامن (Worker Thread) -----------------
     def worker_loop(self):
@@ -476,10 +518,19 @@ class StandaloneTelegramEducationalBot:
                 rephrased = self.call_ai(raw_text, custom_instructions)
 
                 # 3. النشر في كافة القنوات المستهدفة
+                post_links = self.extract_external_links(rephrased) or self.extract_external_links(raw_text)
+                post_kb = None
+                if post_links:
+                    post_kb = {
+                        "inline_keyboard": [
+                            [{"text": "🔗 فتح الرابط للتقديم والمتابعة", "url": post_links[0]}]
+                        ]
+                    }
+
                 success_targets = []
                 failed_targets = []
                 for ch in target_channels:
-                    res = self.send_photo(ch, photo, rephrased) if photo else self.send_msg(ch, rephrased)
+                    res = self.send_photo(ch, photo, rephrased, reply_markup=post_kb) if photo else self.send_msg(ch, rephrased, reply_markup=post_kb)
                     ok = res.get("ok", False)
                     desc = res.get("description", "")
                     db.record_channel_publish_result(ch, ok, desc)
