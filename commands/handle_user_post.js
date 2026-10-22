@@ -1,6 +1,6 @@
 /*CMD
   command: handle_user_post
-  help: محرك النشر التلقائي الذكي ومعالج الوسائط والذكاء الاصطناعي والتوزيع
+  help: محرك النشر التلقائي الذكي ومعالج الوسائط والربط الصارم والعزل التام للمشاريع الجامعية
   need_reply: false
   auto_retry_time: 
   folder: 
@@ -9,7 +9,7 @@
   aliases: 
 CMD*/
 
-// دالة تحويل الماركداون إلى HTML آمن لمنع أخطاء تيليجرام 400 بسبب الشَرطات السفلية مثل @M_S_F_G و @Next_Plus_BOT0
+// دالة تحويل الماركداون إلى HTML آمن
 function toSafeHtml(txt) {
   if (!txt) return "";
   var s = txt;
@@ -20,7 +20,37 @@ function toSafeHtml(txt) {
   return s;
 }
 
-// 1. استخراج كائن الرسالة سواء كان منشور قناة (channel_post) أو رسالة خاصة/توجيه (message)
+// دالة تنظيف شوائب الويب وX و&nbsp; والنقاط الفارغة
+function cleanWebAndTwitterGarbage(txt) {
+  if (!txt) return "";
+  var s = txt;
+  s = s.replace(/&nbsp;\s*X/gi, "");
+  s = s.replace(/&nbsp;/gi, " ");
+  s = s.replace(/\s+X\s*$/g, "");
+  s = s.replace(/\s+X\n/g, "\n");
+  s = s.replace(/\bX\s*$/g, "");
+  s = s.replace(/ߓ堙噈اعيد/g, "مواعيد");
+  s = s.replace(/ߓꠙ嘰كرات/g, "مذكرات");
+  s = s.replace(/ߎ㠘㙆ظمة/g, "أنظمة");
+  s = s.replace(/[\u07C0-\u07FF\u4E00-\u9FFF\uF000-\uFFFF]/g, "");
+
+  var lines = s.split("\n");
+  var clean_lines = [];
+  for (var i = 0; i < lines.length; i++) {
+    var l = lines[i].trim();
+    if (!l) {
+      clean_lines.push("");
+      continue;
+    }
+    if (l === "•" || l === "-" || l === "*" || l === "• " || l === "- " || l === "* " || l === "📌" || l === "🎓") {
+      continue;
+    }
+    clean_lines.push(l);
+  }
+  return clean_lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+// 1. استخراج كائن الرسالة
 var msg_obj = null;
 if (typeof request !== "undefined" && request) {
   if (request.channel_post) {
@@ -49,7 +79,7 @@ if (!raw_text && typeof message !== "undefined" && message) {
   raw_text = message;
 }
 
-// 3. استخراج الوسائط بدقة فائقة وبأعلى جودة
+// 3. استخراج الوسائط
 var media_type = null;
 var media_file_id = null;
 
@@ -110,24 +140,17 @@ if (!media_type) {
   }
 }
 
-// إذا كانت الرسالة أمراً برمجياً (Command) مثل /start دون ميديا، لا تعالجها كمنشور
+// إذا كانت الرسالة أمراً برمجياً مثل /start
 if (raw_text && raw_text.indexOf("/") === 0 && !media_file_id) {
   return;
 }
 
-// إذا لم يتوفر نص ولا وسائط، لا يوجد منشور للمعالجة
+// إذا لم يتوفر نص ولا وسائط
 if (!raw_text && !media_file_id) {
   return;
 }
 
-// 4. فحص حالة إيقاف البوت
-var is_paused = Bot.getProperty("bot_paused", false);
-if (is_paused) {
-  Bot.sendMessage("⏸️ **تنبيه**: تم التقاط منشور جديد، لكن النشر التلقائي متوقف حالياً بأمر المشرف.\n(استخدم /pause أو الزر في /start لإعادة التشغيل)");
-  return;
-}
-
-// 5. استخراج المصدر بدقة (قنوات، بوتات مثل @Next_Plus_BOT0، مستخدمين، توجيه)
+// 4. استخراج مصدر الرسالة بدقة فائقة
 var source_origin = null;
 var source_title = null;
 
@@ -144,19 +167,7 @@ if (msg_obj && msg_obj.chat && (msg_obj.chat.type === "channel" || msg_obj.chat.
   } else if (msg_obj.forward_origin.sender_chat) {
     source_origin = msg_obj.forward_origin.sender_chat.username ? ("@" + msg_obj.forward_origin.sender_chat.username) : ("" + msg_obj.forward_origin.sender_chat.id);
     source_title = msg_obj.forward_origin.sender_chat.title || source_origin;
-  } else if (msg_obj.forward_origin.sender_user) {
-    source_origin = msg_obj.forward_origin.sender_user.username ? ("@" + msg_obj.forward_origin.sender_user.username) : ("" + msg_obj.forward_origin.sender_user.id);
-    source_title = msg_obj.forward_origin.sender_user.first_name || source_origin;
-  } else if (msg_obj.forward_origin.sender_user_name) {
-    source_origin = "@" + msg_obj.forward_origin.sender_user_name;
-    source_title = msg_obj.forward_origin.sender_user_name;
   }
-} else if (msg_obj && msg_obj.forward_from) {
-  source_origin = msg_obj.forward_from.username ? ("@" + msg_obj.forward_from.username) : ("" + msg_obj.forward_from.id);
-  source_title = msg_obj.forward_from.first_name || source_origin;
-} else if (msg_obj && msg_obj.forward_sender_name) {
-  source_origin = msg_obj.forward_sender_name;
-  source_title = msg_obj.forward_sender_name;
 } else if (typeof request !== "undefined" && request && request.forward_from_chat) {
   source_origin = request.forward_from_chat.username ? ("@" + request.forward_from_chat.username) : ("" + request.forward_from_chat.id);
   source_title = request.forward_from_chat.title || source_origin;
@@ -165,108 +176,153 @@ if (msg_obj && msg_obj.chat && (msg_obj.chat.type === "channel" || msg_obj.chat.
 var is_private_chat = (msg_obj && msg_obj.chat && msg_obj.chat.type === "private") || (typeof chat !== "undefined" && chat && chat.chat_type === "private");
 var is_forwarded = !!(source_origin || (msg_obj && (msg_obj.forward_date || msg_obj.forward_from_chat || msg_obj.forward_origin)));
 
-// توجيه نصوص أزرار الكيبورد إلى الأوامر المخصصة لمنع صياغتها كمنشورات
+// 5. حماية وتوجيه أزرار لوحة التحكم لمنع معالجتها كمنشورات
 if (is_private_chat && !is_forwarded && !media_file_id && raw_text) {
   var t = raw_text.trim();
-  if (t === "💬 محادثة الذكاء والبحث" || t === "محادثة الذكاء والبحث" || t === "💬 محادثة الذكاء" || t === "محادثة الذكاء" || t === "محادثة" || t === "بحث الذكاء") {
-    Bot.runCommand("/chat");
-    return;
-  }
-  if (t === "🔄 فحص وسحب المنشورات" || t === "فحص وسحب المنشورات" || t === "🔄 سحب وفحص المصادر" || t === "🔄 فحص وسحب المنشورات الآن") {
-    Bot.runCommand("/crawl_sources");
-    return;
-  }
-  if (t === "➕ إضافة مصادر خارجية" || t === "إضافة مصادر خارجية" || t === "إضافة مصدر") {
-    Bot.runCommand("/add_source");
-    return;
-  }
-  if (t === "📢 تحديد قناة النشر" || t === "تحديد قناة النشر" || t === "📢 قنوات النشر" || t === "📢 تحديد قناة النشر الهدف") {
-    Bot.runCommand("/set_channel");
-    return;
-  }
-  if (t === "📝 صياغة ونشر خبر فوري" || t === "صياغة ونشر خبر فوري" || t === "نشر خبر فوري") {
-    Bot.runCommand("/new_post");
-    return;
-  }
-  if (t === "📋 قائمة المصادر" || t === "قائمة المصادر" || t === "المصادر") {
-    Bot.runCommand("/sources");
-    return;
-  }
-  if (t === "⚙️ إعدادات الذكاء الاصطناعي" || t === "إعدادات الذكاء الاصطناعي" || t === "الذكاء الاصطناعي") {
-    Bot.runCommand("/ai");
-    return;
-  }
-  if (t === "🔗 ربط القنوات والأهداف" || t === "ربط القنوات والأهداف" || t === "خريطة القنوات") {
-    Bot.runCommand("/mapping");
-    return;
-  }
-  if (t === "🎯 إعلان خدماتي البديل" || t === "إعلان خدماتي البديل" || t === "الإعلان البديل") {
-    Bot.runCommand("/ad");
-    return;
-  }
-  if (t === "👤 إدارة اليوزربوت وجلسة الحساب" || t === "إدارة اليوزربوت" || t === "اليوزربوت" || t === "👤 إدارة اليوزربوت") {
-    Bot.runCommand("/userbot");
-    return;
-  }
-  if (t === "📊 حالة النظام والتقارير" || t === "حالة النظام" || t === "تقارير النشر" || t === "📊 تقارير النشر") {
-    Bot.runCommand("/status");
-    return;
-  }
-  if (t === "⚙️ تعليمات المحرر الأكاديمي" || t === "تعليمات المحرر الأكاديمي" || t === "التعليمات") {
-    Bot.runCommand("/instructions");
-    return;
-  }
-  if (t === "🔑 المفاتيح والاعتمادات" || t === "المفاتيح والاعتمادات" || t === "المفاتيح" || t === "🔑 المفاتيح والبيانات") {
-    Bot.runCommand("/keys");
-    return;
-  }
-  if (t === "👥 إدارة المستخدمين" || t === "إدارة المستخدمين والصلاحيات" || t === "👥 إدارة المستخدمين والصلاحيات") {
-    Bot.runCommand("/users");
-    return;
-  }
-  if (t === "🟢 تشغيل / إيقاف البوت" || t === "تشغيل / إيقاف البوت" || t === "إيقاف / تشغيل" || t === "⏸️ تشغيل / إيقاف البوت") {
-    Bot.runCommand("/pause");
-    return;
-  }
-  if (t === "🧪 تجربة الصياغة الفورية" || t === "تجربة الصياغة") {
-    Bot.runCommand("/test");
-    return;
-  }
-  if (t === "🎛 لوحة التحكم الرئيسية" || t === "لوحة التحكم" || t === "الرئيسية") {
-    Bot.runCommand("/start");
+  if (t === "🏛️ إدارة الجامعات والمصادر" || t === "🏛️ إدارة الجامعات وقنوات النشر") { Bot.runCommand("/universities"); return; }
+  if (t === "➕ معالج ربط جامعة وقناة (5 خطوات)" || t === "➕ معالج ربط جامعة وقناة") { Bot.runCommand("/add_university"); return; }
+  if (t === "🔄 فحص وسحب الأخبار فوراً" || t === "🔄 فحص وسحب أخبار الجامعات") { Bot.runCommand("/crawl_sources"); return; }
+  if (t === "🌐 بحث أخبار جوجل الأكاديمية" || t === "🌐 بحث أخبار جوجل للجامعة") { Bot.runCommand("/google_news"); return; }
+  if (t === "📝 صياغة ونشر خبر فوري") { Bot.runCommand("/new_post"); return; }
+  if (t === "🎯 إعلان خدماتي البديل") { Bot.runCommand("/ad"); return; }
+  if (t === "⚙️ إعدادات الذكاء الاصطناعي") { Bot.runCommand("/ai"); return; }
+  if (t === "💬 محادثة وبحث الذكاء") { Bot.runCommand("/chat"); return; }
+  if (t === "🔑 مفاتيح API والاعتمادات") { Bot.runCommand("/keys"); return; }
+  if (t === "👤 إدارة اليوزربوت وجلسة الحساب") { Bot.runCommand("/userbot"); return; }
+  if (t === "📝 تعليمات المحرر الأكاديمي") { Bot.runCommand("/instructions"); return; }
+  if (t === "🧪 تجربة الصياغة الفورية") { Bot.runCommand("/test"); return; }
+  if (t === "📊 حالة النظام والتقارير") { Bot.runCommand("/status"); return; }
+  if (t === "🟢 تشغيل / إيقاف البوت") { Bot.runCommand("/pause"); return; }
+  if (t === "📞 الدعم الفني والمساعدة") { Bot.runCommand("/support"); return; }
+  if (t === "🌐 قنواتنا وروابط التواصل") { Bot.runCommand("/social"); return; }
+  if (t === "🎛 لوحة التحكم الرئيسية") { Bot.runCommand("/start"); return; }
+  
+  if (t.length < 25) {
+    Bot.sendMessage("👋 **أهلاً بك يا مديرنا!**\nوجّه أي منشور من أي قناة أو أرسل نص الخبر كاملاً لإعادة صياغته ونشره.");
     return;
   }
 }
 
-// تجنب الكلمات الترحيبية المفردة في الخاص
-var short_greetings = ["مرحبا", "سلام", "الو", "هلا", "hi", "hello"];
-if (is_private_chat && !is_forwarded && !media_file_id && short_greetings.indexOf(raw_text.toLowerCase()) !== -1) {
-  Bot.sendMessage("👋 **أهلاً بك يا مديرنا!**\nوجّه أي منشور أو أرسل نص الخبر كاملاً وسأقوم بإعادة صياغته ونشره فوراً في قناتك @jhdhhdcj.");
-  Bot.runCommand("/start");
+// 6. فحص حالة إيقاف البوت
+var is_paused = Bot.getProperty("bot_paused", false);
+if (is_paused) {
+  Bot.sendMessage("⏸️ **تنبيه**: تم التقاط المنشور، لكن النشر التلقائي متوقف حالياً.\n(استخدم زر التشغيل في /start للمتابعة)");
   return;
 }
 
-// 6. تحديد القنوات المستهدفة للنشر (دائماً تضمن @jhdhhdcj)
-var target_channels = ["@jhdhhdcj"];
-var custom_saved_target = Bot.getProperty("target_channels");
-if (custom_saved_target && custom_saved_target !== "@MyUniversityChannel" && target_channels.indexOf(custom_saved_target) === -1) {
-  target_channels.push(custom_saved_target);
+// 7. 🛡️ جدول الربط الصارم والعزل التام (Strict Relational Isolation):
+// مطابقة المنشور بمشروع الجامعة وقناتها المحددة حصراً لمنع أي خلط بين القنوات
+var univ_projects = Bot.getProperty("university_projects", []);
+if (!univ_projects || !Array.isArray(univ_projects) || univ_projects.length === 0) {
+  var def_target = Bot.getProperty("target_channels") || "@jhdhhdcj";
+  univ_projects = [
+    {
+      id: "univ_ksu",
+      name: "جامعة الملك سعود",
+      target_channel: def_target,
+      telegram_sources: ["@KSU_News"],
+      twitter_sources: ["@ksu_news"],
+      google_news_query: "جامعة الملك سعود",
+      google_news_enabled: true,
+      keywords: ["جامعة الملك سعود", "الملك سعود", "KSU", "قبول", "تسجيل"],
+      enabled: true
+    }
+  ];
+  Bot.setProperty("university_projects", univ_projects, "json");
 }
 
-// 7. إشعار فوري في المحادثة بأن المنشور تم استلامه وقراءته بنجاح
+var matched_univ = null;
+var clean_origin = source_origin ? source_origin.toLowerCase().replace(/^@/, "").replace("https://t.me/s/", "").replace("https://t.me/", "") : "";
+
+// أولاً: المطابقة الدقيقة عبر المصدر المربوط (قناة تليجرام أو حساب تويتر)
+if (clean_origin) {
+  for (var u1 = 0; u1 < univ_projects.length; u1++) {
+    var p1 = univ_projects[u1];
+    if (!p1.enabled) continue;
+    var all_src = (p1.telegram_sources || []).concat(p1.twitter_sources || []);
+    for (var s1 = 0; s1 < all_src.length; s1++) {
+      var s_clean = all_src[s1].toLowerCase().replace(/^@/, "").replace("https://t.me/s/", "").replace("https://t.me/", "");
+      if (s_clean === clean_origin) {
+        matched_univ = p1;
+        break;
+      }
+    }
+    if (matched_univ) break;
+  }
+}
+
+// ثانياً: إذا لم يتطابق المصدر، نبحث في متن النص عن اسم الجامعة أو كلماتها المفتاحية
+if (!matched_univ && raw_text) {
+  var lower_text = raw_text.toLowerCase();
+  for (var u2 = 0; u2 < univ_projects.length; u2++) {
+    var p2 = univ_projects[u2];
+    if (!p2.enabled) continue;
+    if (lower_text.indexOf(p2.name.toLowerCase()) !== -1) {
+      matched_univ = p2;
+      break;
+    }
+    for (var k = 0; k < (p2.keywords || []).length; k++) {
+      var kw = p2.keywords[k].toLowerCase();
+      if (kw.length >= 4 && lower_text.indexOf(kw) !== -1) {
+        matched_univ = p2;
+        break;
+      }
+    }
+    if (matched_univ) break;
+  }
+}
+
+// ثالثاً: إذا لم نجد تطابقاً صريحاً (مثل منشور مباشر أرسله المشرف)، نعتمد أول جامعة نشطة
+if (!matched_univ) {
+  for (var u3 = 0; u3 < univ_projects.length; u3++) {
+    if (univ_projects[u3].enabled) {
+      matched_univ = univ_projects[u3];
+      break;
+    }
+  }
+}
+if (!matched_univ && univ_projects.length > 0) {
+  matched_univ = univ_projects[0];
+}
+
+if (!matched_univ) {
+  Bot.sendMessage("⚠️ لا يوجد مشروع جامعة نشط في النظام! أضف جامعة أولاً عبر /add_university");
+  return;
+}
+
+// 🎯 قناة النشر الهدف المعزولة حصراً لهذه الجامعة (لا يتم النشر في أي قناة أخرى!)
+var target_channels = [matched_univ.target_channel];
+
+// وسم البيانات التعريفي الصارم (Source Metadata Tag)
+var source_metadata = {
+  source_origin: source_origin || "direct_admin",
+  destination_channel: matched_univ.target_channel,
+  university_name: matched_univ.name,
+  university_id: matched_univ.id,
+  timestamp: new Date().toISOString()
+};
+
+Bot.setProperty("pending_source_meta", source_metadata, "json");
+Bot.setProperty("pending_target_univ", matched_univ.name, "string");
+Bot.setProperty("pending_targets", target_channels, "json");
+
+// تنقية النص الأصلي من شوائب الويب
+var cleaned_raw_text = cleanWebAndTwitterGarbage(raw_text);
+
+// 8. إشعار المشرف
 if (is_private_chat) {
-  var display_src = source_origin ? ("من المصدر `" + source_origin + "`") : "المباشر";
-  Bot.sendMessage("📥 **تم استلام المنشور " + display_src + " بنجاح!**\n⚡ جاري المعالجة بالذكاء الاصطناعي (DeepSeek-V4.1-Flash) والنشر فوراً في: `" + target_channels.join("`، `") + "`...");
+  var src_display = source_origin ? ("من المصدر: `" + source_origin + "`") : "المباشر";
+  Bot.sendMessage("📥 **تم استلام المنشور " + src_display + " بنجاح!**\n" +
+    "🏛️ **الجامعة المستهدفة**: `" + matched_univ.name + "`\n" +
+    "📢 **قناة النشر الحصرية**: `" + matched_univ.target_channel + "`\n" +
+    "⚡ جاري المعالجة بالذكاء الاصطناعي بنظام العزل الصارم...");
 }
 
-// 8. كشف إعلانات المنافسين واستبدالها بإعلان خدمات المشرف @M_S_F_G
-var ad_keywords = [
-  "إعلان مدفوع", "حل واجبات", "بحوث تخرج", "خدمات طلابية", "مشاريع تخرج", "كتابة أبحاث", "إعلان ممول", "برعاية", "للتواصل تليجرام"
-];
-
+// 9. كشف إعلانات المنافسين واستبدالها بإعلان خدمات المشرف
+var ad_keywords = ["إعلان مدفوع", "حل واجبات", "بحوث تخرج", "خدمات طلابية", "مشاريع تخرج", "كتابة أبحاث", "إعلان ممول", "برعاية", "للتواصل تليجرام"];
 var is_ad = false;
 for (var i = 0; i < ad_keywords.length; i++) {
-  if (raw_text.indexOf(ad_keywords[i]) !== -1) {
+  if (cleaned_raw_text.indexOf(ad_keywords[i]) !== -1) {
     is_ad = true;
     break;
   }
@@ -285,116 +341,64 @@ if (is_ad) {
   var total_ads = Bot.getProperty("total_ads_replaced", 0) + 1;
   Bot.setProperty("total_ads_replaced", total_ads, "integer");
 
-  // نشر الإعلان البديل عبر HTML لمنع أخطاء @M_S_F_G
-  for (var k = 0; k < target_channels.length; k++) {
-    var ch_target = target_channels[k];
-    try {
-      if ((media_type === "photo" || media_type === "photo_doc") && media_file_id) {
-        var ad_cap = safe_ad.length > 1024 ? safe_ad.substring(0, 1020) + "..." : safe_ad;
-        try {
-          if (media_type === "photo_doc") {
-            Api.sendDocument({ chat_id: ch_target, document: media_file_id, caption: ad_cap, parse_mode: "HTML" });
-          } else {
-            Api.sendPhoto({ chat_id: ch_target, photo: media_file_id, caption: ad_cap, parse_mode: "HTML" });
-          }
-        } catch (photo_err) {
-          try {
-            if (media_type === "photo_doc") {
-              Api.sendDocument({ chat_id: ch_target, document: media_file_id });
-            } else {
-              Api.sendPhoto({ chat_id: ch_target, photo: media_file_id });
-            }
-            Api.sendMessage({ chat_id: ch_target, text: safe_ad, parse_mode: "HTML" });
-          } catch (photo_err2) {
-            Api.sendMessage({ chat_id: ch_target, text: safe_ad, parse_mode: "HTML" });
-          }
-        }
-      } else if (media_type === "video") {
-        Api.sendVideo({ chat_id: ch_target, video: media_file_id, caption: safe_ad, parse_mode: "HTML" });
-      } else if (media_type === "document") {
+  var ch_target = matched_univ.target_channel;
+  try {
+    if ((media_type === "photo" || media_type === "photo_doc") && media_file_id) {
+      if (media_type === "photo_doc") {
         Api.sendDocument({ chat_id: ch_target, document: media_file_id, caption: safe_ad, parse_mode: "HTML" });
       } else {
-        Api.sendMessage({ chat_id: ch_target, text: safe_ad, parse_mode: "HTML" });
+        Api.sendPhoto({ chat_id: ch_target, photo: media_file_id, caption: safe_ad, parse_mode: "HTML" });
       }
-    } catch (e) {
-      try {
-        Api.sendMessage({ chat_id: ch_target, text: custom_ad });
-      } catch (e2) {}
+    } else if (media_type === "video") {
+      Api.sendVideo({ chat_id: ch_target, video: media_file_id, caption: safe_ad, parse_mode: "HTML" });
+    } else {
+      Api.sendMessage({ chat_id: ch_target, text: safe_ad, parse_mode: "HTML" });
     }
+  } catch (err) {
+    try { Api.sendMessage({ chat_id: ch_target, text: custom_ad }); } catch (err2) {}
   }
 
-  Bot.sendMessage("🎯 **تم كشف إعلان منافس واستبداله تلقائياً!**\nتم نشر إعلان خدماتك في: `" + target_channels.join("`، `") + "`");
+  Bot.sendMessage("🎯 **تم كشف إعلان منافس واستبداله تلقائياً!**\nتم نشر إعلان خدماتك في قناة (" + matched_univ.name + "): `" + ch_target + "`");
   return;
 }
 
-// 9. حفظ بيانات المنشور والوسائط والقنوات المستهدفة
+// 10. حفظ تفاصيل المنشور للمعالجة بالذكاء الاصطناعي
 Bot.setProperty("pending_media_type", media_type || "text", "string");
 Bot.setProperty("pending_media_id", media_file_id || "", "string");
-Bot.setProperty("pending_raw_text", raw_text, "string");
-Bot.setProperty("pending_targets", target_channels, "json");
+Bot.setProperty("pending_raw_text", cleaned_raw_text, "string");
 
-// 10. فحص حالة الذكاء الاصطناعي والإعدادات الديناميكية
 var ai_enabled = Bot.getProperty("ai_enabled", true);
 var current_model = Bot.getProperty("ai_model", "DeepSeek-V4.1-Flash");
 var base_url = Bot.getProperty("ai_base_url", "https://api.hcnsec.cn/v1");
 var api_key = Bot.getProperty("ai_api_key", "sk-J2ky44F6VTDMkL8Q1GHL5sfmbeIpARVDayNuwMfxKI5zCdii");
 
-if (!ai_enabled || !raw_text) {
-  // نشر مباشر دون إعادة صياغة عبر HTML الآمن
-  var safe_raw = toSafeHtml(raw_text);
-  var safe_raw_caption = safe_raw ? (safe_raw.length > 1024 ? safe_raw.substring(0, 1020) + "..." : safe_raw) : "";
-  for (var p = 0; p < target_channels.length; p++) {
-    var dest = target_channels[p];
-    try {
-      if ((media_type === "photo" || media_type === "photo_doc") && media_file_id) {
-        try {
-          if (media_type === "photo_doc") {
-            var doc_p = { chat_id: dest, document: media_file_id };
-            if (safe_raw_caption) { doc_p.caption = safe_raw_caption; doc_p.parse_mode = "HTML"; }
-            Api.sendDocument(doc_p);
-          } else {
-            var pho_p = { chat_id: dest, photo: media_file_id };
-            if (safe_raw_caption) { pho_p.caption = safe_raw_caption; pho_p.parse_mode = "HTML"; }
-            Api.sendPhoto(pho_p);
-          }
-        } catch (photo_err1) {
-          try {
-            if (media_type === "photo_doc") {
-              Api.sendDocument({ chat_id: dest, document: media_file_id });
-            } else {
-              Api.sendPhoto({ chat_id: dest, photo: media_file_id });
-            }
-            if (safe_raw) Api.sendMessage({ chat_id: dest, text: safe_raw, parse_mode: "HTML" });
-          } catch (photo_err2) {
-            if (safe_raw) Api.sendMessage({ chat_id: dest, text: safe_raw, parse_mode: "HTML" });
-          }
-        }
-      } else if (media_type === "video") {
-        Api.sendVideo({ chat_id: dest, video: media_file_id, caption: safe_raw_caption, parse_mode: "HTML" });
-      } else if (media_type === "document") {
-        Api.sendDocument({ chat_id: dest, document: media_file_id, caption: safe_raw_caption, parse_mode: "HTML" });
-      } else {
-        if (safe_raw) Api.sendMessage({ chat_id: dest, text: safe_raw, parse_mode: "HTML" });
-      }
-    } catch (err) {
-      try {
-        if (raw_text) Api.sendMessage({ chat_id: dest, text: raw_text });
-      } catch (err2) {}
+if (!ai_enabled || !cleaned_raw_text) {
+  var safe_raw = toSafeHtml(cleaned_raw_text);
+  var dest = matched_univ.target_channel;
+  try {
+    if (media_file_id) {
+      Api.sendPhoto({ chat_id: dest, photo: media_file_id, caption: safe_raw, parse_mode: "HTML" });
+    } else {
+      Api.sendMessage({ chat_id: dest, text: safe_raw, parse_mode: "HTML" });
     }
-  }
-  var total = Bot.getProperty("total_processed", 0) + 1;
-  Bot.setProperty("total_processed", total, "integer");
-  Bot.sendMessage("⚡ **تم النشر المباشر** في: `" + target_channels.join("`، `") + "`");
+  } catch (err) {}
+  Bot.sendMessage("⚡ **تم النشر المباشر في قناة (" + matched_univ.name + ")**: `" + dest + "`");
   return;
 }
 
-// 11. صياغة الموجه الذكي وتنفيذ الاستدعاء لـ API الذكاء الاصطناعي (سرعة فائقة لمنع الـ Timeout)
-var system_prompt = "أنت محرر محتوى تعليمي وجامعي محترف. صِغ هذا الخبر بأسلوب إخباري راقٍ وأصيل مع عنوان بارز (📌) ونقاط واضحة للمواعيد والخطوات، مع حذف معرفات وروابط قنوات تيليجرام الأخرى فقط، مع الاحتفاظ التام بكافة روابط المواقع الخارجية وبوابات الجامعات والأنظمة الإلكترونية لتظل قابلة للفتح، وبدون مقدمات حوارية وبدون إيموجي رسومية مشوهة. اختم بدعوة للمشاركة وهاشتاجات مناسبة.";
-
-var endpoint_url = base_url.replace(/\/+$/, "") + "/chat/completions";
+// 11. صياغة الموجه الذكي مع التخصيص الحصري للجامعة المستهدفة
+var system_prompt = "أنت محرر محتوى أكاديمي ورسمي مخصص حصراً لطلاب: (" + matched_univ.name + ").\n" +
+  "صِغ هذا الخبر بأسلوب إخباري راقٍ ومميز وأصيل كأنك الناشر الأول:\n" +
+  "1. عنوان بارز يوضح موضوع الخبر والجامعة (📌)\n" +
+  "2. نقاط محددة وسهلة القراءة تبرز المواعيد والخطوات والشروط بدقة تامة\n" +
+  "3. احذف معرفات وروابط قنوات تيليجرام الترويجية السابقة، مع الاحتفاظ التام بكافة روابط البوابات والأنظمة والجامعات\n" +
+  "4. احذف نهائياً أي شوائب مثل &nbsp; أو X أو نقاط فارغة\n" +
+  "5. دعوة تفاعلية قصيرة للطلاب (💬)\n" +
+  "6. هاشتاجات الجامعة الرسمية (مثال: #" + matched_univ.name.replace(/\s+/g, "_") + " #أخبار_التعليم)\n" +
+  "قاعدة صارمة: إذا كان المنشور لا يمت بصلة لهذه الجامعة أو طلابها، رد بكلمة واحدة فقط: [IGNORED]";
 
 HTTP.post({
-  url: endpoint_url,
+  url: base_url.replace(/\/+$/, "") + "/chat/completions",
   headers: {
     "Authorization": "Bearer " + api_key,
     "Content-Type": "application/json"
@@ -403,10 +407,10 @@ HTTP.post({
     model: current_model,
     messages: [
       { role: "system", content: system_prompt },
-      { role: "user", content: raw_text }
+      { role: "user", content: cleaned_raw_text }
     ],
-    temperature: 0.25,
-    max_tokens: 280
+    temperature: 0.28,
+    max_tokens: 380
   },
   success: "/on_ai_post_success",
   error: "/on_ai_post_error",

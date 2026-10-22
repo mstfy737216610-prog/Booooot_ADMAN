@@ -1,6 +1,6 @@
 /*CMD
   command: /add_univ_step3
-  help: معالج إضافة جامعة - الخطوة 3 (استلام قنوات تيليجرام وتحديد حسابات تويتر/X)
+  help: معالج الربط الهرمي - الخطوة 3 من 5 (استلام قنوات التليجرام وتحديد حسابات تويتر/X المصدرة)
   need_reply: true
   auto_retry_time: 
   folder: 
@@ -10,7 +10,7 @@
 CMD*/
 
 if (!message || message.trim() === "/cancel") {
-  Bot.sendMessage("تم إلغاء عملية الإضافة بنجاح ✅");
+  Bot.sendMessage("تم إلغاء معالج الربط الهرمي بنجاح ✅");
   Bot.runCommand("/universities");
   return;
 }
@@ -30,12 +30,13 @@ if (tg_input.toLowerCase() !== "تخطي" && tg_input.toLowerCase() !== "skip") 
 
 Bot.setProperty("temp_univ_tg", tg_sources, "json");
 
-var prompt_step4 = "✅ **تم حفظ قنوات تيليجرام (" + tg_sources.length + ")**: " + (tg_sources.length > 0 ? tg_sources.join("، ") : "تم التخطي") + "\n\n" +
-  "🐦 **الخطوة 4 من 4: حسابات تويتر/X والمصادر الخارجية**:\n\n" +
-  "أرسل معرفات حسابات تويتر/X التابعة لهذه الجامعة (مفصولة بمسافة):\n" +
-  "📌 **مثال**: `@ksu_news @ksu_portal`\n\n" +
+var prompt_step4 = "✅ **تم حفظ قنوات التليجرام المصدرة (" + tg_sources.length + ")**: " + (tg_sources.length > 0 ? tg_sources.join("، ") : "تم التخطي") + "\n" +
+  "━━━━━━━━━━━━━━━━━━━\n\n" +
+  "🐦 **الخطوة 4 من 5: [ تحديد حسابات تويتر (X) المصدرة ]**:\n\n" +
+  "أرسل معرفات حسابات تويتر/X المصدرة التابعة لهذه الجامعة (مفصولة بمسافة أو فاصلة):\n" +
+  "📌 **مثال**: `@ksu_news @ksu_portal` أو `@aum_kuwait`\n\n" +
   "💡 *ملاحظة: يمكنك كتابة كلمة*: `تخطي`\n\n" +
-  "(أرسل المعرفات الآن، أو اكتب /cancel للإلغاء)";
+  "(أرسل المعرفات الآن، أو اكتب `تخطي`، أو اكتب /cancel للإلغاء)";
 
 Bot.sendMessage(prompt_step4);
 Bot.runCommand("/add_univ_step4");
