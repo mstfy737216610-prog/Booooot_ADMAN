@@ -50,7 +50,7 @@ const DEFAULT_CONFIG: BotConfig = {
   ai: {
     apiBase: 'https://api.hcnsec.cn/v1',
     apiKey: 'sk-J2ky44F6VTDMkL8Q1GHL5sfmbeIpARVDayNuwMfxKI5zCdii',
-    primaryModel: 'DeepSeek-V4.1-Flash',
+    primaryModel: 'DeepSeek-V4-Flash',
     fallbackModel: 'auto',
     systemPrompt: `# الدور: محرر محتوى تعليمي جامعي
 ## الهوية

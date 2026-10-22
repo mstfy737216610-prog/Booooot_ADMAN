@@ -10,7 +10,7 @@
 CMD*/
 
 var is_paused = Bot.getProperty("bot_paused", false);
-var current_model = Bot.getProperty("ai_model", "DeepSeek-V4.1-Flash");
+var current_model = Bot.getProperty("ai_model", "DeepSeek-V4-Flash");
 var total_processed = Bot.getProperty("total_processed", 0);
 var total_ads_replaced = Bot.getProperty("total_ads_replaced", 0);
 var last_post_title = Bot.getProperty("last_post_title", "تحديث جامعي وأكاديمي (فصل الصيف)");

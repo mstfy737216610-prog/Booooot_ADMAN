@@ -32,11 +32,10 @@ export interface AIModelOption {
 }
 
 export const AVAILABLE_AI_MODELS: AIModelOption[] = [
-  { id: 'DeepSeek-V4.1-Flash', name: 'DeepSeek-V4.1-Flash', desc: 'النموذج الأحدث والأسرع، فائق الدقة في صياغة المحتوى العربي والجامعي', recommended: true },
-  { id: 'DeepSeek-V4-Flash', name: 'DeepSeek-V4-Flash', desc: 'استجابة فائقة السرعة للأخبار والتنبيهات المستعجلة' },
+  { id: 'DeepSeek-V4-Flash', name: 'DeepSeek-V4-Flash (الأسرع - يمنع Timeout)', desc: 'استجابة فائقة السرعة للأخبار والتنبيهات، خفيف وسريع ويمنع أخطاء انتهاء المهلة', recommended: true },
+  { id: 'Qwen3.8-27B', name: 'Qwen3.8-27B', desc: 'فهم لغوي فائق للسياق العربي الأكاديمي والجامعي بدقة عالية' },
+  { id: 'DeepSeek-V4.1-Flash', name: 'DeepSeek-V4.1-Flash', desc: 'فائق الدقة في صياغة المحتوى العربي وتنسيق المنشورات الجامعية' },
   { id: 'DeepSeek-V4-Pro', name: 'DeepSeek-V4-Pro', desc: 'قوة استدلال وتلخيص عميقة للمنشورات الطويلة والقرارات الرسمية' },
-  { id: 'Qwen3.8-27B', name: 'Qwen3.8-27B', desc: 'فهم لغوي فائق للسياق العربي الأكاديمي' },
-  { id: 'Qwen3.8-Flash-Next', name: 'Qwen3.8-Flash-Next', desc: 'نموذج سريع ومتطور لمعالجة التغذيات الحية' },
   { id: 'glm-5.3', name: 'glm-5.3', desc: 'صياغة جذابة ومتقنة مع تنظيم العناوين والنقاط' },
   { id: 'MiniMax-M3.1-Flash', name: 'MiniMax-M3.1-Flash', desc: 'استخراج سريع للبيانات والمواعيد الهامة' },
 ];

@@ -15,7 +15,7 @@ var ADMIN_USER = "M_S_F_G";
 
 // جلب الحالة والخصائص المخزنة
 var is_paused = Bot.getProperty("bot_paused", false);
-var current_model = Bot.getProperty("ai_model", "DeepSeek-V4.1-Flash");
+var current_model = Bot.getProperty("ai_model", "DeepSeek-V4-Flash");
 var base_url = Bot.getProperty("ai_base_url", "https://api.hcnsec.cn/v1");
 var total_processed = Bot.getProperty("total_processed", 0);
 var mappings = Bot.getProperty("channel_mappings");

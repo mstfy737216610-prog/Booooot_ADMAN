@@ -24,7 +24,7 @@ if (!rephrased_text) {
 var media_type = Bot.getProperty("pending_media_type", "text");
 var media_file_id = Bot.getProperty("pending_media_id", "");
 var target_channels = Bot.getProperty("pending_targets", []);
-var current_model = Bot.getProperty("ai_model", "DeepSeek-V4.1-Flash");
+var current_model = Bot.getProperty("ai_model", "DeepSeek-V4-Flash");
 
 if (!target_channels || target_channels.length === 0) {
   var mappings = Bot.getProperty("channel_mappings", []);

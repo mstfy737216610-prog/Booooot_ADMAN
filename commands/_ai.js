@@ -9,7 +9,7 @@
   aliases: ⚙️ إعدادات الذكاء الاصطناعي, /model
 CMD*/
 
-var current_model = Bot.getProperty("ai_model", "DeepSeek-V4.1-Flash");
+var current_model = Bot.getProperty("ai_model", "DeepSeek-V4-Flash");
 var base_url = Bot.getProperty("ai_base_url", "https://api.hcnsec.cn/v1");
 var api_key = Bot.getProperty("ai_api_key", "sk-J2ky44F6VTDMkL8Q1GHL5sfmbeIpARVDayNuwMfxKI5zCdii");
 var ai_enabled = Bot.getProperty("ai_enabled", true);

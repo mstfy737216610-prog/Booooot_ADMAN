@@ -38,7 +38,9 @@ if (!raw_text && !media_file_id) {
 
 // 3. تحديد القناة المصدر إذا كانت الرسالة محولة من قناة عامة أو خاصة
 var source_origin = null;
-if (request && request.forward_from_chat) {
+if (request && request.chat && (request.chat.type === "channel" || request.chat.type === "supergroup")) {
+  source_origin = request.chat.username ? ("@" + request.chat.username) : ("" + request.chat.id);
+} else if (request && request.forward_from_chat) {
   source_origin = request.forward_from_chat.username ? ("@" + request.forward_from_chat.username) : ("" + request.forward_from_chat.id);
 }
 
@@ -55,12 +57,23 @@ for (var i = 0; i < ad_keywords.length; i++) {
   }
 }
 
-var mappings = Bot.getProperty("channel_mappings", []);
+var mappings = Bot.getProperty("channel_mappings");
+if (!mappings || !Array.isArray(mappings) || mappings.length === 0) {
+  mappings = [
+    {
+      target: "@MyUniversityChannel",
+      sources: ["@KSU_News", "@moe_gov_sa"],
+      enabled: true,
+      name: "قناة النشر الرسمية (أ)"
+    }
+  ];
+  Bot.setProperty("channel_mappings", mappings, "json");
+}
 
 // دالة العثور على القنوات المستهدفة لهذا المصدر
 function getTargetChannels(source) {
   var targets = [];
-  if (!mappings || mappings.length === 0) return targets;
+  if (!mappings || mappings.length === 0) return ["@MyUniversityChannel"];
   
   for (var m = 0; m < mappings.length; m++) {
     var item = mappings[m];
@@ -92,6 +105,9 @@ function getTargetChannels(source) {
         targets.push(mappings[d].target);
       }
     }
+  }
+  if (targets.length === 0) {
+    targets.push("@MyUniversityChannel");
   }
   return targets;
 }
@@ -138,7 +154,7 @@ Bot.setProperty("pending_targets", target_channels, "json");
 
 // 6. فحص حالة الذكاء الاصطناعي والإعدادات الديناميكية
 var ai_enabled = Bot.getProperty("ai_enabled", true);
-var current_model = Bot.getProperty("ai_model", "DeepSeek-V4.1-Flash");
+var current_model = Bot.getProperty("ai_model", "DeepSeek-V4-Flash");
 var base_url = Bot.getProperty("ai_base_url", "https://api.hcnsec.cn/v1");
 var api_key = Bot.getProperty("ai_api_key", "sk-J2ky44F6VTDMkL8Q1GHL5sfmbeIpARVDayNuwMfxKI5zCdii");
 
@@ -185,8 +201,9 @@ HTTP.post({
       { role: "user", content: raw_text }
     ],
     temperature: 0.35,
-    max_tokens: 900
+    max_tokens: 450
   },
   success: "/on_ai_post_success",
-  error: "/on_ai_post_error"
+  error: "/on_ai_post_error",
+  background: true
 });

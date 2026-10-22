@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { BotConfig, ForwardRule, SourceItem } from '../types/index.ts';
 import {
   generateTelethonUserBotCode,
+  generatePyrogramFSMUserBotCode,
   generateStringSessionScript,
 } from '../utils/userbotEngine.ts';
 import {
@@ -15,6 +16,8 @@ import {
   Brain,
   Layers,
   Database,
+  Bot,
+  Sparkles,
 } from 'lucide-react';
 
 interface Props {
@@ -24,9 +27,10 @@ interface Props {
 }
 
 export const PythonScriptViewer: React.FC<Props> = ({ config, sources }) => {
-  const [activeTab, setActiveTab] = useState<'userbot' | 'main' | 'session_gen' | 'sources' | 'state' | 'env' | 'requirements'>('userbot');
+  const [activeTab, setActiveTab] = useState<'pyrogram' | 'userbot' | 'main' | 'session_gen' | 'sources' | 'state' | 'env' | 'requirements'>('pyrogram');
   const [copied, setCopied] = useState(false);
 
+  const pyrogramScript = generatePyrogramFSMUserBotCode(config, sources);
   const userbotScript = generateTelethonUserBotCode(config, sources);
   const sessionGenScript = generateStringSessionScript();
 
@@ -93,16 +97,24 @@ FALLBACK_MODEL="${config.ai.fallbackModel}"
 TARGET_CHANNELS="${config.targetChannels.join(',')}"
 `;
 
-  const requirementsContent = `# Requirements for Telegram Auto-Publisher UserBot
-telethon>=1.36.0
-requests>=2.31.0
+  const requirementsContent = `# Requirements for Telegram Auto-Publisher Bot & UserBot
+pyrogram>=2.0.106
+tgcrypto>=1.2.5
 aiohttp>=3.9.0
+requests>=2.31.0
 python-dotenv>=1.0.0
 feedparser>=6.0.10
+telethon>=1.36.0
 `;
 
   const getActiveCode = () => {
     switch (activeTab) {
+      case 'pyrogram':
+        return {
+          filename: 'pyrogram_publisher_bot.py',
+          code: pyrogramScript,
+          lang: 'python',
+        };
       case 'userbot':
         return {
           filename: 'userbot_publisher.py',
@@ -201,6 +213,18 @@ feedparser>=6.0.10
 
       {/* Tabs */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
+        <button
+          onClick={() => setActiveTab('pyrogram')}
+          className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-semibold transition-all shrink-0 ${
+            activeTab === 'pyrogram'
+              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
+              : 'bg-slate-950/60 text-slate-400 hover:text-white border border-slate-800'
+          }`}
+        >
+          <Sparkles className="w-4 h-4 text-emerald-400" />
+          <span className="font-bold">✨ محرك Pyrogram + FSM (الأحدث)</span>
+        </button>
+
         <button
           onClick={() => setActiveTab('userbot')}
           className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-semibold transition-all shrink-0 ${

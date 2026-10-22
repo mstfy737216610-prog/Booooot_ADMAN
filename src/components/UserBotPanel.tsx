@@ -6,6 +6,7 @@ import {
   validateStringSession,
   getBotVsUserBotComparison,
   generateTelethonUserBotCode,
+  generatePyrogramFSMUserBotCode,
   generateStringSessionScript,
 } from '../utils/userbotEngine.ts';
 import {
@@ -28,6 +29,8 @@ import {
   FileCode,
   Sparkles,
   Info,
+  Radio,
+  Lock,
 } from 'lucide-react';
 
 interface Props {
@@ -39,7 +42,12 @@ interface Props {
 export const UserBotPanel: React.FC<Props> = ({ config, onChange, sources }) => {
   const [showSecretHash, setShowSecretHash] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [activeSection, setActiveSection] = useState<'why' | 'credentials' | 'termux' | 'session_helper' | 'code'>('termux');
+  const [activeSection, setActiveSection] = useState<'pyrogram_fsm' | 'why' | 'credentials' | 'termux' | 'session_helper' | 'code'>('pyrogram_fsm');
+  const [simPhone, setSimPhone] = useState('+965');
+  const [simCode, setSimCode] = useState('');
+  const [simPassword, setSimPassword] = useState('');
+  const [simStep, setSimStep] = useState<'phone' | 'code' | '2fa' | 'success'>('phone');
+  const [simLoading, setSimLoading] = useState(false);
 
   const comparison = getBotVsUserBotComparison();
   const apiIdValidation = validateApiId(config.telethon.apiId || '');
@@ -87,13 +95,29 @@ export const UserBotPanel: React.FC<Props> = ({ config, onChange, sources }) => 
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={() => {
+              const code = generatePyrogramFSMUserBotCode(config, sources);
+              const blob = new Blob([code], { type: 'text/x-python;charset=utf-8' });
+              const url = URL.createObjectURL(blob);
+              const link = document.createElement('a');
+              link.href = url;
+              link.download = 'pyrogram_publisher_bot.py';
+              link.click();
+              URL.revokeObjectURL(url);
+            }}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-emerald-600/20 transition-all cursor-pointer"
+          >
+            <Sparkles className="w-4 h-4" />
+            <span>تحميل محرك Pyrogram + FSM الحصري</span>
+          </button>
           <button
             onClick={handleDownloadCode}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-purple-600/20 transition-all cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-xl border border-slate-700 transition-all cursor-pointer"
           >
-            <Download className="w-4 h-4" />
-            <span>تحميل سكريبت اليوزربوت (userbot_publisher.py)</span>
+            <Download className="w-3.5 h-3.5" />
+            <span>Telethon</span>
           </button>
         </div>
       </div>
@@ -101,16 +125,28 @@ export const UserBotPanel: React.FC<Props> = ({ config, onChange, sources }) => 
       {/* Navigation Sub-Tabs */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs border-b border-slate-800">
         <button
+          onClick={() => setActiveSection('pyrogram_fsm')}
+          className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-bold transition-all shrink-0 ${
+            activeSection === 'pyrogram_fsm'
+              ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md'
+              : 'bg-slate-950/70 text-emerald-400 hover:text-white border border-emerald-500/30'
+          }`}
+        >
+          <Sparkles className="w-3.5 h-3.5 text-emerald-300" />
+          <span className="font-extrabold">✨ نظام Pyrogram + FSM (تسجيل الدخول من الشات)</span>
+          <span className="px-1.5 py-0.2 text-[10px] bg-emerald-500/30 text-emerald-200 rounded font-mono">جديد</span>
+        </button>
+
+        <button
           onClick={() => setActiveSection('termux')}
           className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-bold transition-all shrink-0 ${
             activeSection === 'termux'
               ? 'bg-emerald-600 text-white shadow-md'
-              : 'bg-slate-950/70 text-emerald-400 hover:text-white border border-emerald-500/30'
+              : 'bg-slate-950/70 text-slate-400 hover:text-white border border-slate-800'
           }`}
         >
-          <Terminal className="w-3.5 h-3.5 text-emerald-300" />
-          <span className="font-extrabold">التشغيل من تطبيق Termux (أندرويد) 📱</span>
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <Terminal className="w-3.5 h-3.5 text-emerald-400" />
+          <span>تشغيل Termux (أندرويد) 📱</span>
         </button>
 
         <button
@@ -161,6 +197,316 @@ export const UserBotPanel: React.FC<Props> = ({ config, onChange, sources }) => 
           <span>كود البايثون الجاهز (Telethon + AI)</span>
         </button>
       </div>
+
+      {/* 0. PYROGRAM FSM IN-TELEGRAM AUTH & SCRAPING ENGINE */}
+      {activeSection === 'pyrogram_fsm' && (
+        <div className="space-y-6 animate-fadeIn">
+          {/* Main Hero Header */}
+          <div className="p-5 bg-gradient-to-r from-emerald-950/60 via-slate-900 to-teal-950/60 border border-emerald-500/40 rounded-2xl space-y-4 shadow-xl relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
+            
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <div className="p-3 bg-emerald-500/20 text-emerald-300 rounded-2xl shrink-0 border border-emerald-500/30">
+                  <Sparkles className="w-6 h-6 text-emerald-400" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-base font-extrabold text-white">
+                      محرك Pyrogram V2 الاحترافي بنظام الحالات (In-Telegram FSM Auth & Scraper)
+                    </h3>
+                    <span className="px-2.5 py-0.5 text-xs font-bold bg-emerald-500/30 text-emerald-200 border border-emerald-400/30 rounded-full">
+                      تحكم كامل 100% من داخل البوت
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-300 mt-1 leading-relaxed max-w-2xl">
+                    الحل الجذري والنهائي: تسجيل دخول حقيقي بالهاتف والكود الرسمي وكلمة مرور 2FA من داخل شات تيليجرام نفسه، مع يوزربوت يسحب المنشورات والميديا الكاملة (صور، فيديو، مستندات PDF، ألبومات) فوراً!
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={() => {
+                    const code = generatePyrogramFSMUserBotCode(config, sources);
+                    const blob = new Blob([code], { type: 'text/x-python;charset=utf-8' });
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = 'pyrogram_publisher_bot.py';
+                    link.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-emerald-600/30 transition-all cursor-pointer"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>تحميل pyrogram_publisher_bot.py</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Key Pillars */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+              <div className="p-3 bg-slate-950/70 border border-slate-800 rounded-xl space-y-1">
+                <div className="flex items-center gap-2 text-emerald-400 text-xs font-bold">
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>تسجيل دخول رسمي مباشر</span>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  كود التحقق يرسله سيرفر تيليجرام الرسمي لتطبيقك، وتدخل الكود و 2FA بالشات مباشرة.
+                </p>
+              </div>
+
+              <div className="p-3 bg-slate-950/70 border border-slate-800 rounded-xl space-y-1">
+                <div className="flex items-center gap-2 text-sky-400 text-xs font-bold">
+                  <Layers className="w-4 h-4" />
+                  <span>سحب الميديا بنقاوة كاملة</span>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  سحب فوري لملفات PDF، الفيديوهات، الصور الأصلية، والألبومات دون أي تشويه أو ضغط.
+                </p>
+              </div>
+
+              <div className="p-3 bg-slate-950/70 border border-slate-800 rounded-xl space-y-1">
+                <div className="flex items-center gap-2 text-amber-400 text-xs font-bold">
+                  <Zap className="w-4 h-4" />
+                  <span>حل مشكلة URL Timeout</span>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  اعتماد DeepSeek-V4-Flash السريع جداً مع مهلة آمنة ومنسق محلي فوري لمنع أي بطء.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Interactive Simulation of In-Telegram FSM Auth Flow */}
+          <div className="p-5 bg-slate-950 border border-slate-800 rounded-2xl space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <Radio className="w-4 h-4 text-emerald-400 animate-pulse" />
+                <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+                  محاكاة تفاعلية: تجربة تسجيل الدخول الفوري (FSM Login Simulation)
+                </h4>
+              </div>
+              <span className="text-[11px] text-emerald-400 font-mono bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                Pyrogram In-Memory Client
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+              {/* Left Column: Chat Simulation */}
+              <div className="lg:col-span-7 bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3 font-sans text-xs">
+                <div className="flex items-center justify-between text-slate-400 pb-2 border-b border-slate-800">
+                  <span className="font-semibold text-slate-300">💬 محادثة المشرف مع البوت في تيليجرام</span>
+                  <span className="text-[10px]">الآدمن: @{config.adminUsername}</span>
+                </div>
+
+                {/* Step 1: User starts */}
+                <div className="flex flex-col gap-2.5 max-h-[320px] overflow-y-auto p-1">
+                  <div className="self-end bg-sky-600 text-white p-2.5 rounded-2xl rounded-tr-none max-w-[80%]">
+                    /start
+                  </div>
+                  <div className="self-start bg-slate-800 border border-slate-700 text-slate-200 p-3 rounded-2xl rounded-tl-none max-w-[90%] space-y-2">
+                    <p className="font-bold text-white">👋 مرحباً بك يا مشرفنا @{config.adminUsername}!</p>
+                    <p className="text-[11px] text-slate-300">اختر من اللوحة التفاعلية أدناه لبدء الربط أو إدارة القنوات:</p>
+                    <div className="grid grid-cols-2 gap-1.5 pt-1">
+                      <button className="px-2 py-1.5 bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 rounded-lg font-bold text-[11px] text-center">
+                        🔐 تسجيل الدخول (FSM Login)
+                      </button>
+                      <button className="px-2 py-1.5 bg-slate-700/60 text-slate-300 border border-slate-600/30 rounded-lg text-[11px] text-center">
+                        📊 الإحصائيات
+                      </button>
+                    </div>
+                  </div>
+
+                  {simStep !== 'phone' && (
+                    <>
+                      <div className="self-end bg-sky-600 text-white p-2 rounded-xl rounded-tr-none">
+                        {simPhone}
+                      </div>
+                      <div className="self-start bg-slate-800 border border-emerald-500/30 text-slate-200 p-2.5 rounded-2xl rounded-tl-none max-w-[90%] space-y-1">
+                        <p className="font-bold text-emerald-300">📩 تم إرسال كود التحقق الرسمي من تيليجرام!</p>
+                        <p className="text-[11px] text-slate-300">
+                          افتح تطبيق تيليجرام، ستجد رسالة رسمية من Telegram تحتوي كود الدخول. أرسله هنا:
+                        </p>
+                      </div>
+                    </>
+                  )}
+
+                  {(simStep === '2fa' || simStep === 'success') && (
+                    <>
+                      <div className="self-end bg-sky-600 text-white p-2 rounded-xl rounded-tr-none">
+                        {simCode || '84920'}
+                      </div>
+                      <div className="self-start bg-slate-800 border border-amber-500/30 text-slate-200 p-2.5 rounded-2xl rounded-tl-none max-w-[90%] space-y-1">
+                        <p className="font-bold text-amber-300">🔐 الحساب محمي بالتحقق بخطوتين (2FA)</p>
+                        <p className="text-[11px] text-slate-300">أدخل كلمة المرور السحابية لحسابك لإكمال الجلسة:</p>
+                      </div>
+                    </>
+                  )}
+
+                  {simStep === 'success' && (
+                    <>
+                      <div className="self-end bg-sky-600 text-white p-2 rounded-xl rounded-tr-none">
+                        ••••••••
+                      </div>
+                      <div className="self-start bg-emerald-950/60 border border-emerald-500/50 text-emerald-200 p-3 rounded-2xl rounded-tl-none max-w-[90%] space-y-1.5">
+                        <p className="font-bold text-white flex items-center gap-1.5">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                          <span>🎉 تم تفعيل اليوزربوت وجلسة النشر بنجاح!</span>
+                        </p>
+                        <p className="text-[11px] text-emerald-300 leading-relaxed">
+                          تم توليد وحفظ كود StringSession تلقائياً. المحرك يراقب الآن القنوات المصدرية وينشر الوسائط والنصوص الذكية في قنواتك فوراً!
+                        </p>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Right Column: Interactive Test Controls */}
+              <div className="lg:col-span-5 bg-slate-900/60 border border-slate-800 rounded-xl p-4 space-y-3.5 flex flex-col justify-between">
+                <div>
+                  <h5 className="text-xs font-bold text-slate-200 flex items-center gap-1.5 pb-2 border-b border-slate-800">
+                    <Terminal className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>جرّب دورة الـ FSM الآن:</span>
+                  </h5>
+
+                  {simStep === 'phone' && (
+                    <div className="space-y-3 pt-3">
+                      <label className="text-[11px] text-slate-300 block font-semibold">
+                        1. أدخل رقم هاتفك الدولي:
+                      </label>
+                      <input
+                        type="text"
+                        value={simPhone}
+                        onChange={(e) => setSimPhone(e.target.value)}
+                        placeholder="+965xxxxxxx"
+                        className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white font-mono text-xs focus:border-emerald-500 focus:outline-none"
+                        dir="ltr"
+                      />
+                      <button
+                        onClick={() => {
+                          setSimLoading(true);
+                          setTimeout(() => {
+                            setSimLoading(false);
+                            setSimStep('code');
+                          }, 900);
+                        }}
+                        disabled={simLoading || !simPhone || simPhone.length < 8}
+                        className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                      >
+                        {simLoading ? <span>جاري الاتصال بسيرفر تيليجرام...</span> : <span>إرسال طلب كود التحقق 📲</span>}
+                      </button>
+                    </div>
+                  )}
+
+                  {simStep === 'code' && (
+                    <div className="space-y-3 pt-3">
+                      <label className="text-[11px] text-slate-300 block font-semibold">
+                        2. أدخل كود التحقق من تيليجرام:
+                      </label>
+                      <input
+                        type="text"
+                        value={simCode}
+                        onChange={(e) => setSimCode(e.target.value)}
+                        placeholder="12345"
+                        className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white font-mono text-xs focus:border-emerald-500 focus:outline-none"
+                        dir="ltr"
+                      />
+                      <button
+                        onClick={() => {
+                          setSimLoading(true);
+                          setTimeout(() => {
+                            setSimLoading(false);
+                            setSimStep('2fa');
+                          }, 800);
+                        }}
+                        disabled={simLoading || !simCode}
+                        className="w-full py-2 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white text-xs font-bold rounded-xl transition-all cursor-pointer"
+                      >
+                        {simLoading ? <span>جاري التحقق من الكود...</span> : <span>تأكيد الكود (Sign In) 🔑</span>}
+                      </button>
+                    </div>
+                  )}
+
+                  {simStep === '2fa' && (
+                    <div className="space-y-3 pt-3">
+                      <label className="text-[11px] text-slate-300 block font-semibold flex items-center gap-1">
+                        <Lock className="w-3 h-3 text-amber-400" />
+                        <span>3. أدخل كلمة مرور التحقق بخطوتين (2FA Password):</span>
+                      </label>
+                      <input
+                        type="password"
+                        value={simPassword}
+                        onChange={(e) => setSimPassword(e.target.value)}
+                        placeholder="كلمة المرور السحابية..."
+                        className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white text-xs focus:border-emerald-500 focus:outline-none"
+                      />
+                      <button
+                        onClick={() => {
+                          setSimLoading(true);
+                          setTimeout(() => {
+                            setSimLoading(false);
+                            setSimStep('success');
+                          }, 900);
+                        }}
+                        disabled={simLoading || !simPassword}
+                        className="w-full py-2 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white text-xs font-bold rounded-xl transition-all cursor-pointer"
+                      >
+                        {simLoading ? <span>جاري فحص 2FA وتوليد الجلسة...</span> : <span>إكمال الربط وتوليد الجلسة ✨</span>}
+                      </button>
+                    </div>
+                  )}
+
+                  {simStep === 'success' && (
+                    <div className="space-y-3 pt-3 text-center">
+                      <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-300 text-xs font-semibold">
+                        تمت محاكاة تسجيل الدخول بنجاح! هذا هو بالضبط ما يحصل في شات التيليجرام الحقيقي عند تشغيل `python3 pyrogram_publisher_bot.py`.
+                      </div>
+                      <button
+                        onClick={() => {
+                          setSimStep('phone');
+                          setSimCode('');
+                          setSimPassword('');
+                        }}
+                        className="text-xs text-slate-400 hover:text-white underline cursor-pointer"
+                      >
+                        🔄 إعادة التجربة من جديد
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Quick Info */}
+                <div className="p-2.5 bg-slate-950 rounded-lg border border-slate-800 text-[11px] text-slate-400 leading-relaxed">
+                  💡 الكود الحقيقي يستخدم <code className="text-emerald-300">Client(in_memory=True)</code> لتوليد جلسة مشفرة بدون حفظ أي ملفات حساسة على القرص.
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Quick Terminal Run Command */}
+          <div className="p-4 bg-slate-950 rounded-xl border border-slate-800 space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-emerald-300 flex items-center gap-1.5">
+                <Terminal className="w-4 h-4 text-emerald-400" />
+                <span>أمر التشغيل المباشر لمحرك Pyrogram على سيرفرك أو جهازك:</span>
+              </label>
+              <button
+                onClick={() => handleCopy('pip install pyrogram tgcrypto aiohttp requests python-dotenv && python3 pyrogram_publisher_bot.py', 'pyrogram_cmd')}
+                className="flex items-center gap-1 px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+              >
+                {copiedId === 'pyrogram_cmd' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{copiedId === 'pyrogram_cmd' ? 'تم النسخ!' : 'نسخ الأمر'}</span>
+              </button>
+            </div>
+            <pre className="p-3 bg-slate-900 border border-slate-800 rounded-lg text-emerald-400 font-mono text-xs overflow-x-auto text-left" dir="ltr">
+              <code>pip install pyrogram tgcrypto aiohttp requests python-dotenv && python3 pyrogram_publisher_bot.py</code>
+            </pre>
+          </div>
+        </div>
+      )}
 
       {/* 0. TERMUX SECTION: How to run on Android Termux */}
       {activeSection === 'termux' && (

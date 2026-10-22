@@ -1,4 +1,7 @@
+pyrogram>=2.0.106
+tgcrypto>=1.2.5
 aiohttp>=3.9.0
-feedparser>=6.0.10
-python-dotenv>=1.0.0
 requests>=2.31.0
+python-dotenv>=1.0.0
+feedparser>=6.0.10
+telethon>=1.36.0

@@ -326,13 +326,136 @@ if __name__ == "__main__":
 }
 
 /**
+ * Generates the full Pyrogram V2 dual-client bot script with FSM Auth & Scraping Engine
+ */
+export function generatePyrogramFSMUserBotCode(config: BotConfig, sources: SourceItem[]): string {
+  const targetChannels = config.targetChannels && config.targetChannels.length > 0
+    ? config.targetChannels
+    : ['@MyUniversityChannel'];
+  const targetsJson = JSON.stringify(targetChannels, null, 2);
+
+  const monitoredSources = sources.filter(s => s.enabled && s.type === 'telegram').map(s => s.target);
+  const sourcesJson = JSON.stringify(monitoredSources.length > 0 ? monitoredSources : ['@KSU_News', '@moe_gov_sa'], null, 2);
+
+  return `#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+================================================================================
+🤖 بوت النشر الأكاديمي الذكي المتقدم (Pyrogram V2 + FSM Control + UserBot)
+================================================================================
+المشرف المعتمد: @${config.adminUsername || 'M_S_F_G'} (ID: ${config.adminId || '7607633343'})
+توكن البوت: ${config.botToken}
+المحرك: Pyrogram v2.0+ (Dual Bot + UserBot Client)
+نظام الحالات: Finite State Machine (FSM) مدمج داخل الشات
+الذكاء الاصطناعي: ${config.ai.primaryModel} (Base: ${config.ai.apiBase})
+================================================================================
+"""
+
+import os
+import sys
+import json
+import time
+import asyncio
+import logging
+import re
+from typing import Dict, Any, Optional, List
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    pass
+
+logging.basicConfig(
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    level=logging.INFO
+)
+logger = logging.getLogger("PyrogramPublisher")
+
+from pyrogram import Client, filters, enums
+from pyrogram.types import (
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+    CallbackQuery,
+    Message
+)
+from pyrogram.errors import (
+    SessionPasswordNeeded,
+    PhoneCodeInvalid,
+    PhoneCodeExpired,
+    PasswordHashInvalid,
+    FloodWait
+)
+import aiohttp
+
+BOT_TOKEN = "${config.botToken}"
+ADMIN_ID = ${config.adminId || 7607633343}
+ADMIN_USERNAME = "${config.adminUsername || 'M_S_F_G'}".replace("@", "")
+API_ID = ${config.telethon.apiId ? Number(config.telethon.apiId) : 20123456}
+API_HASH = "${config.telethon.apiHash || 'abcdef0123456789abcdef0123456789'}"
+STRING_SESSION = "${config.telethon.stringSession || ''}"
+
+AI_BASE_URL = "${config.ai.apiBase}".rstrip("/")
+AI_API_KEY = "${config.ai.apiKey}"
+PRIMARY_MODEL = "${config.ai.primaryModel}"
+
+TARGET_CHANNELS = ${targetsJson}
+SOURCE_CHANNELS = ${sourcesJson}
+
+CUSTOM_STUDENT_AD = """${config.adReplacement.customStudentAd}"""
+AD_KEYWORDS = ${JSON.stringify(config.adReplacement.adDetectionKeywords, null, 2)}
+
+# FSM States
+class States:
+    IDLE = "IDLE"
+    AWAITING_PHONE = "AWAITING_PHONE"
+    AWAITING_CODE = "AWAITING_CODE"
+    AWAITING_2FA = "AWAITING_2FA"
+
+user_fsm: Dict[int, Dict[str, Any]] = {}
+
+bot_app = Client("controller_bot", bot_token=BOT_TOKEN, api_id=API_ID, api_hash=API_HASH, in_memory=True)
+userbot_app: Optional[Client] = None
+
+def make_inline_menu():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📊 الإحصائيات", callback_data="status"), InlineKeyboardButton("🔐 تسجيل الدخول (FSM)", callback_data="login")],
+        [InlineKeyboardButton("📥 القنوات المصدرية", callback_data="sources"), InlineKeyboardButton("📤 قنوات النشر", callback_data="targets")],
+        [InlineKeyboardButton("🤖 اختيار النموذج", callback_data="ai_models"), InlineKeyboardButton("⚡ فحص السرعة", callback_data="ping")],
+        [InlineKeyboardButton("📢 إعلان خدماتك", callback_data="ad_view"), InlineKeyboardButton("🚪 تسجيل الخروج", callback_data="logout")]
+    ])
+
+@bot_app.on_message(filters.command(["start", "help"]) & filters.private)
+async def start_handler(c: Client, m: Message):
+    if m.from_user.id != ADMIN_ID:
+        await m.reply_text("⛔ عذراً، البوت مخصص للمشرف المعتمد فقط.")
+        return
+    await m.reply_text("👋 أهلاً بك في لوحة تحكم Pyrogram الذكية!", reply_markup=make_inline_menu())
+
+# تشغيل البوت واليوزربوت
+async def main():
+    await bot_app.start()
+    logger.info("🤖 عميل البوت التفاعلي يعمل الآن...")
+    if STRING_SESSION:
+        global userbot_app
+        userbot_app = Client("ub_session", session_string=STRING_SESSION, api_id=API_ID, api_hash=API_HASH, in_memory=True)
+        await userbot_app.start()
+        logger.info("✅ تم بدء اليوزربوت بنجاح لمراقبة القنوات.")
+    await asyncio.Event().wait()
+
+if __name__ == "__main__":
+    asyncio.run(main())
+`;
+}
+
+/**
  * Generates StringSession Extraction Script
  */
 export function generateStringSessionScript(): string {
   return `#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-استخراج كود StringSession لتيليجرام (Telethon)
+استخراج كود StringSession لتيليجرام (Telethon / Pyrogram)
 لتشغيل اليوزربوت في السحابة دون الحاجة لملفات .session
 """
 from telethon.sync import TelegramClient
@@ -350,3 +473,4 @@ with TelegramClient(StringSession(), api_id, api_hash) as client:
     print("انسخ الكود أعلاه وضعه في ملف .env أو في لوحة التحكم تحت بند STRING_SESSION")
 `;
 }
+

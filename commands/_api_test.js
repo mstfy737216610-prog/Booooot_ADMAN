@@ -9,7 +9,7 @@
   aliases: فحص الاتصال
 CMD*/
 
-var current_model = Bot.getProperty("ai_model", "DeepSeek-V4.1-Flash");
+var current_model = Bot.getProperty("ai_model", "DeepSeek-V4-Flash");
 Bot.sendMessage("⏳ جاري إرسال اختبار فوري إلى خادم الذكاء الاصطناعي بنموذج `" + current_model + "`...");
 
 var t_start = Date.now();
