@@ -27,15 +27,19 @@ var text = "🧠 **إعدادات الذكاء الاصطناعي التفاعل
 
 var inline_keyboard = [
   [
-    { title: (current_model == "DeepSeek-V4-Flash" ? "✅ " : "") + "⚡ DeepSeek-V4-Flash (الأسرع والموصى به)", command: "/set_model DeepSeek-V4-Flash" }
+    { title: (current_model == "auto" ? "✅ " : "") + "🤖 auto (النموذج التلقائي - الأسرع تفادياً للمهلة)", command: "/set_model auto" }
   ],
   [
-    { title: (current_model == "DeepSeek-V4.1-Flash" ? "✅ " : "") + "🚀 DeepSeek-V4.1-Flash", command: "/set_model DeepSeek-V4.1-Flash" },
-    { title: (current_model == "Qwen3.8-27B" ? "✅ " : "") + "🧠 Qwen3.8-27B", command: "/set_model Qwen3.8-27B" }
+    { title: (current_model == "DeepSeek-V4-Flash" ? "✅ " : "") + "⚡ DeepSeek-V4-Flash", command: "/set_model DeepSeek-V4-Flash" },
+    { title: (current_model == "DeepSeek-V4.1-Flash" ? "✅ " : "") + "🚀 DeepSeek-V4.1-Flash", command: "/set_model DeepSeek-V4.1-Flash" }
   ],
   [
-    { title: (current_model == "glm-5.3" ? "✅ " : "") + "🌐 glm-5.3", command: "/set_model glm-5.3" },
-    { title: (current_model == "MiniMax-M3.1-Flash" ? "✅ " : "") + "💫 MiniMax-M3.1-Flash", command: "/set_model MiniMax-M3.1-Flash" }
+    { title: (current_model == "Qwen3.8-27B" ? "✅ " : "") + "🧠 Qwen3.8-27B", command: "/set_model Qwen3.8-27B" },
+    { title: (current_model == "glm-5.3" ? "✅ " : "") + "🌐 glm-5.3", command: "/set_model glm-5.3" }
+  ],
+  [
+    { title: "💬 محادثة الذكاء والبحث المباشر", command: "/chat" },
+    { title: "📝 تعليمات الصياغة والهاشتاجات", command: "/instructions" }
   ],
   [
     { title: "🌐 تعديل الـ Base URL", command: "/set_base_url" },

@@ -29,35 +29,91 @@ if (!target_channels || target_channels.length === 0) {
   target_channels = [saved_single || "@jhdhhdcj"];
 }
 
-// 2. تنظيف وتنسيق أكاديمي محلي فوري فائق السرعة (Zero-Timeout Guarantee)
+// 2. تنظيف وهندسة محتوى أكاديمي فائق القوة والدقة (High-Impact Academic Synthesizer)
 var cleaned = raw_text.replace(/@[a-zA-Z0-9_]+/g, "");
 cleaned = cleaned.replace(/https?:\/\/t\.me\/[^\s]+/g, "");
+cleaned = cleaned.replace(/(وفقاً لـ?|بحسب|نقلاً عن|المصدر:|قناة|حساب)\s+[^\s\n]+/g, "");
+cleaned = cleaned.replace(/لا تنسوا الاشتراك[^\n.]*/g, "");
+cleaned = cleaned.replace(/تابعونا على[^\n.]*/g, "");
+
 var lines = cleaned.split("\n");
 var valid_lines = [];
 for (var k = 0; k < lines.length; k++) {
   var l = lines[k].trim();
-  if (l && l.indexOf("http") !== 0) {
+  if (l && l.indexOf("http") !== 0 && l.length > 2) {
     valid_lines.push(l);
   }
 }
 
-var title = valid_lines.length > 0 ? valid_lines[0] : "تحديث أكاديمي وجامعي هام";
-if (title.length > 60) {
-  title = title.substring(0, 57) + "...";
+// استخراج عنوان أكاديمي بارز
+var first_line = valid_lines.length > 0 ? valid_lines[0] : "تحديث أكاديمي وجامعي هام";
+first_line = first_line.replace(/^[•\-\*#📌📢✨🎓]\s*/, "");
+var title = first_line.length < 75 ? first_line : "إعلان رسمي هام للطلبة والجامعيين";
+
+// تصنيف المحتوى واستخراج هاشتاجات ديناميكية دقيقة
+var lower_raw = raw_text.toLowerCase();
+var hashtags = ["#أخبار_التعليم", "#جامعة"];
+
+if (lower_raw.indexOf("سعود") !== -1 || lower_raw.indexOf("ksu") !== -1) {
+  hashtags.push("#جامعة_الملك_سعود");
+} else if (lower_raw.indexOf("عبدالعزيز") !== -1 || lower_raw.indexOf("kau") !== -1) {
+  hashtags.push("#جامعة_الملك_عبدالعزيز");
+} else if (lower_raw.indexOf("نورة") !== -1 || lower_raw.indexOf("pnu") !== -1) {
+  hashtags.push("#جامعة_الأميرة_نورة");
+} else if (lower_raw.indexOf("الإمام") !== -1) {
+  hashtags.push("#جامعة_الإمام");
+} else {
+  hashtags.push("#التعليم_الجامعي");
 }
 
-var bullets = "";
-for (var j = 1; j < Math.min(valid_lines.length, 6); j++) {
-  bullets += "• " + valid_lines[j] + "\n";
+if (lower_raw.indexOf("قبول") !== -1 || lower_raw.indexOf("تسجيل") !== -1 || lower_raw.indexOf("بوابة") !== -1) {
+  hashtags.push("#القبول_الموحد");
+  hashtags.push("#تسجيل_الجامعات");
 }
-if (!bullets) {
-  bullets = "• " + cleaned;
+if (lower_raw.indexOf("امتحان") !== -1 || lower_raw.indexOf("اختبار") !== -1 || lower_raw.indexOf("نهائي") !== -1) {
+  hashtags.push("#الاختبارات_النهائية");
 }
+if (lower_raw.indexOf("منح") !== -1 || lower_raw.indexOf("مكافأة") !== -1) {
+  hashtags.push("#المنح_الدراسية");
+}
+if (lower_raw.indexOf("تقويم") !== -1 || lower_raw.indexOf("إجازة") !== -1 || lower_raw.indexOf("فصل") !== -1) {
+  hashtags.push("#التقويم_الدراسي");
+}
+if (lower_raw.indexOf("وظائف") !== -1 || lower_raw.indexOf("معيد") !== -1) {
+  hashtags.push("#وظائف_أكاديمية");
+}
+
+// تصفية الهاشتاجات لتكون من 3 إلى 5 هاشتاجات قوية
+var unique_hashtags = [];
+for (var h = 0; h < hashtags.length; h++) {
+  if (unique_hashtags.indexOf(hashtags[h]) === -1 && unique_hashtags.length < 5) {
+    unique_hashtags.push(hashtags[h]);
+  }
+}
+
+// صياغة النقاط المنظمة
+var bullet_points = [];
+for (var j = 1; j < valid_lines.length; j++) {
+  var line_txt = valid_lines[j].replace(/^[•\-\*]\s*/, "");
+  if (line_txt.length > 5) {
+    var prefix = "• ";
+    if (line_txt.indexOf("موعد") !== -1 || line_txt.indexOf("تاريخ") !== -1 || line_txt.indexOf("يوم") !== -1) {
+      prefix = "📅 ";
+    } else if (line_txt.indexOf("شرط") !== -1 || line_txt.indexOf("شروط") !== -1 || line_txt.indexOf("نسبة") !== -1) {
+      prefix = "📋 ";
+    } else if (line_txt.indexOf("رابط") !== -1 || line_txt.indexOf("بوابة") !== -1 || line_txt.indexOf("تقديم") !== -1) {
+      prefix = "🔗 ";
+    }
+    bullet_points.push(prefix + line_txt);
+  }
+}
+
+var content_body = bullet_points.length > 0 ? bullet_points.slice(0, 7).join("\n\n") : ("• " + cleaned);
 
 var fallback_text = "📌 **" + title + "**\n\n" +
-  bullets + "\n" +
-  "💬 يرجى متابعة التحديثات الرسمية وشارك المنشور مع زملائك!\n\n" +
-  "#أخبار_الجامعة #التعليم #شؤون_الطلاب #مواعيد";
+  content_body + "\n\n" +
+  "💬 **شارك المنشور مع زملائك الطلاب لتعم الفائدة، ويسعدنا دائماً الإجابة على استفساراتكم!**\n\n" +
+  unique_hashtags.join(" ");
 
 // 3. النشر الفوري للوسائط والنصوص في كافة القنوات المستهدفة
 function toSafeHtmlFallback(txt) {
@@ -66,6 +122,10 @@ function toSafeHtmlFallback(txt) {
 }
 
 var safe_fallback_text = toSafeHtmlFallback(fallback_text);
+var safe_fallback_caption = safe_fallback_text;
+if (safe_fallback_caption && safe_fallback_caption.length > 1024) {
+  safe_fallback_caption = safe_fallback_caption.substring(0, 1020) + "...";
+}
 var sent_count = 0;
 var target_names = [];
 var failed_targets = [];
@@ -76,7 +136,7 @@ for (var i = 0; i < target_channels.length; i++) {
 
   if (media_type == "photo" && media_file_id) {
     try {
-      Api.sendPhoto({ chat_id: ch, photo: media_file_id, caption: safe_fallback_text, parse_mode: "HTML" });
+      Api.sendPhoto({ chat_id: ch, photo: media_file_id, caption: safe_fallback_caption, parse_mode: "HTML" });
       sent_success = true;
     } catch (e1) {
       // إذا فشل جلب الصورة عبر HTTP URL، ننشر النص مباشرة في القناة لمنع ضياع المنشور
@@ -92,7 +152,7 @@ for (var i = 0; i < target_channels.length; i++) {
     }
   } else if (media_type == "video" && media_file_id) {
     try {
-      Api.sendVideo({ chat_id: ch, video: media_file_id, caption: safe_fallback_text, parse_mode: "HTML" });
+      Api.sendVideo({ chat_id: ch, video: media_file_id, caption: safe_fallback_caption, parse_mode: "HTML" });
       sent_success = true;
     } catch (e1) {
       try {
@@ -102,7 +162,7 @@ for (var i = 0; i < target_channels.length; i++) {
     }
   } else if (media_type == "document" && media_file_id) {
     try {
-      Api.sendDocument({ chat_id: ch, document: media_file_id, caption: safe_fallback_text, parse_mode: "HTML" });
+      Api.sendDocument({ chat_id: ch, document: media_file_id, caption: safe_fallback_caption, parse_mode: "HTML" });
       sent_success = true;
     } catch (e1) {
       try {

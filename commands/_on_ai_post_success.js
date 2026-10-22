@@ -21,6 +21,33 @@ if (!rephrased_text) {
   rephrased_text = Bot.getProperty("pending_raw_text", "");
 }
 
+// تنظيف الرد والتأكد من وجود عنوان أكاديمي بارز
+if (rephrased_text.indexOf("📌") === -1 && rephrased_text.indexOf("📢") === -1 && rephrased_text.indexOf("🎓") === -1) {
+  rephrased_text = "📌 " + rephrased_text;
+}
+
+// ضمان وجود الهاشتاجات الأكاديمية القوية دائماً
+if (rephrased_text.indexOf("#") === -1) {
+  var raw_lower = (Bot.getProperty("pending_raw_text", "") + " " + rephrased_text).toLowerCase();
+  var extra_tags = [];
+  extra_tags.push("#أخبار_التعليم");
+  if (raw_lower.indexOf("سعود") !== -1 || raw_lower.indexOf("ksu") !== -1) extra_tags.push("#جامعة_الملك_سعود");
+  else if (raw_lower.indexOf("عبدالعزيز") !== -1) extra_tags.push("#جامعة_الملك_عبدالعزيز");
+  else if (raw_lower.indexOf("نورة") !== -1) extra_tags.push("#جامعة_الأميرة_نورة");
+  else extra_tags.push("#التعليم_الجامعي");
+
+  if (raw_lower.indexOf("قبول") !== -1 || raw_lower.indexOf("تسجيل") !== -1) {
+    extra_tags.push("#القبول_الموحد");
+    extra_tags.push("#تسجيل_الجامعات");
+  } else if (raw_lower.indexOf("امتحان") !== -1 || raw_lower.indexOf("اختبار") !== -1) {
+    extra_tags.push("#الاختبارات_النهائية");
+  } else {
+    extra_tags.push("#شؤون_الطلاب");
+    extra_tags.push("#مواعيد");
+  }
+  rephrased_text += "\n\n" + extra_tags.join(" ");
+}
+
 // كشف الردود الحوارية أو طلبات التزويد بالنص لمنع نشرها في القنوات كأخبار
 var is_conversational_reply = (
   rephrased_text.indexOf("يرجى تزويدي") !== -1 ||
@@ -37,8 +64,15 @@ if (is_conversational_reply) {
 
 var media_type = Bot.getProperty("pending_media_type", "text");
 var media_file_id = Bot.getProperty("pending_media_id", "");
+
+// إذا كانت الميديا رمزاً تعبيرياً أو رابطاً نسبياً خاطئاً، نحولها لنص عادي
+if (media_file_id && (media_file_id.indexOf("emoji") !== -1 || media_file_id.indexOf("//telegram.org/img") !== -1)) {
+  media_type = "text";
+  media_file_id = "";
+}
+
 var target_channels = Bot.getProperty("pending_targets", []);
-var current_model = Bot.getProperty("ai_model", "DeepSeek-V4-Flash");
+var current_model = Bot.getProperty("ai_model", "auto");
 
 // تنقية القنوات من القنوات الوهمية أو الملغاة
 var valid_targets = [];
@@ -72,6 +106,10 @@ function toSafeHtml(txt) {
 }
 
 var safe_post_text = toSafeHtml(rephrased_text);
+var safe_caption = safe_post_text;
+if (safe_caption && safe_caption.length > 1024) {
+  safe_caption = safe_caption.substring(0, 1020) + "...";
+}
 
 for (var i = 0; i < valid_targets.length; i++) {
   var ch = valid_targets[i];
@@ -79,7 +117,7 @@ for (var i = 0; i < valid_targets.length; i++) {
 
   if (media_type === "photo" && media_file_id) {
     try {
-      Api.sendPhoto({ chat_id: ch, photo: media_file_id, caption: safe_post_text, parse_mode: "HTML" });
+      Api.sendPhoto({ chat_id: ch, photo: media_file_id, caption: safe_caption, parse_mode: "HTML" });
       sent_success = true;
     } catch (e1) {
       // حماية فائقة: إذا تعذر على سيرفر تيليجرام جلب الصورة من الرابط الخارجي (failed to get HTTP URL content)، ننشر النص فوراً لمنع ضياع المنشور
@@ -95,7 +133,7 @@ for (var i = 0; i < valid_targets.length; i++) {
     }
   } else if (media_type === "video" && media_file_id) {
     try {
-      Api.sendVideo({ chat_id: ch, video: media_file_id, caption: safe_post_text, parse_mode: "HTML" });
+      Api.sendVideo({ chat_id: ch, video: media_file_id, caption: safe_caption, parse_mode: "HTML" });
       sent_success = true;
     } catch (e1) {
       try {
@@ -105,7 +143,7 @@ for (var i = 0; i < valid_targets.length; i++) {
     }
   } else if (media_type === "document" && media_file_id) {
     try {
-      Api.sendDocument({ chat_id: ch, document: media_file_id, caption: safe_post_text, parse_mode: "HTML" });
+      Api.sendDocument({ chat_id: ch, document: media_file_id, caption: safe_caption, parse_mode: "HTML" });
       sent_success = true;
     } catch (e1) {
       try {

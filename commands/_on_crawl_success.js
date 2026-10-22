@@ -93,9 +93,26 @@ function cleanHtml(html) {
 
 var extracted_text = cleanHtml(raw_html_text);
 
-// 4. استخراج الصورة إن وجدت
-var photo_match = post_chunk.match(/background-image:url\('([^']+)'\)/i);
-var image_url = photo_match ? photo_match[1] : null;
+// 4. استخراج الصورة الحقيقية وتجاهل الرموز التعبيرية (Emojis) والروابط النسبية
+function extractValidPhoto(chunk) {
+  if (!chunk) return null;
+  // البحث عن وسم الصورة الحقيقي للمنشور في تيليجرام ويب
+  var photoWrapMatch = chunk.match(/class="[^"]*tgme_widget_message_photo_wrap[^"]*"[^>]*style="[^"]*background-image:\s*url\('([^']+)'\)/i);
+  if (photoWrapMatch && photoWrapMatch[1]) {
+    var u = photoWrapMatch[1].trim();
+    if (u.indexOf("emoji") === -1 && u.indexOf("telegram.org/img") === -1) {
+      return u.indexOf("//") === 0 ? ("https:" + u) : u;
+    }
+  }
+  // البحث عن أي رابط صورة من خوادم تيليجرام المعتمدة (telesco.pe أو cdn)
+  var cdnMatch = chunk.match(/background-image:\s*url\('(https?:\/\/[^']*(?:telesco\.pe|cdn|telegram)[^']*)'\)/i);
+  if (cdnMatch && cdnMatch[1] && cdnMatch[1].indexOf("emoji") === -1) {
+    return cdnMatch[1].trim();
+  }
+  return null;
+}
+
+var image_url = extractValidPhoto(post_chunk);
 
 if (!extracted_text && !image_url) {
   // منشور فارغ أو غير مدعوم
@@ -106,10 +123,17 @@ if (!extracted_text && !image_url) {
 // 5. حفظ معرف المنشور لمنع تكراره
 Bot.setProperty("last_crawl_id_" + channel_name, max_id, "integer");
 
+// دالة تحويل الماركداون إلى HTML آمن 100% لمنع أخطاء تيليجرام 400 بسبب الشَرطات السفلية والهاشتاجات
+function toSafeHtml(txt) {
+  if (!txt) return "";
+  var s = txt;
+  s = s.replace(/\*\*(.*?)\*\*/g, "<b>$1</b>");
+  return s;
+}
+
 // 6. تحديد القنوات الهدف
 var mappings = Bot.getProperty("channel_mappings", []);
 var target_channels = [];
-var norm_source = "@" + channel_name;
 
 for (var m = 0; m < mappings.length; m++) {
   var item = mappings[m];
@@ -133,7 +157,7 @@ if (target_channels.length === 0) {
 }
 
 // 7. فحص إعلانات المنافسين واستبدالها بإعلان المشرف
-var ad_keywords = ["إعلان مدفوع", "حل واجبات", "بحوث تخرج", "خدمات طلابية", "مشاريع تخرج", "كتابة أبحاث", "إعلان ممول"];
+var ad_keywords = ["إعلان مدفوع", "حل واجبات", "بحوث تخرج", "خدمات طلابية", "مشاريع تخرج", "كتابة أبحاث", "إعلان ممول", "برعاية"];
 var is_ad = false;
 for (var a = 0; a < ad_keywords.length; a++) {
   if (extracted_text.indexOf(ad_keywords[a]) !== -1) {
@@ -151,17 +175,19 @@ if (is_ad) {
     "📞 **للتواصل والطلب المباشر عبر المشرف**: @M_S_F_G\n" +
     "✨ *جودة أكاديمية موثوقة، دقة في المواعيد، وأسعار خاصة للطلاب!*");
 
+  var safe_ad = toSafeHtml(custom_ad);
+
   for (var t = 0; t < target_channels.length; t++) {
     var target_ch = target_channels[t];
     try {
       if (image_url) {
         try {
-          Api.sendPhoto({ chat_id: target_ch, photo: image_url, caption: custom_ad, parse_mode: "Markdown" });
+          Api.sendPhoto({ chat_id: target_ch, photo: image_url, caption: safe_ad, parse_mode: "HTML" });
         } catch (img_e) {
-          Api.sendMessage({ chat_id: target_ch, text: custom_ad, parse_mode: "Markdown" });
+          Api.sendMessage({ chat_id: target_ch, text: safe_ad, parse_mode: "HTML" });
         }
       } else {
-        Api.sendMessage({ chat_id: target_ch, text: custom_ad, parse_mode: "Markdown" });
+        Api.sendMessage({ chat_id: target_ch, text: safe_ad, parse_mode: "HTML" });
       }
     } catch (e) {
       try {
@@ -180,22 +206,28 @@ Bot.setProperty("pending_raw_text", extracted_text, "string");
 Bot.setProperty("pending_targets", target_channels, "json");
 
 var ai_enabled = Bot.getProperty("ai_enabled", true);
-var current_model = Bot.getProperty("ai_model", "DeepSeek-V4.1-Flash");
+var current_model = Bot.getProperty("ai_model", "auto");
 var base_url = Bot.getProperty("ai_base_url", "https://api.hcnsec.cn/v1");
 var api_key = Bot.getProperty("ai_api_key", "sk-J2ky44F6VTDMkL8Q1GHL5sfmbeIpARVDayNuwMfxKI5zCdii");
+var custom_ins = Bot.getProperty("custom_instructions", "");
 
 if (!ai_enabled || !extracted_text) {
+  var safe_extracted = toSafeHtml(extracted_text);
+  var safe_crawl_caption = safe_extracted;
+  if (safe_crawl_caption && safe_crawl_caption.length > 1024) {
+    safe_crawl_caption = safe_crawl_caption.substring(0, 1020) + "...";
+  }
   for (var p = 0; p < target_channels.length; p++) {
     var dest_ch = target_channels[p];
     try {
       if (image_url) {
         try {
-          Api.sendPhoto({ chat_id: dest_ch, photo: image_url, caption: extracted_text, parse_mode: "Markdown" });
+          Api.sendPhoto({ chat_id: dest_ch, photo: image_url, caption: safe_crawl_caption, parse_mode: "HTML" });
         } catch (img_err2) {
-          Api.sendMessage({ chat_id: dest_ch, text: extracted_text, parse_mode: "Markdown" });
+          Api.sendMessage({ chat_id: dest_ch, text: safe_extracted, parse_mode: "HTML" });
         }
       } else {
-        Api.sendMessage({ chat_id: dest_ch, text: extracted_text, parse_mode: "Markdown" });
+        Api.sendMessage({ chat_id: dest_ch, text: safe_extracted, parse_mode: "HTML" });
       }
     } catch (e) {
       try {
@@ -207,7 +239,14 @@ if (!ai_enabled || !extracted_text) {
   return;
 }
 
-var system_prompt = "أنت محرر محتوى تعليمي وجامعي محترف. صِغ هذا الخبر بأسلوب إخباري راقٍ وموجز مع عنوان بارز (📌) ونقاط للمواعيد بدون ذكر أي قنوات سابقة أو روابط خارجية وبدون مقدمات. اختم بدعوة للمشاركة وهاشتاجات مناسبة.";
+var instruction_clause = custom_ins ? ("تعليمات المشرف المعتمدة: " + custom_ins + "\n\n") : "";
+var system_prompt = "أنت محرر وكاتب محتوى تعليمي وجامعي رائد. مهمتك صياغة المنشور التالي بأسلوب إخباري راقٍ ومؤثر للطلاب:\n" +
+  "1. عنوان بارز وقوي يسبقه إيموجي (📌)\n" +
+  "2. محتوى منظم في نقاط محددة وسهلة القراءة تبرز المواعيد والخطوات والشروط\n" +
+  "3. احذف نهائياً أي ذكر لأسماء القنوات السابقة أو الروابط أو الدعوات للاشتراك\n" +
+  "4. دعوة تفاعلية قصيرة للطلاب (💬)\n" +
+  "5. هاشتاجات أكاديمية قوية ومتطابقة مع موضوع المنشور (مثال: #جامعة_الملك_سعود #القبول_الموحد #تسجيل #امتحانات)\n" +
+  instruction_clause;
 
 var endpoint_url = base_url.replace(/\/+$/, "") + "/chat/completions";
 
@@ -223,8 +262,8 @@ HTTP.post({
       { role: "system", content: system_prompt },
       { role: "user", content: extracted_text }
     ],
-    temperature: 0.25,
-    max_tokens: 280
+    temperature: 0.3,
+    max_tokens: 380
   },
   success: "/on_ai_post_success",
   error: "/on_ai_post_error",
