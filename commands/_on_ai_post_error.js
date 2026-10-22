@@ -25,7 +25,8 @@ if (!target_channels || !Array.isArray(target_channels) || target_channels.lengt
   }
 }
 if (!target_channels || target_channels.length === 0) {
-  target_channels = ["@MyUniversityChannel"];
+  var saved_single = Bot.getProperty("target_channels");
+  target_channels = [saved_single || "@jhdhhdcj"];
 }
 
 // 2. تنظيف وتنسيق أكاديمي محلي فوري فائق السرعة (Zero-Timeout Guarantee)

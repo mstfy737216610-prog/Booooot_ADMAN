@@ -11,10 +11,11 @@ CMD*/
 
 var mappings = Bot.getProperty("channel_mappings");
 if (!mappings || !Array.isArray(mappings) || mappings.length === 0) {
-  var sources = Bot.getProperty("monitored_sources", ["@KSU_News", "@moe_gov_sa"]);
+  var current_target = Bot.getProperty("target_channels") || "@jhdhhdcj";
+  var sources = Bot.getProperty("monitored_sources", ["@KSU_News", "@moe_gov_sa", "@mstfyuhhh"]);
   mappings = [
     {
-      target: "@MyUniversityChannel",
+      target: current_target,
       sources: sources,
       enabled: true,
       name: "قناة النشر الرسمية (أ)"

@@ -449,7 +449,7 @@ class StandaloneTelegramEducationalBot:
             self.user_waiting_state[chat_id] = "waiting_for_target_channel"
             ask_text = """📢 **إضافة قناة نشر جديدة:**
 
-أرسل الآن معرّف أو رابط قناتك (مثال: `@MyUniversityChannel` أو `https://t.me/MyUniversityChannel`):
+أرسل الآن معرّف أو رابط قناتك (مثال: `@jhdhhdcj` أو `https://t.me/jhdhhdcj`):
 (أو فقط قم بتوجيه أي رسالة من القناة إلى هنا مباشرة)"""
             self.send_msg(chat_id, ask_text)
 

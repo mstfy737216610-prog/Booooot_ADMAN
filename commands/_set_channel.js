@@ -13,7 +13,7 @@ var raw = message || "";
 var arg = raw.replace("/set_channel", "").replace("/add_channel", "").replace("تحديد القناة الهدف", "").trim();
 
 if (!arg) {
-  var current = Bot.getProperty("target_channels") || "@MyUniversityChannel";
+  var current = Bot.getProperty("target_channels") || "@jhdhhdcj";
   var text = "📢 **تحديد وتغيير قناة النشر المستهدفة:**\n" +
     "━━━━━━━━━━━━━━━━━━━\n\n" +
     "🎯 **القناة المعتمدة حالياً**: `" + current + "`\n\n" +
@@ -48,7 +48,7 @@ if (clean_ch.indexOf("@") !== 0 && clean_ch.indexOf("-100") !== 0) {
 Bot.setProperty("target_channels", clean_ch, "string");
 
 // تحديث جدول الربط (channel_mappings) فوراً ليوجه كافة المصادر إلى هذه القناة
-var monitored = Bot.getProperty("monitored_sources", ["@KSU_News", "@moe_gov_sa"]);
+var monitored = Bot.getProperty("monitored_sources", ["@KSU_News", "@moe_gov_sa", "@mstfyuhhh"]);
 var mappings = [
   {
     target: clean_ch,

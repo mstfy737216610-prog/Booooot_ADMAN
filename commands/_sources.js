@@ -11,11 +11,11 @@ CMD*/
 
 var monitored = Bot.getProperty("monitored_sources");
 if (!monitored || !Array.isArray(monitored) || monitored.length === 0) {
-  monitored = ["@KSU_News", "@moe_gov_sa"];
+  monitored = ["@KSU_News", "@moe_gov_sa", "@mstfyuhhh"];
   Bot.setProperty("monitored_sources", monitored, "json");
 }
 
-var target_current = Bot.getProperty("target_channels") || "@MyUniversityChannel";
+var target_current = Bot.getProperty("target_channels") || "@jhdhhdcj";
 var auto_crawl = Bot.getProperty("auto_crawl_enabled", true);
 
 var text = "📋 **إدارة ومراقبة المصادر الخارجية (External Sources Hub)**:\n" +

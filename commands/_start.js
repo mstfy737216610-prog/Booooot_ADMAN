@@ -18,8 +18,8 @@ var is_paused = Bot.getProperty("bot_paused", false);
 var current_model = Bot.getProperty("ai_model", "DeepSeek-V4-Flash");
 var base_url = Bot.getProperty("ai_base_url", "https://api.hcnsec.cn/v1");
 var total_processed = Bot.getProperty("total_processed", 0);
-var monitored_sources = Bot.getProperty("monitored_sources", ["@KSU_News", "@moe_gov_sa"]);
-var target_current = Bot.getProperty("target_channels") || "@MyUniversityChannel";
+var monitored_sources = Bot.getProperty("monitored_sources", ["@KSU_News", "@moe_gov_sa", "@mstfyuhhh"]);
+var target_current = Bot.getProperty("target_channels") || "@jhdhhdcj";
 var auto_crawl = Bot.getProperty("auto_crawl_enabled", true);
 
 var status_emoji = is_paused ? "🔴 متوقف مؤقتاً" : "🟢 نشط ويعمل 24/7";

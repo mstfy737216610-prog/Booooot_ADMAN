@@ -43,7 +43,7 @@ const DEFAULT_CONFIG: BotConfig = {
   adminId: '7607633343',
   adminUsername: '@M_S_F_G',
   additionalAdminIds: [],
-  targetChannels: ['@MyUniversityChannel'],
+  targetChannels: ['@jhdhhdcj'],
   notifyAdminOnForward: true,
   enableTelegramAdminCommands: true,
   preferredEngine: 'userbot',

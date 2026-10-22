@@ -94,8 +94,8 @@ def load_state() -> Dict[str, Any]:
         "processed_count": 0,
         "forwarded_count": 0,
         "ad_replaced_count": 0,
-        "target_channels": ["@MyUniversityChannel"],
-        "source_channels": ["@KSU_News", "@moe_gov_sa"],
+        "target_channels": ["@jhdhhdcj"],
+        "source_channels": ["@KSU_News", "@moe_gov_sa", "@mstfyuhhh"],
         "custom_ad": """🎓 خدمات طلابية معتمدة وأكاديمية متكاملة 🎓
 يسرنا تقديم الدعم الأكاديمي الشامل للطلبة والباحثين:
 • مساعدة في البحوث والمشاريع الأكاديمية
@@ -492,7 +492,7 @@ async def on_callback(client: Client, callback: CallbackQuery):
         set_user_state(user_id, States.AWAITING_TARGET)
         await callback.message.edit_text(
             "📤 **إضافة قناة نشر وتوزيع:**\n\n"
-            "أرسل معرف القناة المستهدفة للنشر (مثال: `@MyUniversityChannel`) الآن:",
+            "أرسل معرف القناة المستهدفة للنشر (مثال: `@jhdhhdcj`) الآن:",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ إلغاء", callback_data="btn_targets")]])
         )
         await callback.answer()

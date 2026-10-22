@@ -73,10 +73,11 @@ Bot.setProperty("monitored_sources", current_sources, "json");
 // 2. تحديث قنوات التوزيع والربط (channel_mappings)
 var mappings = Bot.getProperty("channel_mappings");
 if (!mappings || !Array.isArray(mappings) || mappings.length === 0) {
+  var def_tgt = Bot.getProperty("target_channels") || "@jhdhhdcj";
   mappings = [
     {
-      target: "@MyUniversityChannel",
-      sources: ["@KSU_News", "@moe_gov_sa"],
+      target: def_tgt,
+      sources: ["@KSU_News", "@moe_gov_sa", "@mstfyuhhh"],
       enabled: true,
       name: "قناة النشر الرسمية (أ)"
     }
@@ -84,7 +85,7 @@ if (!mappings || !Array.isArray(mappings) || mappings.length === 0) {
 }
 
 // إضافة المصادر الجديدة إلى القناة الأولى المفعلة تلقائياً
-var target_channel = mappings[0].target || "@MyUniversityChannel";
+var target_channel = mappings[0].target || "@jhdhhdcj";
 if (!mappings[0].sources || !Array.isArray(mappings[0].sources)) {
   mappings[0].sources = [];
 }

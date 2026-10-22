@@ -55,13 +55,13 @@ AI_BASE_URL = os.getenv("AI_BASE_URL", "https://api.hcnsec.cn/v1/chat/completion
 AI_API_KEY = os.getenv("AI_API_KEY", "sk-J2ky44F6VTDMkL8Q1GHL5sfmbeIpARVDayNuwMfxKI5zCdii")
 AI_MODEL = os.getenv("PRIMARY_MODEL", "DeepSeek-V4.1-Flash")
 
-TARGET_CHANNEL = os.getenv("TARGET_CHANNEL", "@MyUniversityChannel")
+TARGET_CHANNEL = os.getenv("TARGET_CHANNEL", "@jhdhhdcj")
 
 # القنوات المصدر والقنوات المستهدفة المنفصلة (Multi-Source Mapping)
 CHANNEL_MAPPINGS = [
     {
         "target": TARGET_CHANNEL,
-        "sources": ["@KSU_News", "@moe_gov_sa"],
+        "sources": ["@KSU_News", "@moe_gov_sa", "@mstfyuhhh"],
         "name": "قناة النشر الرسمية (أ)"
     }
 ]
@@ -69,7 +69,7 @@ CHANNEL_MAPPINGS = [
 # تجميع كافة المصادر المراقبة تلقائياً من المخطط
 SOURCE_CHANNELS = list(set([s for m in CHANNEL_MAPPINGS for s in m.get("sources", [])]))
 if not SOURCE_CHANNELS:
-    SOURCE_CHANNELS = ["@KSU_News", "@moe_gov_sa"]
+    SOURCE_CHANNELS = ["@KSU_News", "@moe_gov_sa", "@mstfyuhhh"]
 DESTINATION_CHANNELS = list(set([m["target"] for m in CHANNEL_MAPPINGS]))
 
 # حساب المشرف
