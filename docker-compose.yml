@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  publisher_bot:
+    build: .
+    container_name: booooot_adman_publisher
+    restart: unless-stopped
+    ports:
+      - "8088:8088"
+    environment:
+      - BOT_TOKEN=8901693218:AAEOQmHMZLy-xaPbTUMq1KGhDwp1l0wFWP4
+      - ADMIN_ID=7607633343
+      - ADMIN_USERNAME=M_S_F_G
+      - TARGET_CHANNEL=@jhdhhdcj
+      - AI_BASE_URL=https://api.hcnsec.cn/v1
+      - AI_API_KEY=sk-J2ky44F6VTDMkL8Q1GHL5sfmbeIpARVDayNuwMfxKI5zCdii
+      - PRIMARY_MODEL=DeepSeek-V4-Flash
+      - FALLBACK_MODEL=DeepSeek-V4.1-Flash
+      - TELEGRAM_API_ID=20123456
+      - TELEGRAM_API_HASH=abcdef0123456789abcdef0123456789
+      - STRING_SESSION=
+      - PORT=8088
+    volumes:
+      - bot_data:/app
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8088/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  bot_data:
+    driver: local
