@@ -199,26 +199,79 @@ class StandaloneTelegramEducationalBot:
 
     def send_photo(self, chat_id: Any, photo: str, caption: str = "", parse_mode: Optional[str] = "HTML") -> Dict[str, Any]:
         safe_caption = self.to_safe_html(caption) if parse_mode == "HTML" else caption
-        if len(safe_caption) <= 1024:
-            payload = {"chat_id": chat_id, "photo": photo, "caption": safe_caption}
+        lead_caption = safe_caption[:1020] if len(safe_caption) > 1024 else safe_caption
+
+        # 1. إذا كانت الصورة رابط إنترنت (URL)، نقوم بتحميلها كـ bytes ورفعها عبر multipart لمنع خطأ 400 failed to get HTTP URL content
+        if photo and (photo.startswith("http://") or photo.startswith("https://")):
+            try:
+                import uuid
+                img_req = urllib.request.Request(photo, headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                    "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
+                })
+                with urllib.request.urlopen(img_req, context=ssl_ctx, timeout=12) as img_resp:
+                    img_bytes = img_resp.read()
+
+                if img_bytes and len(img_bytes) > 100:
+                    boundary = uuid.uuid4().hex
+                    body = bytearray()
+                    def add_field(name: str, val: str):
+                        body.extend(f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n{val}\r\n'.encode('utf-8'))
+
+                    add_field("chat_id", str(chat_id))
+                    if lead_caption:
+                        add_field("caption", lead_caption)
+                        if parse_mode:
+                            add_field("parse_mode", parse_mode)
+
+                    body.extend(f'--{boundary}\r\nContent-Disposition: form-data; name="photo"; filename="image.jpg"\r\nContent-Type: image/jpeg\r\n\r\n'.encode('utf-8'))
+                    body.extend(img_bytes)
+                    body.extend(f'\r\n--{boundary}--\r\n'.encode('utf-8'))
+
+                    url = f"https://api.telegram.org/bot{self.token}/sendPhoto"
+                    upload_req = urllib.request.Request(
+                        url,
+                        data=body,
+                        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"}
+                    )
+                    with urllib.request.urlopen(upload_req, context=ssl_ctx, timeout=25) as u_resp:
+                        res = json.loads(u_resp.read().decode("utf-8"))
+                        if res.get("ok"):
+                            if len(safe_caption) > 1024:
+                                self.send_msg(chat_id, safe_caption[1020:], parse_mode=parse_mode)
+                            return res
+            except Exception as e:
+                logger.warning(f"تعذر الرفع المباشر لـ bytes الصورة ({photo[:40]}...): {e}")
+
+        # 2. إذا كانت الصورة عبارة عن file_id أو فشل الرفع الثنائي، نرسلها بالطريقة القياسية
+        payload = {"chat_id": chat_id, "photo": photo}
+        if lead_caption:
+            payload["caption"] = lead_caption
             if parse_mode:
                 payload["parse_mode"] = parse_mode
-            res = self.tg_request("sendPhoto", payload)
-            if res.get("ok"):
-                return res
+
+        res = self.tg_request("sendPhoto", payload)
+        if res.get("ok"):
+            if len(safe_caption) > 1024:
+                self.send_msg(chat_id, safe_caption[1020:], parse_mode=parse_mode)
+            return res
+
+        # محاولة ثانية بدون parse_mode
+        if parse_mode and lead_caption:
             payload.pop("parse_mode", None)
-            payload["caption"] = caption
+            payload["caption"] = caption[:1020]
             res = self.tg_request("sendPhoto", payload)
             if res.get("ok"):
                 return res
 
+        # محاولة ثالثة بإرسال الصورة وحدها
         res_photo = self.tg_request("sendPhoto", {"chat_id": chat_id, "photo": photo})
         if res_photo.get("ok"):
             if caption:
                 self.send_msg(chat_id, caption, parse_mode=parse_mode)
             return res_photo
 
-        # حماية قاطعة: إذا تعذر تحميل الصورة على سيرفر تيليجرام (failed to get HTTP URL content)، ننشر النص فوراً حتى لا يضيع المنشور
+        # حماية قاطعة: إذا تعذر إرسال الصورة تماماً، ننشر النص كاملاً كرسالة حتى لا يضيع الخبر
         if caption:
             res_msg = self.send_msg(chat_id, caption, parse_mode=parse_mode)
             if res_msg.get("ok"):
@@ -472,8 +525,23 @@ class StandaloneTelegramEducationalBot:
                     raw_num_match = re.search(r'/(\d+)$', pid)
                     num_id = int(raw_num_match.group(1)) if raw_num_match else 0
 
-                    photo_m = re.search(r'background-image:url\(\'([^\']+)\'\)', b)
-                    photo_url = photo_m.group(1) if photo_m else None
+                    photo_url = None
+                    photo_wrap_m = re.search(r'class="[^"]*tgme_widget_message_photo_wrap[^"]*"[^>]*style="[^"]*background-image:\s*url\(\'([^\']+)\'\)', b)
+                    if photo_wrap_m:
+                        photo_url = photo_wrap_m.group(1)
+                    if not photo_url:
+                        photo_m = re.search(r'background-image:\s*url\(\'([^\']+)\'\)', b)
+                        if photo_m:
+                            photo_url = photo_m.group(1)
+                    if not photo_url:
+                        img_m = re.search(r'<img[^>]+src=[\'"]([^\'"]+)[\'"]', b)
+                        if img_m:
+                            photo_url = img_m.group(1)
+
+                    if photo_url:
+                        photo_url = photo_url.strip()
+                        if "emoji" in photo_url or "telegram.org/img" in photo_url or "website_icon" in photo_url:
+                            photo_url = None
 
                     # الإصلاح الحرج للـ Regex كما طلب المشرف بدقة:
                     text_m = re.search(r'class=\"tgme_widget_message_text[^\"]*js-message_text\"[^>]*>(.*?)</div>', b, re.DOTALL)

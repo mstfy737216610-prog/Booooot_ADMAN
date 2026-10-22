@@ -65,10 +65,12 @@ if (is_conversational_reply) {
 var media_type = Bot.getProperty("pending_media_type", "text");
 var media_file_id = Bot.getProperty("pending_media_id", "");
 
-// إذا كانت الميديا رمزاً تعبيرياً أو رابطاً نسبياً خاطئاً، نحولها لنص عادي
-if (media_file_id && (media_file_id.indexOf("emoji") !== -1 || media_file_id.indexOf("//telegram.org/img") !== -1)) {
-  media_type = "text";
-  media_file_id = "";
+// إذا كانت الميديا رابطاً نسبياً أو رمزاً تعبيرياً من الويب نحولها لنص، أما إذا كانت file_id نحافظ عليها
+if (media_file_id && (media_file_id.indexOf("http") === 0 || media_file_id.indexOf("//") === 0)) {
+  if (media_file_id.indexOf("emoji") !== -1 || media_file_id.indexOf("/img/") !== -1 || media_file_id.indexOf("website_icon") !== -1) {
+    media_type = "text";
+    media_file_id = "";
+  }
 }
 
 var target_channels = Bot.getProperty("pending_targets", []);
@@ -101,6 +103,9 @@ var failed_targets = [];
 function toSafeHtml(txt) {
   if (!txt) return "";
   var s = txt;
+  s = s.replace(/&/g, "&amp;");
+  s = s.replace(/</g, "&lt;");
+  s = s.replace(/>/g, "&gt;");
   s = s.replace(/\*\*(.*?)\*\*/g, "<b>$1</b>");
   return s;
 }
@@ -115,31 +120,70 @@ for (var i = 0; i < valid_targets.length; i++) {
   var ch = valid_targets[i];
   var sent_success = false;
 
-  if (media_type === "photo" && media_file_id) {
+  if ((media_type === "photo" || media_type === "photo_doc") && media_file_id) {
+    var p_success = false;
+    // 1. محاولة الإرسال مع HTML والشرح
     try {
-      Api.sendPhoto({ chat_id: ch, photo: media_file_id, caption: safe_caption, parse_mode: "HTML" });
-      sent_success = true;
+      if (media_type === "photo_doc") {
+        Api.sendDocument({ chat_id: ch, document: media_file_id, caption: safe_caption, parse_mode: "HTML" });
+      } else {
+        Api.sendPhoto({ chat_id: ch, photo: media_file_id, caption: safe_caption, parse_mode: "HTML" });
+      }
+      p_success = true;
     } catch (e1) {
-      // حماية فائقة: إذا تعذر على سيرفر تيليجرام جلب الصورة من الرابط الخارجي (failed to get HTTP URL content)، ننشر النص فوراً لمنع ضياع المنشور
+      // 2. محاولة الإرسال بدون HTML كنص عادي لتفادي أي رمز خاص
       try {
-        Api.sendMessage({ chat_id: ch, text: safe_post_text, parse_mode: "HTML" });
-        sent_success = true;
+        var raw_cap = rephrased_text.length > 1024 ? rephrased_text.substring(0, 1020) + "..." : rephrased_text;
+        if (media_type === "photo_doc") {
+          Api.sendDocument({ chat_id: ch, document: media_file_id, caption: raw_cap });
+        } else {
+          Api.sendPhoto({ chat_id: ch, photo: media_file_id, caption: raw_cap });
+        }
+        p_success = true;
       } catch (e2) {
+        // 3. إرسال الصورة وحدها بدون شرح لضمان وصول الصورة للطلاب دائماً
         try {
-          Api.sendMessage({ chat_id: ch, text: rephrased_text });
-          sent_success = true;
-        } catch (e3) {}
+          if (media_type === "photo_doc") {
+            Api.sendDocument({ chat_id: ch, document: media_file_id });
+          } else {
+            Api.sendPhoto({ chat_id: ch, photo: media_file_id });
+          }
+          try {
+            Api.sendMessage({ chat_id: ch, text: safe_post_text, parse_mode: "HTML" });
+          } catch (e_txt) {
+            Api.sendMessage({ chat_id: ch, text: rephrased_text });
+          }
+          p_success = true;
+        } catch (e3) {
+          // 4. حل أخير إذا كان الرابط الخارجي محظوراً من تيليجرام
+          try {
+            Api.sendMessage({ chat_id: ch, text: safe_post_text, parse_mode: "HTML" });
+            p_success = true;
+          } catch (e4) {
+            try {
+              Api.sendMessage({ chat_id: ch, text: rephrased_text });
+              p_success = true;
+            } catch (e5) {}
+          }
+        }
       }
     }
+    sent_success = p_success;
   } else if (media_type === "video" && media_file_id) {
     try {
       Api.sendVideo({ chat_id: ch, video: media_file_id, caption: safe_caption, parse_mode: "HTML" });
       sent_success = true;
     } catch (e1) {
       try {
+        Api.sendVideo({ chat_id: ch, video: media_file_id });
         Api.sendMessage({ chat_id: ch, text: safe_post_text, parse_mode: "HTML" });
         sent_success = true;
-      } catch (e2) {}
+      } catch (e2) {
+        try {
+          Api.sendMessage({ chat_id: ch, text: safe_post_text, parse_mode: "HTML" });
+          sent_success = true;
+        } catch (e3) {}
+      }
     }
   } else if (media_type === "document" && media_file_id) {
     try {

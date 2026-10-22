@@ -13,6 +13,9 @@ CMD*/
 function toSafeHtml(txt) {
   if (!txt) return "";
   var s = txt;
+  s = s.replace(/&/g, "&amp;");
+  s = s.replace(/</g, "&lt;");
+  s = s.replace(/>/g, "&gt;");
   s = s.replace(/\*\*(.*?)\*\*/g, "<b>$1</b>");
   return s;
 }
@@ -50,26 +53,61 @@ if (!raw_text && typeof message !== "undefined" && message) {
 var media_type = null;
 var media_file_id = null;
 
-var photo_arr = (msg_obj && msg_obj.photo) ? msg_obj.photo : (typeof request !== "undefined" && request ? request.photo : null);
-if (photo_arr && photo_arr.length > 0) {
-  media_type = "photo";
-  media_file_id = photo_arr[photo_arr.length - 1].file_id;
-} else if ((msg_obj && msg_obj.video) || (typeof request !== "undefined" && request && request.video)) {
-  media_type = "video";
-  var vid = (msg_obj && msg_obj.video) || request.video;
-  media_file_id = vid.file_id;
-} else if ((msg_obj && msg_obj.document) || (typeof request !== "undefined" && request && request.document)) {
-  media_type = "document";
-  var doc = (msg_obj && msg_obj.document) || request.document;
-  media_file_id = doc.file_id;
-} else if ((msg_obj && msg_obj.audio) || (typeof request !== "undefined" && request && request.audio)) {
-  media_type = "audio";
-  var aud = (msg_obj && msg_obj.audio) || request.audio;
-  media_file_id = aud.file_id;
-} else if ((msg_obj && msg_obj.voice) || (typeof request !== "undefined" && request && request.voice)) {
-  media_type = "voice";
-  var vce = (msg_obj && msg_obj.voice) || request.voice;
-  media_file_id = vce.file_id;
+var photo_arr = null;
+if (msg_obj && msg_obj.photo) photo_arr = msg_obj.photo;
+else if (typeof request !== "undefined" && request && request.photo) photo_arr = request.photo;
+else if (typeof request !== "undefined" && request && request.message && request.message.photo) photo_arr = request.message.photo;
+else if (typeof request !== "undefined" && request && request.channel_post && request.channel_post.photo) photo_arr = request.channel_post.photo;
+else if (typeof options !== "undefined" && options && options.photo) photo_arr = options.photo;
+
+if (photo_arr) {
+  if (Array.isArray(photo_arr) && photo_arr.length > 0) {
+    media_type = "photo";
+    media_file_id = photo_arr[photo_arr.length - 1].file_id;
+  } else if (typeof photo_arr === "object" && photo_arr.file_id) {
+    media_type = "photo";
+    media_file_id = photo_arr.file_id;
+  } else if (typeof photo_arr === "string") {
+    media_type = "photo";
+    media_file_id = photo_arr;
+  }
+}
+
+if (!media_type) {
+  var vid = (msg_obj && msg_obj.video) || (typeof request !== "undefined" && request && (request.video || (request.message && request.message.video) || (request.channel_post && request.channel_post.video)));
+  if (vid && vid.file_id) {
+    media_type = "video";
+    media_file_id = vid.file_id;
+  }
+}
+
+if (!media_type) {
+  var doc = (msg_obj && msg_obj.document) || (typeof request !== "undefined" && request && (request.document || (request.message && request.message.document) || (request.channel_post && request.channel_post.document)));
+  if (doc && doc.file_id) {
+    var mime = (doc.mime_type || "").toLowerCase();
+    if (mime.indexOf("image/") === 0) {
+      media_type = "photo_doc";
+    } else {
+      media_type = "document";
+    }
+    media_file_id = doc.file_id;
+  }
+}
+
+if (!media_type) {
+  var aud = (msg_obj && msg_obj.audio) || (typeof request !== "undefined" && request && (request.audio || (request.message && request.message.audio)));
+  if (aud && aud.file_id) {
+    media_type = "audio";
+    media_file_id = aud.file_id;
+  }
+}
+
+if (!media_type) {
+  var vce = (msg_obj && msg_obj.voice) || (typeof request !== "undefined" && request && (request.voice || (request.message && request.message.voice)));
+  if (vce && vce.file_id) {
+    media_type = "voice";
+    media_file_id = vce.file_id;
+  }
 }
 
 // إذا كانت الرسالة أمراً برمجياً (Command) مثل /start دون ميديا، لا تعالجها كمنشور
@@ -251,11 +289,25 @@ if (is_ad) {
   for (var k = 0; k < target_channels.length; k++) {
     var ch_target = target_channels[k];
     try {
-      if (media_type === "photo") {
+      if ((media_type === "photo" || media_type === "photo_doc") && media_file_id) {
+        var ad_cap = safe_ad.length > 1024 ? safe_ad.substring(0, 1020) + "..." : safe_ad;
         try {
-          Api.sendPhoto({ chat_id: ch_target, photo: media_file_id, caption: safe_ad, parse_mode: "HTML" });
+          if (media_type === "photo_doc") {
+            Api.sendDocument({ chat_id: ch_target, document: media_file_id, caption: ad_cap, parse_mode: "HTML" });
+          } else {
+            Api.sendPhoto({ chat_id: ch_target, photo: media_file_id, caption: ad_cap, parse_mode: "HTML" });
+          }
         } catch (photo_err) {
-          Api.sendMessage({ chat_id: ch_target, text: safe_ad, parse_mode: "HTML" });
+          try {
+            if (media_type === "photo_doc") {
+              Api.sendDocument({ chat_id: ch_target, document: media_file_id });
+            } else {
+              Api.sendPhoto({ chat_id: ch_target, photo: media_file_id });
+            }
+            Api.sendMessage({ chat_id: ch_target, text: safe_ad, parse_mode: "HTML" });
+          } catch (photo_err2) {
+            Api.sendMessage({ chat_id: ch_target, text: safe_ad, parse_mode: "HTML" });
+          }
         }
       } else if (media_type === "video") {
         Api.sendVideo({ chat_id: ch_target, video: media_file_id, caption: safe_ad, parse_mode: "HTML" });
@@ -290,25 +342,43 @@ var api_key = Bot.getProperty("ai_api_key", "sk-J2ky44F6VTDMkL8Q1GHL5sfmbeIpARVD
 if (!ai_enabled || !raw_text) {
   // نشر مباشر دون إعادة صياغة عبر HTML الآمن
   var safe_raw = toSafeHtml(raw_text);
+  var safe_raw_caption = safe_raw ? (safe_raw.length > 1024 ? safe_raw.substring(0, 1020) + "..." : safe_raw) : "";
   for (var p = 0; p < target_channels.length; p++) {
     var dest = target_channels[p];
     try {
-      if (media_type === "photo") {
+      if ((media_type === "photo" || media_type === "photo_doc") && media_file_id) {
         try {
-          Api.sendPhoto({ chat_id: dest, photo: media_file_id, caption: safe_raw, parse_mode: "HTML" });
-        } catch (photo_err2) {
-          Api.sendMessage({ chat_id: dest, text: safe_raw, parse_mode: "HTML" });
+          if (media_type === "photo_doc") {
+            var doc_p = { chat_id: dest, document: media_file_id };
+            if (safe_raw_caption) { doc_p.caption = safe_raw_caption; doc_p.parse_mode = "HTML"; }
+            Api.sendDocument(doc_p);
+          } else {
+            var pho_p = { chat_id: dest, photo: media_file_id };
+            if (safe_raw_caption) { pho_p.caption = safe_raw_caption; pho_p.parse_mode = "HTML"; }
+            Api.sendPhoto(pho_p);
+          }
+        } catch (photo_err1) {
+          try {
+            if (media_type === "photo_doc") {
+              Api.sendDocument({ chat_id: dest, document: media_file_id });
+            } else {
+              Api.sendPhoto({ chat_id: dest, photo: media_file_id });
+            }
+            if (safe_raw) Api.sendMessage({ chat_id: dest, text: safe_raw, parse_mode: "HTML" });
+          } catch (photo_err2) {
+            if (safe_raw) Api.sendMessage({ chat_id: dest, text: safe_raw, parse_mode: "HTML" });
+          }
         }
       } else if (media_type === "video") {
-        Api.sendVideo({ chat_id: dest, video: media_file_id, caption: safe_raw, parse_mode: "HTML" });
+        Api.sendVideo({ chat_id: dest, video: media_file_id, caption: safe_raw_caption, parse_mode: "HTML" });
       } else if (media_type === "document") {
-        Api.sendDocument({ chat_id: dest, document: media_file_id, caption: safe_raw, parse_mode: "HTML" });
+        Api.sendDocument({ chat_id: dest, document: media_file_id, caption: safe_raw_caption, parse_mode: "HTML" });
       } else {
-        Api.sendMessage({ chat_id: dest, text: safe_raw, parse_mode: "HTML" });
+        if (safe_raw) Api.sendMessage({ chat_id: dest, text: safe_raw, parse_mode: "HTML" });
       }
     } catch (err) {
       try {
-        Api.sendMessage({ chat_id: dest, text: raw_text });
+        if (raw_text) Api.sendMessage({ chat_id: dest, text: raw_text });
       } catch (err2) {}
     }
   }

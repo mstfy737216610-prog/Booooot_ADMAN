@@ -127,6 +127,9 @@ Bot.setProperty("last_crawl_id_" + channel_name, max_id, "integer");
 function toSafeHtml(txt) {
   if (!txt) return "";
   var s = txt;
+  s = s.replace(/&/g, "&amp;");
+  s = s.replace(/</g, "&lt;");
+  s = s.replace(/>/g, "&gt;");
   s = s.replace(/\*\*(.*?)\*\*/g, "<b>$1</b>");
   return s;
 }

@@ -118,7 +118,11 @@ var fallback_text = "📌 **" + title + "**\n\n" +
 // 3. النشر الفوري للوسائط والنصوص في كافة القنوات المستهدفة
 function toSafeHtmlFallback(txt) {
   if (!txt) return "";
-  return txt.replace(/\*\*(.*?)\*\*/g, "<b>$1</b>");
+  var s = txt;
+  s = s.replace(/&/g, "&amp;");
+  s = s.replace(/</g, "&lt;");
+  s = s.replace(/>/g, "&gt;");
+  return s.replace(/\*\*(.*?)\*\*/g, "<b>$1</b>");
 }
 
 var safe_fallback_text = toSafeHtmlFallback(fallback_text);
@@ -134,31 +138,66 @@ for (var i = 0; i < target_channels.length; i++) {
   var ch = target_channels[i];
   var sent_success = false;
 
-  if (media_type == "photo" && media_file_id) {
+  if ((media_type == "photo" || media_type == "photo_doc") && media_file_id) {
+    var p_success = false;
     try {
-      Api.sendPhoto({ chat_id: ch, photo: media_file_id, caption: safe_fallback_caption, parse_mode: "HTML" });
-      sent_success = true;
+      if (media_type == "photo_doc") {
+        Api.sendDocument({ chat_id: ch, document: media_file_id, caption: safe_fallback_caption, parse_mode: "HTML" });
+      } else {
+        Api.sendPhoto({ chat_id: ch, photo: media_file_id, caption: safe_fallback_caption, parse_mode: "HTML" });
+      }
+      p_success = true;
     } catch (e1) {
-      // إذا فشل جلب الصورة عبر HTTP URL، ننشر النص مباشرة في القناة لمنع ضياع المنشور
       try {
-        Api.sendMessage({ chat_id: ch, text: safe_fallback_text, parse_mode: "HTML" });
-        sent_success = true;
+        var raw_cap = fallback_text.length > 1024 ? fallback_text.substring(0, 1020) + "..." : fallback_text;
+        if (media_type == "photo_doc") {
+          Api.sendDocument({ chat_id: ch, document: media_file_id, caption: raw_cap });
+        } else {
+          Api.sendPhoto({ chat_id: ch, photo: media_file_id, caption: raw_cap });
+        }
+        p_success = true;
       } catch (e2) {
         try {
-          Api.sendMessage({ chat_id: ch, text: fallback_text });
-          sent_success = true;
-        } catch (e3) {}
+          if (media_type == "photo_doc") {
+            Api.sendDocument({ chat_id: ch, document: media_file_id });
+          } else {
+            Api.sendPhoto({ chat_id: ch, photo: media_file_id });
+          }
+          try {
+            Api.sendMessage({ chat_id: ch, text: safe_fallback_text, parse_mode: "HTML" });
+          } catch (e_txt) {
+            Api.sendMessage({ chat_id: ch, text: fallback_text });
+          }
+          p_success = true;
+        } catch (e3) {
+          try {
+            Api.sendMessage({ chat_id: ch, text: safe_fallback_text, parse_mode: "HTML" });
+            p_success = true;
+          } catch (e4) {
+            try {
+              Api.sendMessage({ chat_id: ch, text: fallback_text });
+              p_success = true;
+            } catch (e5) {}
+          }
+        }
       }
     }
+    sent_success = p_success;
   } else if (media_type == "video" && media_file_id) {
     try {
       Api.sendVideo({ chat_id: ch, video: media_file_id, caption: safe_fallback_caption, parse_mode: "HTML" });
       sent_success = true;
     } catch (e1) {
       try {
+        Api.sendVideo({ chat_id: ch, video: media_file_id });
         Api.sendMessage({ chat_id: ch, text: safe_fallback_text, parse_mode: "HTML" });
         sent_success = true;
-      } catch (e2) {}
+      } catch (e2) {
+        try {
+          Api.sendMessage({ chat_id: ch, text: safe_fallback_text, parse_mode: "HTML" });
+          sent_success = true;
+        } catch (e3) {}
+      }
     }
   } else if (media_type == "document" && media_file_id) {
     try {
