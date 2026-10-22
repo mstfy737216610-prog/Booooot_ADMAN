@@ -8,7 +8,7 @@ import {
   generateTelethonUserBotCode,
   generateStringSessionScript,
 } from './userbotEngine.ts';
-import { BotConfig, SourceItem } from '../types/index.ts';
+import type { BotConfig, SourceItem } from '../types/index.ts';
 
 const mockConfig: BotConfig = {
   botToken: '8901693218:AAEOQmHMZLy-xaPbTUMq1KGhDwp1l0wFWP4',

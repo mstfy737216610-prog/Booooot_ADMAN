@@ -10,7 +10,7 @@ import {
   simulateMessageForward,
   isCompetitorAd,
 } from './rulesEngine.ts';
-import { ForwardRule, AdReplacementConfig } from '../types/index.ts';
+import type { ForwardRule, AdReplacementConfig } from '../types/index.ts';
 
 const sampleRule: ForwardRule = {
   id: 'rule-1',

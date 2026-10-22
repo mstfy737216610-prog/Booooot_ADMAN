@@ -1,4 +1,4 @@
-import { BotConfig, SourceItem } from '../types/index.ts';
+import type { BotConfig, SourceItem } from '../types/index.ts';
 
 /**
  * Validates a Telegram API ID (typically a 6-9 digit integer from my.telegram.org)

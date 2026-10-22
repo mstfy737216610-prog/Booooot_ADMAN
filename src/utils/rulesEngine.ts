@@ -1,4 +1,4 @@
-import { ForwardRule, MessageSimulationResult, AdReplacementConfig } from '../types/index.ts';
+import type { ForwardRule, MessageSimulationResult, AdReplacementConfig } from '../types/index.ts';
 
 /**
  * Removes Arabic diacritics (tashkeel) and normalizes common letter variations
