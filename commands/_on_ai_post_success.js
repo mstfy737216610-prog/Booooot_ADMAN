@@ -75,31 +75,61 @@ var safe_post_text = toSafeHtml(rephrased_text);
 
 for (var i = 0; i < valid_targets.length; i++) {
   var ch = valid_targets[i];
-  try {
-    if (media_type === "photo" && media_file_id) {
+  var sent_success = false;
+
+  if (media_type === "photo" && media_file_id) {
+    try {
       Api.sendPhoto({ chat_id: ch, photo: media_file_id, caption: safe_post_text, parse_mode: "HTML" });
-    } else if (media_type === "video" && media_file_id) {
-      Api.sendVideo({ chat_id: ch, video: media_file_id, caption: safe_post_text, parse_mode: "HTML" });
-    } else if (media_type === "document" && media_file_id) {
-      Api.sendDocument({ chat_id: ch, document: media_file_id, caption: safe_post_text, parse_mode: "HTML" });
-    } else {
-      Api.sendMessage({ chat_id: ch, text: safe_post_text, parse_mode: "HTML" });
+      sent_success = true;
+    } catch (e1) {
+      // حماية فائقة: إذا تعذر على سيرفر تيليجرام جلب الصورة من الرابط الخارجي (failed to get HTTP URL content)، ننشر النص فوراً لمنع ضياع المنشور
+      try {
+        Api.sendMessage({ chat_id: ch, text: safe_post_text, parse_mode: "HTML" });
+        sent_success = true;
+      } catch (e2) {
+        try {
+          Api.sendMessage({ chat_id: ch, text: rephrased_text });
+          sent_success = true;
+        } catch (e3) {}
+      }
     }
+  } else if (media_type === "video" && media_file_id) {
+    try {
+      Api.sendVideo({ chat_id: ch, video: media_file_id, caption: safe_post_text, parse_mode: "HTML" });
+      sent_success = true;
+    } catch (e1) {
+      try {
+        Api.sendMessage({ chat_id: ch, text: safe_post_text, parse_mode: "HTML" });
+        sent_success = true;
+      } catch (e2) {}
+    }
+  } else if (media_type === "document" && media_file_id) {
+    try {
+      Api.sendDocument({ chat_id: ch, document: media_file_id, caption: safe_post_text, parse_mode: "HTML" });
+      sent_success = true;
+    } catch (e1) {
+      try {
+        Api.sendMessage({ chat_id: ch, text: safe_post_text, parse_mode: "HTML" });
+        sent_success = true;
+      } catch (e2) {}
+    }
+  } else {
+    try {
+      Api.sendMessage({ chat_id: ch, text: safe_post_text, parse_mode: "HTML" });
+      sent_success = true;
+    } catch (e1) {
+      try {
+        Api.sendMessage({ chat_id: ch, text: rephrased_text });
+        sent_success = true;
+      } catch (e2) {}
+    }
+  }
+
+  if (sent_success) {
     sent_count++;
     target_names.push(ch);
-  } catch (send_err) {
-    // محاولة إرسال بدون parse_mode كحماية نهائية
-    try {
-      if (media_type === "photo" && media_file_id) {
-        Api.sendPhoto({ chat_id: ch, photo: media_file_id, caption: rephrased_text });
-      } else {
-        Api.sendMessage({ chat_id: ch, text: rephrased_text });
-      }
-      sent_count++;
-      target_names.push(ch);
-    } catch (e2) {
-      failed_targets.push(ch);
-    }
+  } else {
+    failed_targets.push(ch);
   }
 }
 

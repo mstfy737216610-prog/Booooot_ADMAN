@@ -11,20 +11,27 @@ CMD*/
 
 if (!content) return;
 
+// حماية فورية من تجاوز حجم الذاكرة والوقت (102,400 بايت وحد الـ 8 ثوانٍ)
+// المنشورات الأحدث تقع دائماً في آخر صفحة تيليجرام
+var work_content = content;
+if (work_content.length > 25000) {
+  work_content = work_content.substring(work_content.length - 25000);
+}
+
 var channel_name = (params || "").trim().toLowerCase();
 if (!channel_name) {
-  var match_ch = content.match(/<meta property="al:android:url" content="tg:\/\/resolve\?domain=([^"]+)"/i);
+  var match_ch = work_content.match(/<meta property="al:android:url" content="tg:\/\/resolve\?domain=([^"]+)"/i);
   if (match_ch && match_ch[1]) {
     channel_name = match_ch[1].toLowerCase();
   }
 }
 if (!channel_name) return;
 
-// 1. استخراج معرفات كافة المنشورات الموجودة في الصفحة
+// 1. استخراج معرفات كافة المنشورات الموجودة في ذيل الصفحة
 var post_regex = /data-post="[^"]*\/(\d+)"/g;
 var match;
 var max_id = 0;
-while ((match = post_regex.exec(content)) !== null) {
+while ((match = post_regex.exec(work_content)) !== null) {
   var p_id = parseInt(match[1], 10);
   if (p_id > max_id) {
     max_id = p_id;
@@ -32,34 +39,31 @@ while ((match = post_regex.exec(content)) !== null) {
 }
 
 if (max_id === 0) {
-  // تيليجرام تفرض توجيهاً أمنياً على الكشط السحابي، نتوقف بصمت دون إزعاج المستخدم
   return;
 }
 
 var last_seen_id = Bot.getProperty("last_crawl_id_" + channel_name, 0);
 
-// إذا كانت أول عملية فحص للمصدر، نسجل المعرف ونعالج آخر منشور ليراه المشرف فوراً
 if (!last_seen_id || last_seen_id === 0) {
   last_seen_id = max_id - 1;
 }
 
 if (max_id <= last_seen_id) {
-  // لا توجد منشورات جديدة بعد
   return;
 }
 
 // 2. استخراج كتلة HTML الخاصة بأحدث منشور
 var post_marker = 'data-post="' + channel_name + '/' + max_id + '"';
-var marker_idx = content.indexOf(post_marker);
+var marker_idx = work_content.indexOf(post_marker);
 if (marker_idx === -1) {
-  marker_idx = content.lastIndexOf('data-post=');
+  marker_idx = work_content.lastIndexOf('data-post=');
 }
 
 var post_chunk = "";
 if (marker_idx !== -1) {
-  post_chunk = content.substring(marker_idx, marker_idx + 8000);
+  post_chunk = work_content.substring(marker_idx, marker_idx + 6000);
 } else {
-  post_chunk = content;
+  post_chunk = work_content;
 }
 
 // 3. استخراج النص وتنظيفه من وسوم HTML
@@ -148,13 +152,22 @@ if (is_ad) {
     "✨ *جودة أكاديمية موثوقة، دقة في المواعيد، وأسعار خاصة للطلاب!*");
 
   for (var t = 0; t < target_channels.length; t++) {
+    var target_ch = target_channels[t];
     try {
       if (image_url) {
-        Api.sendPhoto({ chat_id: target_channels[t], photo: image_url, caption: custom_ad, parse_mode: "Markdown" });
+        try {
+          Api.sendPhoto({ chat_id: target_ch, photo: image_url, caption: custom_ad, parse_mode: "Markdown" });
+        } catch (img_e) {
+          Api.sendMessage({ chat_id: target_ch, text: custom_ad, parse_mode: "Markdown" });
+        }
       } else {
-        Api.sendMessage({ chat_id: target_channels[t], text: custom_ad, parse_mode: "Markdown" });
+        Api.sendMessage({ chat_id: target_ch, text: custom_ad, parse_mode: "Markdown" });
       }
-    } catch (e) {}
+    } catch (e) {
+      try {
+        Api.sendMessage({ chat_id: target_ch, text: custom_ad });
+      } catch (e2) {}
+    }
   }
   Bot.sendMessage("🎯 **تم سحب منشور إعلاني من @" + channel_name + " واستبداله تلقائياً بإعلان خدماتك في:** " + target_channels.join("، "));
   return;
@@ -167,28 +180,34 @@ Bot.setProperty("pending_raw_text", extracted_text, "string");
 Bot.setProperty("pending_targets", target_channels, "json");
 
 var ai_enabled = Bot.getProperty("ai_enabled", true);
-var current_model = Bot.getProperty("ai_model", "DeepSeek-V4-Flash");
+var current_model = Bot.getProperty("ai_model", "DeepSeek-V4.1-Flash");
 var base_url = Bot.getProperty("ai_base_url", "https://api.hcnsec.cn/v1");
 var api_key = Bot.getProperty("ai_api_key", "sk-J2ky44F6VTDMkL8Q1GHL5sfmbeIpARVDayNuwMfxKI5zCdii");
 
 if (!ai_enabled || !extracted_text) {
   for (var p = 0; p < target_channels.length; p++) {
+    var dest_ch = target_channels[p];
     try {
       if (image_url) {
-        Api.sendPhoto({ chat_id: target_channels[p], photo: image_url, caption: extracted_text, parse_mode: "Markdown" });
+        try {
+          Api.sendPhoto({ chat_id: dest_ch, photo: image_url, caption: extracted_text, parse_mode: "Markdown" });
+        } catch (img_err2) {
+          Api.sendMessage({ chat_id: dest_ch, text: extracted_text, parse_mode: "Markdown" });
+        }
       } else {
-        Api.sendMessage({ chat_id: target_channels[p], text: extracted_text, parse_mode: "Markdown" });
+        Api.sendMessage({ chat_id: dest_ch, text: extracted_text, parse_mode: "Markdown" });
       }
-    } catch (e) {}
+    } catch (e) {
+      try {
+        Api.sendMessage({ chat_id: dest_ch, text: extracted_text });
+      } catch (e2) {}
+    }
   }
   Bot.sendMessage("⚡ **تم سحب ونشر خبر مباشر من @" + channel_name + "** إلى: `" + target_channels.join("`، `") + "`");
   return;
 }
 
-var system_prompt = "أنت محرر محتوى تعليمي وجامعي محترف. أعد صياغة الخبر التالي بأسلوب إخباري راقٍ وجذاب، " +
-  "مع عنوان مميز (📌)، وتنظيم المواعيد والتفاصيل الهامة بنقاط واضحة، " +
-  "وحذف أي إشارة أو روابط للقنوات المصدرية أو أسماء ناشرين آخرين تماماً. " +
-  "حافظ على الروابط الأكاديمية والوزارية الرسمية إن وجدت، واختم بدعوة تفاعلية (💬) وهاشتاجات مناسبة.";
+var system_prompt = "أنت محرر محتوى تعليمي وجامعي محترف. صِغ هذا الخبر بأسلوب إخباري راقٍ وموجز مع عنوان بارز (📌) ونقاط للمواعيد بدون ذكر أي قنوات سابقة أو روابط خارجية وبدون مقدمات. اختم بدعوة للمشاركة وهاشتاجات مناسبة.";
 
 var endpoint_url = base_url.replace(/\/+$/, "") + "/chat/completions";
 
@@ -204,8 +223,8 @@ HTTP.post({
       { role: "system", content: system_prompt },
       { role: "user", content: extracted_text }
     ],
-    temperature: 0.35,
-    max_tokens: 500
+    temperature: 0.25,
+    max_tokens: 280
   },
   success: "/on_ai_post_success",
   error: "/on_ai_post_error",

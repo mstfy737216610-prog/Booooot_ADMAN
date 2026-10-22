@@ -213,8 +213,17 @@ class StandaloneTelegramEducationalBot:
                 return res
 
         res_photo = self.tg_request("sendPhoto", {"chat_id": chat_id, "photo": photo})
+        if res_photo.get("ok"):
+            if caption:
+                self.send_msg(chat_id, caption, parse_mode=parse_mode)
+            return res_photo
+
+        # حماية قاطعة: إذا تعذر تحميل الصورة على سيرفر تيليجرام (failed to get HTTP URL content)، ننشر النص فوراً حتى لا يضيع المنشور
         if caption:
-            self.send_msg(chat_id, caption, parse_mode=parse_mode)
+            res_msg = self.send_msg(chat_id, caption, parse_mode=parse_mode)
+            if res_msg.get("ok"):
+                res_msg["note"] = "fallback_text_after_photo_error"
+                return res_msg
         return res_photo
 
     def answer_callback(self, cb_id: str, text: Optional[str] = None, alert: bool = False):
@@ -1152,6 +1161,12 @@ class StandaloneTelegramEducationalBot:
                         self.handle_callback_query(u["callback_query"])
                     elif "message" in u:
                         self.handle_message(u["message"])
+                    elif "channel_post" in u:
+                        self.handle_message(u["channel_post"])
+                    elif "edited_message" in u:
+                        self.handle_message(u["edited_message"])
+                    elif "edited_channel_post" in u:
+                        self.handle_message(u["edited_channel_post"])
 
                 time.sleep(0.2)
 

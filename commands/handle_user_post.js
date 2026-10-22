@@ -179,7 +179,11 @@ if (is_ad) {
     var ch_target = target_channels[k];
     try {
       if (media_type === "photo") {
-        Api.sendPhoto({ chat_id: ch_target, photo: media_file_id, caption: safe_ad, parse_mode: "HTML" });
+        try {
+          Api.sendPhoto({ chat_id: ch_target, photo: media_file_id, caption: safe_ad, parse_mode: "HTML" });
+        } catch (photo_err) {
+          Api.sendMessage({ chat_id: ch_target, text: safe_ad, parse_mode: "HTML" });
+        }
       } else if (media_type === "video") {
         Api.sendVideo({ chat_id: ch_target, video: media_file_id, caption: safe_ad, parse_mode: "HTML" });
       } else if (media_type === "document") {
@@ -217,7 +221,11 @@ if (!ai_enabled || !raw_text) {
     var dest = target_channels[p];
     try {
       if (media_type === "photo") {
-        Api.sendPhoto({ chat_id: dest, photo: media_file_id, caption: safe_raw, parse_mode: "HTML" });
+        try {
+          Api.sendPhoto({ chat_id: dest, photo: media_file_id, caption: safe_raw, parse_mode: "HTML" });
+        } catch (photo_err2) {
+          Api.sendMessage({ chat_id: dest, text: safe_raw, parse_mode: "HTML" });
+        }
       } else if (media_type === "video") {
         Api.sendVideo({ chat_id: dest, video: media_file_id, caption: safe_raw, parse_mode: "HTML" });
       } else if (media_type === "document") {
@@ -237,11 +245,8 @@ if (!ai_enabled || !raw_text) {
   return;
 }
 
-// 11. صياغة الموجه الذكي وتنفيذ الاستدعاء لـ API الذكاء الاصطناعي
-var system_prompt = "أنت محرر محتوى تعليمي وجامعي محترف. أعد صياغة الخبر التالي بأسلوب إخباري راقٍ وجذاب، " +
-  "مع عنوان مميز (📌)، وتنظيم المواعيد والتفاصيل الهامة بنقاط واضحة، " +
-  "وحذف أي إشارة أو روابط للقنوات المصدرية أو أسماء ناشرين آخرين تماماً. " +
-  "حافظ على الروابط الأكاديمية والوزارية الرسمية إن وجدت، واختم بدعوة تفاعلية (💬) وهاشتاجات مناسبة.";
+// 11. صياغة الموجه الذكي وتنفيذ الاستدعاء لـ API الذكاء الاصطناعي (سرعة فائقة لمنع الـ Timeout)
+var system_prompt = "أنت محرر محتوى تعليمي وجامعي محترف. صِغ هذا الخبر بأسلوب إخباري راقٍ وموجز مع عنوان بارز (📌) ونقاط واضحة للمواعيد، مع حذف أي إشارة أو روابط لأي قنوات أخرى تماماً، وبدون مقدمات حوارية. اختم بدعوة للمشاركة وهاشتاجات مناسبة.";
 
 var endpoint_url = base_url.replace(/\/+$/, "") + "/chat/completions";
 
@@ -257,8 +262,8 @@ HTTP.post({
       { role: "system", content: system_prompt },
       { role: "user", content: raw_text }
     ],
-    temperature: 0.35,
-    max_tokens: 600
+    temperature: 0.25,
+    max_tokens: 280
   },
   success: "/on_ai_post_success",
   error: "/on_ai_post_error",

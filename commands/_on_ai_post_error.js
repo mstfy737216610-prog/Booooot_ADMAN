@@ -66,33 +66,67 @@ function toSafeHtmlFallback(txt) {
 }
 
 var safe_fallback_text = toSafeHtmlFallback(fallback_text);
+var sent_count = 0;
+var target_names = [];
+var failed_targets = [];
 
 for (var i = 0; i < target_channels.length; i++) {
   var ch = target_channels[i];
-  try {
-    if (media_type == "photo" && media_file_id) {
+  var sent_success = false;
+
+  if (media_type == "photo" && media_file_id) {
+    try {
       Api.sendPhoto({ chat_id: ch, photo: media_file_id, caption: safe_fallback_text, parse_mode: "HTML" });
-    } else if (media_type == "video" && media_file_id) {
-      Api.sendVideo({ chat_id: ch, video: media_file_id, caption: safe_fallback_text, parse_mode: "HTML" });
-    } else if (media_type == "document" && media_file_id) {
-      Api.sendDocument({ chat_id: ch, document: media_file_id, caption: safe_fallback_text, parse_mode: "HTML" });
-    } else {
-      Api.sendMessage({ chat_id: ch, text: safe_fallback_text, parse_mode: "HTML" });
+      sent_success = true;
+    } catch (e1) {
+      // إذا فشل جلب الصورة عبر HTTP URL، ننشر النص مباشرة في القناة لمنع ضياع المنشور
+      try {
+        Api.sendMessage({ chat_id: ch, text: safe_fallback_text, parse_mode: "HTML" });
+        sent_success = true;
+      } catch (e2) {
+        try {
+          Api.sendMessage({ chat_id: ch, text: fallback_text });
+          sent_success = true;
+        } catch (e3) {}
+      }
     }
+  } else if (media_type == "video" && media_file_id) {
+    try {
+      Api.sendVideo({ chat_id: ch, video: media_file_id, caption: safe_fallback_text, parse_mode: "HTML" });
+      sent_success = true;
+    } catch (e1) {
+      try {
+        Api.sendMessage({ chat_id: ch, text: safe_fallback_text, parse_mode: "HTML" });
+        sent_success = true;
+      } catch (e2) {}
+    }
+  } else if (media_type == "document" && media_file_id) {
+    try {
+      Api.sendDocument({ chat_id: ch, document: media_file_id, caption: safe_fallback_text, parse_mode: "HTML" });
+      sent_success = true;
+    } catch (e1) {
+      try {
+        Api.sendMessage({ chat_id: ch, text: safe_fallback_text, parse_mode: "HTML" });
+        sent_success = true;
+      } catch (e2) {}
+    }
+  } else {
+    try {
+      Api.sendMessage({ chat_id: ch, text: safe_fallback_text, parse_mode: "HTML" });
+      sent_success = true;
+    } catch (e1) {
+      try {
+        Api.sendMessage({ chat_id: ch, text: fallback_text });
+        sent_success = true;
+      } catch (e2) {}
+    }
+  }
+
+  if (sent_success) {
     sent_count++;
     target_names.push(ch);
-  } catch (e) {
-    try {
-      if (media_type == "photo" && media_file_id) {
-        Api.sendPhoto({ chat_id: ch, photo: media_file_id, caption: fallback_text });
-      } else {
-        Api.sendMessage({ chat_id: ch, text: fallback_text });
-      }
-      sent_count++;
-      target_names.push(ch);
-    } catch (e2) {
-      Bot.sendMessage("⚠️ لم يتمكن البوت من النشر في `" + ch + "`. تأكد من رفع البوت كمشرف في القناة.");
-    }
+  } else {
+    failed_targets.push(ch);
   }
 }
 
