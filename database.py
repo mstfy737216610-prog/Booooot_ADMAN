@@ -761,31 +761,80 @@ def delete_university_project(univ_id: str) -> bool:
             conn.close()
 
 
-def find_university_for_post(source: str, text: str) -> Optional[Dict[str, Any]]:
+def get_university_by_id(univ_id: str) -> Optional[Dict[str, Any]]:
+    """استرجاع مشروع جامعة محدد بدقة عبر معرفه الفريد"""
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM university_projects WHERE id = ?", (univ_id,))
+            r = cursor.fetchone()
+            if not r:
+                return None
+            return {
+                "id": r["id"],
+                "name": r["name"],
+                "target_channel": r["target_channel"],
+                "telegram_sources": json.loads(r["telegram_sources"] or "[]"),
+                "twitter_sources": json.loads(r["twitter_sources"] or "[]"),
+                "google_news_query": r["google_news_query"] or r["name"],
+                "google_news_enabled": bool(r["google_news_enabled"]),
+                "keywords": json.loads(r["keywords"] or "[]"),
+                "enabled": bool(r["enabled"]),
+                "created_at": r["created_at"]
+            }
+        finally:
+            conn.close()
+
+
+def toggle_university_status(univ_id: str) -> Optional[bool]:
+    """تبديل حالة نشاط جامعة معينة (تفعيل / إيقاف مؤقت) بشكل مستقل تماماً"""
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT enabled FROM university_projects WHERE id = ?", (univ_id,))
+            r = cursor.fetchone()
+            if not r:
+                return None
+            new_state = 0 if r["enabled"] else 1
+            cursor.execute("UPDATE university_projects SET enabled = ? WHERE id = ?", (new_state, univ_id))
+            conn.commit()
+            sync_to_json_files()
+            return bool(new_state)
+        finally:
+            conn.close()
+
+
+def find_university_for_post(source: str, text: str = "") -> Optional[Dict[str, Any]]:
+    """
+    نظام العزل العلائقي الصارم (Strict Relational Mapping):
+    كل قناة هدف مرتبطة حصرياً بمصدر محدد. يمنع منعاً باتاً خلط القنوات أو النشر
+    بناءً على تشابه الكلمات المفتاحية بين الجامعات المختلفة.
+    """
+    if not source:
+        return None
+
     projects = get_university_projects()
-    clean_src = (source or "").strip().lower().replace("https://t.me/s/", "").replace("https://t.me/", "").replace("t.me/", "")
-    if not clean_src.startswith("@") and clean_src:
+    clean_src = (source or "").strip().lower()
+    clean_src = clean_src.replace("https://t.me/s/", "").replace("https://t.me/", "").replace("t.me/", "")
+    if not clean_src.startswith("@") and not clean_src.startswith("http") and clean_src:
         clean_src = "@" + clean_src
 
-    # 1. First priority: direct match on university's telegram or twitter sources
+    # مطابقة حصرية ومباشرة 1-to-1 مع المصادر المحددة لهذه الجامعة فقط
     for p in projects:
         if not p.get("enabled"):
             continue
-        all_sources = [s.lower() for s in p.get("telegram_sources", []) + p.get("twitter_sources", [])]
-        if clean_src in all_sources:
+        all_sources = [s.lower().strip() for s in (p.get("telegram_sources", []) + p.get("twitter_sources", []))]
+        all_sources_clean = [
+            s.replace("https://t.me/s/", "").replace("https://t.me/", "").replace("t.me/", "")
+            for s in all_sources
+        ]
+        # مطابقة دقيقة إما مع المعرف أو الرابط
+        if clean_src in all_sources or clean_src in all_sources_clean or ("@" + clean_src.replace("@", "")) in all_sources:
             return p
 
-    # 2. Second priority: match on keywords in text
-    lower_text = (text or "").lower()
-    for p in projects:
-        if not p.get("enabled"):
-            continue
-        if p["name"].lower() in lower_text:
-            return p
-        for kw in p.get("keywords", []):
-            if kw and len(kw) >= 3 and kw.lower() in lower_text:
-                return p
-
+    # عزل تام: إذا كان المصدر غير مسجل لأي جامعة محددة، لا يتم النشر عشوائياً
     return None
 
 

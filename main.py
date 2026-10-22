@@ -1130,13 +1130,18 @@ class StandaloneTelegramEducationalBot:
                                 photo_path = await event.download_media()
 
                             logger.info(f"📥 [MTProto] تم سحب منشور جديد من {chat_username}")
-                            post_queue.put({
-                                "type": "mtproto_post",
-                                "text": text,
-                                "photo": photo_path,
-                                "targets": db.get_target_channels(),
-                                "user_id": ADMIN_ID
-                            })
+                            matched_univ = db.find_university_for_post(chat_username, text)
+                            if matched_univ:
+                                post_queue.put({
+                                    "type": "mtproto_post",
+                                    "text": text,
+                                    "photo": photo_path,
+                                    "targets": [matched_univ["target_channel"]],
+                                    "target_univ": matched_univ["name"],
+                                    "user_id": ADMIN_ID
+                                })
+                            else:
+                                logger.info(f"🛡️ [عزل MTProto] منشور من {chat_username} لا يطابق أي جامعة مستهدفة وتم استبعاده.")
                     except Exception as err:
                         logger.error(f"خطأ معالجة حدث MTProto: {err}")
 
@@ -1317,6 +1322,25 @@ class StandaloneTelegramEducationalBot:
                 return
             elif state == "waiting_univ_tw":
                 self.process_univ_step4_tw(chat_id, clean_text)
+                return
+            elif state == "waiting_univ_gnews":
+                self.process_univ_step5_gnews(chat_id, clean_text)
+                return
+            elif state.startswith("waiting_univ_post_"):
+                target_uid = state.replace("waiting_univ_post_", "")
+                self.user_waiting_state.pop(chat_id, None)
+                target_univ = db.get_university_by_id(target_uid)
+                target_ch = [target_univ["target_channel"]] if target_univ else db.get_target_channels()
+                target_name = target_univ["name"] if target_univ else None
+                post_queue.put({
+                    "type": "direct_post",
+                    "text": clean_text,
+                    "photo": photo_id,
+                    "targets": target_ch,
+                    "target_univ": target_name,
+                    "user_id": chat_id
+                })
+                self.send_msg(chat_id, f"⚡ **تم استلام المنشور المخصص لـ {target_name or 'الجامعة'}!** جاري الصياغة بالذكاء والنشر حصراً في `{target_ch[0]}`...")
                 return
 
         # ----------------- الأوامر المباشرة -----------------
@@ -1546,15 +1570,42 @@ class StandaloneTelegramEducationalBot:
         elif data == "panel_start":
             self.show_welcome_panel(chat_id, user_data)
 
-        elif data.startswith("del_univ_"):
-            univ_id = data.replace("del_univ_", "")
-            db.delete_university_project(univ_id)
-            self.send_msg(chat_id, "🗑️ تم حذف مشروع الجامعة ومصادرها بنجاح!")
-            self.show_universities_panel(chat_id)
+        elif data.startswith("univ_view_"):
+            univ_id = data.replace("univ_view_", "")
+            self.show_single_university_dashboard(chat_id, univ_id)
 
-        elif data.startswith("crawl_univ_"):
-            univ_id = data.replace("crawl_univ_", "")
+        elif data.startswith("univ_toggle_"):
+            univ_id = data.replace("univ_toggle_", "")
+            new_st = db.toggle_university_status(univ_id)
+            if new_st is not None:
+                st_txt = "🟢 تم تفعيل النشر التلقائي للجامعة بنجاح!" if new_st else "⏸️ تم إيقاف النشر التلقائي لهذه الجامعة مؤقتاً."
+                self.send_msg(chat_id, st_txt)
+            self.show_single_university_dashboard(chat_id, univ_id)
+
+        elif data.startswith("univ_crawl_") or data.startswith("crawl_univ_"):
+            univ_id = data.replace("univ_crawl_", "").replace("crawl_univ_", "")
             self.crawl_single_university(chat_id, univ_id)
+
+        elif data.startswith("univ_gnews_"):
+            univ_id = data.replace("univ_gnews_", "")
+            target_univ = db.get_university_by_id(univ_id)
+            if target_univ:
+                self.send_msg(chat_id, f"🌐 جاري فحص أخبار جوجل الحصرية لـ **{target_univ['name']}**...")
+                threading.Thread(target=self.check_google_news_single_university, args=(target_univ, True), daemon=True).start()
+
+        elif data.startswith("univ_post_"):
+            univ_id = data.replace("univ_post_", "")
+            target_univ = db.get_university_by_id(univ_id)
+            if target_univ:
+                self.user_waiting_state[chat_id] = f"waiting_univ_post_{univ_id}"
+                self.send_msg(chat_id, f"📝 **أرسل الآن نص المنشور أو الصورة للنشر حصراً في قناة {target_univ['name']} (`{target_univ['target_channel']}`):**\n\n*(سيمر عبر الصياغة بالذكاء ولن يتداخل مع أي قناة أخرى)*")
+
+        elif data.startswith("univ_del_") or data.startswith("del_univ_"):
+            univ_id = data.replace("univ_del_", "").replace("del_univ_", "")
+            target_univ = db.get_university_by_id(univ_id)
+            db.delete_university_project(univ_id)
+            self.send_msg(chat_id, f"🗑️ تم حذف مشروع الجامعة `{target_univ['name'] if target_univ else univ_id}` بنجاح!")
+            self.show_universities_panel(chat_id)
 
         elif data == "panel_cancel":
             self.cached_forwarded_post.pop(chat_id, None)
@@ -1694,12 +1745,13 @@ class StandaloneTelegramEducationalBot:
     def start_add_university_wizard(self, chat_id: int):
         self.user_waiting_state[chat_id] = "waiting_univ_target"
         self.univ_wizard_data[chat_id] = {}
-        text = """🏛️ **معالج إضافة جامعة وقناة نشر جديدة (الخطوة 1 من 4):**
+        text = """🏛️ **معالج ربط وإعداد جامعة وقناة نشر جديدة (الخطوة 1 من 5):**
 ━━━━━━━━━━━━━━━━━━━
-📢 أرسل الآن **معرّف قناة النشر** المستهدفة التي ترغب بنشر أخبار الجامعة إليها:
-📌 **مثال**: `@ksu_channel` أو قم بتوجيه أي رسالة من القناة هنا
+📢 **الخطوة الأولى: تحديد قناة النشر الهدف**
+أرسل الآن **معرّف أو رابط قناة النشر** التي ترغب بنشر أخبار الجامعة إليها:
+📌 **مثال**: `@jhdhhdcj` أو `@MyUnivChannel` أو قم بتوجيه رسالة من القناة هنا.
 
-*(تأكد من إضافة البوت مشرفاً Admin في القناة مع صلاحية النشر)*
+💡 *(تأكد من إضافة البوت مشرفاً Admin في القناة مع صلاحية نشر الرسائل)*
 *(أرسل /cancel في أي وقت للإلغاء)*"""
         self.send_msg(chat_id, text)
 
@@ -1713,20 +1765,23 @@ class StandaloneTelegramEducationalBot:
         self.univ_wizard_data[chat_id]["target_channel"] = target_ch
         self.user_waiting_state[chat_id] = "waiting_univ_name"
 
-        prompt = f"""✅ **تم اعتماد قناة النشر**: `{target_ch}`
+        prompt = f"""✅ **تم اعتماد قناة النشر الهدف**: `{target_ch}`
 ━━━━━━━━━━━━━━━━━━━
-🎓 **الخطوة 2 من 4: تحديد اسم الجامعة المستهدفة**:
+🎓 **الخطوة 2 من 5: تحديد اسم الجامعة / القسم بالتفصيل**:
 
-أرسل الاسم الرسمي والواضح للجامعة:
-📌 **مثال**: `جامعة الملك سعود` أو `جامعة الكويت` أو `جامعة الملك فهد`
+أرسل الاسم الرسمي والواضح للجامعة أو الكلية لتوجيه سياق الذكاء الاصطناعي بدقة تامة:
+📌 **أمثلة**:
+• `جامعة الشرق الأوسط الأمريكية AUM - الكويت`
+• `جامعة الملك سعود - كلية الهندسة`
+• `كليات التقنية العليا HCT`
 
-💡 *(هذا الاسم سيستخدمه الذكاء الاصطناعي لحصر الأخبار والتحقق من صلتها بالجامعة قبل النشر)*"""
+💡 *(هذا الاسم هو المعيار الأساسي لعزل المنشورات وتوجيه صياغة الذكاء الاصطناعي)*"""
         self.send_msg(chat_id, prompt)
 
     def process_univ_step2_name(self, chat_id: int, input_text: str):
         name = input_text.strip()
         if len(name) < 3:
-            self.send_msg(chat_id, "⚠️ اسم الجامعة قصير جداً! يرجى إرسال اسم الجامعة بوضوح مثل: `جامعة الملك سعود`")
+            self.send_msg(chat_id, "⚠️ اسم الجامعة قصير جداً! يرجى إرسال اسم الجامعة بوضوح مثل: `جامعة الشرق الأوسط الأمريكية AUM`")
             return
 
         if chat_id not in self.univ_wizard_data:
@@ -1736,17 +1791,17 @@ class StandaloneTelegramEducationalBot:
 
         prompt = f"""✅ **تم حفظ اسم الجامعة**: `{name}`
 ━━━━━━━━━━━━━━━━━━━
-📡 **الخطوة 3 من 4: قنوات تيليجرام المصدر لهذه الجامعة**:
+📡 **الخطوة 3 من 5: تحديد قنوات التليجرام المصدرة**:
 
-أرسل معرفات قنوات تيليجرام الخاصة بهذه الجامعة (مفصولة بمسافة):
-📌 **مثال**: `@KSU_News @KSU_Official`
+أرسل معرفات قنوات التليجرام التي تريد سحب الأخبار منها **حصراً لهذه الجامعة** (مفصولة بمسافة):
+📌 **مثال**: `@aum_news @aum_union`
 
-💡 *إن لم تتوفر قنوات تيليجرام وترغب فقط بالاعتماد على أخبار جوجل وتويتر، اكتب كلمة*: `تخطي`"""
+💡 *إذا كنت ترغب بالاعتماد فقط على أخبار جوجل وتويتر، أرسل كلمة*: `تخطي`"""
         self.send_msg(chat_id, prompt)
 
     def process_univ_step3_tg(self, chat_id: int, input_text: str):
         tg_sources = []
-        if input_text.strip().lower() not in ["تخطي", "skip", "-"]:
+        if input_text.strip().lower() not in ["تخطي", "skip", "-", "لا"]:
             parts = re.split(r'[\s,]+', input_text.strip())
             for p in parts:
                 p = p.strip()
@@ -1761,19 +1816,19 @@ class StandaloneTelegramEducationalBot:
         self.user_waiting_state[chat_id] = "waiting_univ_tw"
 
         tg_desc = "، ".join(tg_sources) if tg_sources else "تم التخطي"
-        prompt = f"""✅ **تم حفظ قنوات تيليجرام ({len(tg_sources)})**: `{tg_desc}`
+        prompt = f"""✅ **تم ربط قنوات تليجرام ({len(tg_sources)})**: `{tg_desc}`
 ━━━━━━━━━━━━━━━━━━━
-🐦 **الخطوة 4 من 4: حسابات تويتر/X الرسمية**:
+🐦 **الخطوة 4 من 5: تحديد حسابات تويتر (X) المصدرة**:
 
 أرسل معرفات حسابات تويتر/X التابعة لهذه الجامعة (مفصولة بمسافة):
-📌 **مثال**: `@_KSU @ksu_portal`
+📌 **مثال**: `@aum_kw @moe_kw`
 
-💡 *يمكنك أيضاً كتابة كلمة*: `تخطي`"""
+💡 *إن لم تتوفر حسابات تويتر حالياً، أرسل كلمة*: `تخطي`"""
         self.send_msg(chat_id, prompt)
 
     def process_univ_step4_tw(self, chat_id: int, input_text: str):
         tw_sources = []
-        if input_text.strip().lower() not in ["تخطي", "skip", "-"]:
+        if input_text.strip().lower() not in ["تخطي", "skip", "-", "لا"]:
             parts = re.split(r'[\s,]+', input_text.strip())
             for p in parts:
                 p = p.strip()
@@ -1782,92 +1837,184 @@ class StandaloneTelegramEducationalBot:
                         p = "@" + p
                     tw_sources.append(p)
 
+        if chat_id not in self.univ_wizard_data:
+            self.univ_wizard_data[chat_id] = {}
+        self.univ_wizard_data[chat_id]["twitter_sources"] = tw_sources
+        self.user_waiting_state[chat_id] = "waiting_univ_gnews"
+
+        name = self.univ_wizard_data[chat_id].get("name", "الجامعة")
+        tw_desc = "، ".join(tw_sources) if tw_sources else "تم التخطي"
+
+        prompt = f"""✅ **تم ربط حسابات تويتر ({len(tw_sources)})**: `{tw_desc}`
+━━━━━━━━━━━━━━━━━━━
+🌐 **الخطوة 5 من 5: البحث التلقائي في أخبار جوجل (Google News)**:
+
+أرسل عبارة البحث لجلب الأخبار والمقالات الأكاديمية الرسمية للجامعة.
+📌 **العبارة المقترحة تلقائياً**: `\"{name}\"`
+
+💡 *أرسل كلمة `تأكيد` للاعتماد الفوري، أو اكتب عبارة بحث مخصصة (مثال: `{name} مكافأة قبول تسجيل`):*"""
+        self.send_msg(chat_id, prompt)
+
+    def process_univ_step5_gnews(self, chat_id: int, input_text: str):
         wizard = self.univ_wizard_data.pop(chat_id, {})
         self.user_waiting_state.pop(chat_id, None)
 
         name = wizard.get("name", "جامعة جديدة")
         target_ch = wizard.get("target_channel", "@jhdhhdcj")
         tg_sources = wizard.get("telegram_sources", [])
+        tw_sources = wizard.get("twitter_sources", [])
 
-        # استخراج الكلمات المفتاحية
+        input_clean = input_text.strip()
+        if input_clean.lower() in ["تأكيد", "نعم", "موافق", "confirm", "ok", "تخطي"]:
+            gnews_query = name
+        else:
+            gnews_query = input_clean or name
+
+        # الكلمات المفتاحية المعزولة للجامعة
         keywords = [name]
-        words = name.split()
-        for w in words:
-            w_clean = w.strip()
-            if len(w_clean) > 3 and w_clean not in ["جامعة", "كلية", "عمادة", "معهد"]:
-                keywords.append(w_clean)
-        keywords.extend(["قبول", "تسجيل"])
+        for w in name.split():
+            w_c = w.strip()
+            if len(w_c) > 3 and w_c not in ["جامعة", "كلية", "عمادة", "معهد", "الشرق", "الأوسط"]:
+                keywords.append(w_c)
+        keywords.extend(["قبول", "تسجيل", "مكافأة", "إعانة"])
 
         proj = db.add_university_project(
             name=name,
             target_channel=target_ch,
             telegram_sources=tg_sources,
             twitter_sources=tw_sources,
-            google_news_query=name,
+            google_news_query=gnews_query,
             keywords=keywords
         )
 
-        # إضافة المصادر في قاعدة البيانات للمراقبة الفورية
+        # تسجيل المصادر في قاعدة البيانات للمراقبة المباشرة
         for tg in tg_sources:
             db.add_source("telegram", tg, f"{name} - تيليجرام", added_by=chat_id)
         for tw in tw_sources:
             db.add_source("twitter", tw, f"{name} - تويتر", added_by=chat_id)
 
-        kb = {
-            "inline_keyboard": [
-                [{"text": "🔄 فحص أخبار هذه الجامعة الآن", "callback_data": f"crawl_univ_{proj['id']}"}],
-                [{"text": "🏛️ إدارة كافة الجامعات", "callback_data": "panel_universities"}],
-                [{"text": "🎛 العودة للوحة الرئيسية", "callback_data": "panel_start"}]
-            ]
-        }
-
-        tg_disp = "، ".join(tg_sources) if tg_sources else "لا يوجد"
-        tw_disp = "، ".join(tw_sources) if tw_sources else "لا يوجد"
-
-        success_text = f"""🎉 **تم حفظ وتهيئة مشروع الجامعة بنجاح تام!**
-━━━━━━━━━━━━━━━━━━━
-🎓 **اسم الجامعة**: {name}
-📢 **قناة النشر الحصرية**: `{target_ch}`
-📡 **قنوات تيليجرام**: `{tg_disp}`
-🐦 **حسابات تويتر/X**: `{tw_disp}`
-🌐 **أخبار جوجل نيوز**: مفعلة تلقائياً للاستعلام `\"{name}\"`
-🔑 **الكلمات المفتاحية المعزولة**: `{', '.join(keywords)}`
-━━━━━━━━━━━━━━━━━━━
-🛡️ **نظام العزل الذكي مفعل**: لن يتم نشر أي منشور في قناة `{target_ch}` إلا إذا كان مرتبطاً بـ **{name}** حصراً، مع تنظيف تام لمخلفات الويب ونقاط التعداد الفارغة."""
-        self.send_msg(chat_id, success_text, kb)
+        self.send_msg(chat_id, f"🎉 **تم إنشاء وربط مشروع الجامعة بنجاح تام!**\nكل مصادر {name} معزولة 100% وتصب حصراً في `{target_ch}`.")
+        self.show_single_university_dashboard(chat_id, proj["id"])
 
     def show_universities_panel(self, chat_id: int):
+        """يعرض قائمة الجامعات، ولكل جامعة زر مستقل وخاص بها للتحكم الكامل"""
         univs = db.get_university_projects()
-        text = f"🏛️ **إدارة الجامعات وقنوات النشر المعزولة ({len(univs)}):**\n"
-        text += "🛡️ *كل جامعة تنشر في قناتها الخاصة فقط وتراقب مصادرها وأخبار جوجل بشكل مستقل دون أي خلط.*\n"
-        text += "━━━━━━━━━━━━━━━━━━━\n\n"
+        text = f"🏛️ **قائمة الجامعات وقنوات النشر المستقلة ({len(univs)}):**\n"
+        text += "🛡️ *نظام العزل الصارم (Strict Relational Mapping) نشط: كل جامعة لها مسار معزول تماماً ومصادر حصرية.*\n\n"
+        text += "👇 **اضغط على زر أي جامعة أدناه للدخول للوحتها المستقلة وإدارتها:**"
 
         buttons = []
-        for i, u in enumerate(univs, 1):
+        for u in univs:
             st = "🟢 نشطة" if u.get("enabled", True) else "🔴 متوقفة"
-            tg_cnt = len(u.get("telegram_sources", []))
-            tw_cnt = len(u.get("twitter_sources", []))
-            text += f"**{i}. {u['name']}** ({st})\n"
-            text += f"   📢 **قناة النشر:** `{u['target_channel']}`\n"
-            text += f"   📡 **تيليجرام:** {tg_cnt} قنوات | 🐦 **تويتر:** {tw_cnt} حسابات\n"
-            text += f"   🌐 **أخبار جوجل:** `\"{u.get('google_news_query', u['name'])}\"`\n"
-            text += "───────────────────\n"
-
             buttons.append([
-                {"text": f"🔄 فحص أخبار {u['name'][:18]}", "callback_data": f"crawl_univ_{u['id']}"},
-                {"text": f"🗑️ حذف", "callback_data": f"del_univ_{u['id']}"}
+                {"text": f"🎓 {u['name']} ({st}) ⮞ {u['target_channel']}", "callback_data": f"univ_view_{u['id']}"}
             ])
 
         buttons.append([
-            {"text": "➕ إضافة جامعة وقناة نشر جديدة", "callback_data": "panel_add_university"},
-            {"text": "🌐 فحص أخبار جوجل للكل", "callback_data": "panel_gnews"}
+            {"text": "➕ معالج إضافة جامعة وقناة (5 خطوات)", "callback_data": "panel_add_university"},
+            {"text": "🔄 فحص وسحب كافة الجامعات", "callback_data": "panel_crawl"}
         ])
         buttons.append([
-            {"text": "🔄 فحص وسحب كافة المصادر", "callback_data": "panel_crawl"},
+            {"text": "📞 الدعم الفني المباشر (@M_S_F_G)", "url": "https://t.me/M_S_F_G"},
             {"text": "🎛 اللوحة الرئيسية", "callback_data": "panel_start"}
         ])
 
         self.send_msg(chat_id, text, {"inline_keyboard": buttons})
+
+    def show_single_university_dashboard(self, chat_id: int, univ_id: str):
+        """لوحة تحكم خاصة ومستقلة حصراً بجامعة محددة دون التأثير على الجامعات الأخرى"""
+        univ = db.get_university_by_id(univ_id)
+        if not univ:
+            self.send_msg(chat_id, "⚠️ لم يتم العثور على الجامعة المحددة.")
+            self.show_universities_panel(chat_id)
+            return
+
+        is_active = univ.get("enabled", True)
+        st_badge = "🟢 نشطة (النشر التلقائي يعمل)" if is_active else "🔴 متوقفة مؤقتاً"
+        tg_disp = "، ".join(univ.get("telegram_sources", [])) or "لا يوجد مصادر تيليجرام"
+        tw_disp = "، ".join(univ.get("twitter_sources", [])) or "لا يوجد مصادر تويتر"
+        gnews_q = univ.get("google_news_query", univ["name"])
+
+        text = f"""🏛️ **لوحة التحكم المستقلة: {univ['name']}**
+━━━━━━━━━━━━━━━━━━━
+📢 **قناة النشر الحصرية**: `{univ['target_channel']}`
+⚡ **الحالة الحالية**: {st_badge}
+📡 **قنوات تيليجرام المصدرة**: `{tg_disp}`
+🐦 **حسابات تويتر/X المصدرة**: `{tw_disp}`
+🌐 **استعلام أخبار جوجل**: `\"{gnews_q}\"`
+🔑 **معرف المشروع**: `{univ['id']}`
+━━━━━━━━━━━━━━━━━━━
+🛡️ **العزل الصارم**: جميع أخبار هذه المصادر تصاغ بالذكاء وتنشر حصراً في `{univ['target_channel']}` ولن تتداخل مع أي قناة أخرى."""
+
+        btn_toggle_text = "⏸️ إيقاف النشر لهذه الجامعة" if is_active else "▶️ تفعيل واستئناف النشر"
+        buttons = [
+            [
+                {"text": f"🔄 فحص وسحب أخبار {univ['name'][:16]}", "callback_data": f"univ_crawl_{univ['id']}"},
+                {"text": btn_toggle_text, "callback_data": f"univ_toggle_{univ['id']}"}
+            ],
+            [
+                {"text": f"🌐 أخبار جوجل المباشرة", "callback_data": f"univ_gnews_{univ['id']}"},
+                {"text": f"📝 نشر خبر فوري في قناتها", "callback_data": f"univ_post_{univ['id']}"}
+            ],
+            [
+                {"text": "🗑️ حذف هذه الجامعة من النظام", "callback_data": f"univ_del_{univ['id']}"}
+            ],
+            [
+                {"text": "🔙 عودة لقائمة الجامعات", "callback_data": "panel_universities"},
+                {"text": "🎛 اللوحة الرئيسية", "callback_data": "panel_start"}
+            ]
+        ]
+
+        self.send_msg(chat_id, text, {"inline_keyboard": buttons})
+
+    def check_google_news_single_university(self, target_univ: Dict[str, Any], is_manual: bool = False):
+        """فحص وسحب أخبار جوجل لجامعة محددة حصراً وتوجيهها لقناتها الهدف"""
+        try:
+            q_str = target_univ.get("google_news_query") or target_univ["name"]
+            encoded_q = urllib.parse.quote(q_str)
+            target_ch = target_univ["target_channel"]
+
+            urls = [
+                f"https://news.google.com/rss/search?q={encoded_q}&hl=ar&gl=KW&ceid=KW:ar",
+                f"https://news.google.com/rss/search?q={encoded_q}&hl=ar&gl=SA&ceid=SA:ar"
+            ]
+
+            for url in urls:
+                try:
+                    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
+                    with urllib.request.urlopen(req, context=ssl_ctx, timeout=12) as resp:
+                        root = ET.fromstring(resp.read())
+                        items = root.findall(".//item")
+                        for it in items[:6]:
+                            title = it.findtext("title") or ""
+                            link = it.findtext("link") or ""
+                            desc = it.findtext("description") or ""
+                            clean_desc = re.sub(r'<[^>]+>', '', desc).strip()
+                            full_text = f"{title}\n{clean_desc}".strip()
+
+                            pid = link or hashlib.md5(full_text.encode("utf-8")).hexdigest()
+                            p_hash = hashlib.md5(full_text[:80].encode("utf-8")).hexdigest()
+
+                            if db.is_post_seen(pid, p_hash):
+                                continue
+
+                            db.mark_post_seen(pid, p_hash, f"gnews_{target_univ['id']}")
+                            logger.info(f"⚡️ [Google News الحصري] خبر جديد لـ {target_univ['name']} موجه إلى {target_ch}")
+
+                            post_queue.put({
+                                "type": "google_news_post",
+                                "text": f"{full_text}\n\n{link}",
+                                "photo": None,
+                                "targets": [target_ch],
+                                "target_univ": target_univ["name"],
+                                "user_id": ADMIN_ID
+                            })
+                            if not is_manual:
+                                break
+                except Exception as e:
+                    logger.debug(f"خطأ في سحب أخبار جوجل: {e}")
+        except Exception as e:
+            logger.error(f"خطأ في check_google_news_single_university: {e}")
 
     def trigger_google_news_search(self, chat_id: int, custom_query: str = ""):
         self.send_msg(chat_id, "🌐 **جاري البحث في Google News عن أحدث الأخبار الأكاديمية والجامعية...**")

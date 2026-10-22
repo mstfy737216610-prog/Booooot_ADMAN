@@ -16,11 +16,25 @@ export interface SourceItem {
   lastChecked?: string;
 }
 
+export interface UniversityProject {
+  id: string;
+  name: string;
+  target_channel: string;
+  telegram_sources: string[];
+  twitter_sources: string[];
+  google_news_query?: string;
+  google_news_enabled?: boolean;
+  keywords: string[];
+  enabled: boolean;
+  created_at?: string;
+}
+
 export interface SourcesConfig {
   _info?: string;
   version?: string;
   lastUpdated?: string;
   target_channels?: string[];
+  university_projects?: UniversityProject[];
   sources: SourceItem[];
 }
 

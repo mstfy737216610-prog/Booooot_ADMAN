@@ -101,6 +101,13 @@ export const GitHubHostingGuide: React.FC<Props> = ({ adminUsername }) => {
 
   const commandsList = [
     { name: '/start', desc: 'لوحة التحكم الرئيسية بأزرار إنلاين تفاعلية (الأقسام الخمسة)' },
+    { name: '/universities', desc: '🏛️ قائمة أزرار الجامعات المستقلة (زر وتحكم منفصل لكل جامعة)' },
+    { name: '/univ_view <id>', desc: 'لوحة تحكم مخصصة وحصرية للجامعة المحددة' },
+    { name: '/univ_crawl <id>', desc: 'سحب وفحص أخبار جامعة محددة فقط بدون أي خلط' },
+    { name: '/univ_toggle <id>', desc: 'تفعيل أو إيقاف النشر لجامعة وقناتها المحددة' },
+    { name: '/univ_post <id>', desc: 'صياغة ونشر خبر فوري لقناة الجامعة المحددة حصرياً' },
+    { name: '/add_university', desc: '➕ معالج إضافة جامعة هرمي (5 خطوات صارمة لمنع التداخل)' },
+    { name: '/del_university <id>', desc: 'حذف جامعة محددة وإلغاء ربط مصادرها' },
     { name: '/pause', desc: '🟢 تشغيل / إيقاف البوت فوراً' },
     { name: '/ai', desc: '⚙️ إعدادات الذكاء الاصطناعي واختيار النماذج وتعديل الروابط' },
     { name: '/set_base_url', desc: 'تعديل رابط الـ Base URL المعتمد' },

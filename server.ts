@@ -153,6 +153,222 @@ app.post('/api/telegram/test-bot', async (req: Request, res: Response) => {
   }
 });
 
+// 5.1 University Management Endpoints
+app.post('/api/university/add', (req: Request, res: Response) => {
+  try {
+    const { name, target_channel, telegram_sources = [], twitter_sources = [], google_news_query } = req.body;
+    if (!name || !target_channel) {
+      res.status(400).json({ error: "اسم الجامعة وقناة النشر مطلوبان" });
+      return;
+    }
+    const data = JSON.parse(fs.readFileSync(SOURCES_FILE, 'utf-8'));
+    if (!data.university_projects) data.university_projects = [];
+
+    const cleanTag = target_channel.replace(/[^a-zA-Z0-9_]/g, '') || 'univ';
+    const univId = `univ_${cleanTag}_${Date.now()}`;
+    const newProj = {
+      id: univId,
+      name: name.trim(),
+      target_channel: target_channel.trim(),
+      telegram_sources,
+      twitter_sources,
+      google_news_query: google_news_query || name.trim(),
+      google_news_enabled: true,
+      keywords: [name.trim(), "قبول", "تسجيل"],
+      enabled: true,
+      created_at: new Date().toISOString()
+    };
+
+    data.university_projects.push(newProj);
+    if (!data.target_channels) data.target_channels = [];
+    if (!data.target_channels.includes(target_channel.trim())) {
+      data.target_channels.push(target_channel.trim());
+    }
+    data.lastUpdated = new Date().toISOString();
+    fs.writeFileSync(SOURCES_FILE, JSON.stringify(data, null, 2), 'utf-8');
+
+    // Also update SQLite database via Python script helper
+    execFile('python3', ['-c', `
+import database as db
+db.add_university_project(
+    name=${JSON.stringify(newProj.name)},
+    target_channel=${JSON.stringify(newProj.target_channel)},
+    telegram_sources=${JSON.stringify(newProj.telegram_sources)},
+    twitter_sources=${JSON.stringify(newProj.twitter_sources)},
+    google_news_query=${JSON.stringify(newProj.google_news_query)}
+)
+`], { cwd: __dirname }, () => {});
+
+    res.json({ success: true, project: newProj });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post('/api/university/toggle', (req: Request, res: Response) => {
+  try {
+    const { id } = req.body;
+    const data = JSON.parse(fs.readFileSync(SOURCES_FILE, 'utf-8'));
+    let found = false;
+    let newState = true;
+    if (data.university_projects) {
+      for (const p of data.university_projects) {
+        if (p.id === id) {
+          p.enabled = !p.enabled;
+          newState = p.enabled;
+          found = true;
+          break;
+        }
+      }
+    }
+    if (found) {
+      data.lastUpdated = new Date().toISOString();
+      fs.writeFileSync(SOURCES_FILE, JSON.stringify(data, null, 2), 'utf-8');
+      execFile('python3', ['-c', `import database as db; db.toggle_university_status('${id}')`], { cwd: __dirname }, () => {});
+      res.json({ success: true, enabled: newState });
+    } else {
+      res.status(404).json({ error: "الجامعة غير موجودة" });
+    }
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post('/api/university/delete', (req: Request, res: Response) => {
+  try {
+    const { id } = req.body;
+    const data = JSON.parse(fs.readFileSync(SOURCES_FILE, 'utf-8'));
+    if (data.university_projects) {
+      data.university_projects = data.university_projects.filter((p: any) => p.id !== id);
+      data.lastUpdated = new Date().toISOString();
+      fs.writeFileSync(SOURCES_FILE, JSON.stringify(data, null, 2), 'utf-8');
+      execFile('python3', ['-c', `import database as db; db.delete_university_project('${id}')`], { cwd: __dirname }, () => {});
+      res.json({ success: true });
+    } else {
+      res.status(404).json({ error: "الجامعة غير موجودة" });
+    }
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: message });
+  }
+});
+
+// 5.2 Get Universities List
+app.get('/api/universities', (_req: Request, res: Response) => {
+  try {
+    const data = JSON.parse(fs.readFileSync(SOURCES_FILE, 'utf-8'));
+    res.json({
+      success: true,
+      universities: data.university_projects || [],
+      channel_mappings: data.channel_mappings || []
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: message });
+  }
+});
+
+// 5.3 Trigger University Crawl
+app.post('/api/university/crawl', (req: Request, res: Response) => {
+  try {
+    const { id } = req.body;
+    const data = JSON.parse(fs.readFileSync(SOURCES_FILE, 'utf-8'));
+    const univ = (data.university_projects || []).find((u: any) => u.id === id);
+    if (!univ) {
+      res.status(404).json({ error: "الجامعة غير موجودة" });
+      return;
+    }
+    execFile('python3', ['-c', `
+import database as db
+u = db.get_university_by_id('${id}')
+print(f"CRAWL_TRIGGERED:{u['name'] if u else 'NONE'}")
+`], { cwd: __dirname }, (_err, stdout) => {
+      res.json({
+        success: true,
+        message: `تم بدء عملية فحص وسحب المصادر الحصرية لـ ${univ.name} بنجاح`,
+        target_channel: univ.target_channel,
+        output: stdout ? stdout.trim() : ''
+      });
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: message });
+  }
+});
+
+// 5.4 Test Google News Query for University
+app.post('/api/university/gnews', async (req: Request, res: Response) => {
+  try {
+    const { id, query } = req.body;
+    let searchQuery = query;
+    if (!searchQuery && id) {
+      const data = JSON.parse(fs.readFileSync(SOURCES_FILE, 'utf-8'));
+      const univ = (data.university_projects || []).find((u: any) => u.id === id);
+      if (univ) searchQuery = univ.google_news_query || univ.name;
+    }
+    if (!searchQuery) searchQuery = 'جامعة الملك سعود';
+
+    const encoded = encodeURIComponent(`${searchQuery}`);
+    const gnewsUrl = `https://news.google.com/rss/search?q=${encoded}&hl=ar&gl=SA&ceid=SA:ar`;
+    
+    const resp = await fetch(gnewsUrl, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+    });
+    const xmlText = await resp.text();
+    const items: Array<{ title: string; link: string; pubDate: string }> = [];
+    const itemMatches = xmlText.match(/<item>([\s\S]*?)<\/item>/g) || [];
+    for (const itemXml of itemMatches.slice(0, 5)) {
+      const titleMatch = itemXml.match(/<title>([\s\S]*?)<\/title>/);
+      const linkMatch = itemXml.match(/<link>([\s\S]*?)<\/link>/);
+      const pubDateMatch = itemXml.match(/<pubDate>([\s\S]*?)<\/pubDate>/);
+      if (titleMatch) {
+        items.push({
+          title: titleMatch[1].replace(/<!\[CDATA\[(.*?)\]\]>/g, '$1').replace(/&amp;/g, '&'),
+          link: linkMatch ? linkMatch[1] : '',
+          pubDate: pubDateMatch ? pubDateMatch[1] : ''
+        });
+      }
+    }
+    res.json({ success: true, query: searchQuery, items });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: message, items: [] });
+  }
+});
+
+// 5.5 Direct Post to University Target Channel
+app.post('/api/university/post', async (req: Request, res: Response) => {
+  try {
+    const { target_channel, text } = req.body;
+    if (!target_channel || !text) {
+      res.status(400).json({ error: "قناة النشر ومحتوى الرسالة مطلوبان" });
+      return;
+    }
+    const token = process.env.TELEGRAM_BOT_TOKEN || "8901693218:AAEOQmHMZLy-xaPbTUMq1KGhDwp1l0wFWP4";
+    const tgRes = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: target_channel,
+        text: text,
+        parse_mode: 'HTML'
+      })
+    });
+    const data = await tgRes.json();
+    if (data.ok) {
+      res.json({ success: true, messageId: data.result?.message_id });
+    } else {
+      res.status(400).json({ success: false, error: data.description || "فشل النشر عبر واجهة تيليجرام" });
+    }
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: message });
+  }
+});
+
+
 let pythonProcess: any = null;
 function startPythonWorker() {
   const pyPath = path.join(__dirname, 'main.py');
