@@ -139,7 +139,7 @@ export const DeploymentGuide: React.FC = () => {
             </p>
             <p className="text-slate-400 font-sans text-right">2. سحب ملفات البوت:</p>
             <p className="text-sky-300 bg-slate-900 p-2 rounded border border-slate-800">
-              git clone https://github.com/mstfy737216610-prog/ADMIN_-.git && cd ADMIN_-
+              git clone https://github.com/mstfy737216610-prog/Booooot_ADMAN.git && cd Booooot_ADMAN
             </p>
             <p className="text-slate-400 font-sans text-right">3. تشغيل اليوزربوت:</p>
             <p className="text-amber-300 bg-slate-900 p-2 rounded border border-slate-800">

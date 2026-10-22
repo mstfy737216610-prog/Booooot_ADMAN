@@ -6,7 +6,7 @@
   folder: 
   answer: 
   keyboard: 
-  aliases: 
+  aliases: *
 CMD*/
 
 // 1. التحقق من حالة إيقاف البوت

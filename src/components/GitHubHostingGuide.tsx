@@ -738,9 +738,9 @@ export const GitHubHostingGuide: React.FC<Props> = ({ adminUsername }) => {
         <div className="text-xs text-slate-300 space-y-2">
           <p><strong>رابط مستودع GitHub الخاص بك المربوط:</strong></p>
           <div className="p-2 bg-slate-900 border border-slate-800 rounded-lg font-mono text-[11px] text-sky-300 flex items-center justify-between" dir="ltr">
-            <span>https://github.com/mstfy737216610-prog/ADMIN_-.git</span>
+            <span>https://github.com/mstfy737216610-prog/Booooot_ADMAN.git</span>
             <button
-              onClick={() => handleCopy('https://github.com/mstfy737216610-prog/ADMIN_-.git', 'repo_url')}
+              onClick={() => handleCopy('https://github.com/mstfy737216610-prog/Booooot_ADMAN.git', 'repo_url')}
               className="text-xs text-slate-400 hover:text-white px-2 py-1 bg-slate-800 rounded ml-2"
             >
               {copiedCmd === 'repo_url' ? 'تم النسخ!' : 'نسخ'}
@@ -750,7 +750,7 @@ export const GitHubHostingGuide: React.FC<Props> = ({ adminUsername }) => {
 
         <ol className="list-decimal list-inside space-y-2 text-xs text-slate-300 leading-relaxed pr-1">
           <li>حمّل حزمة <strong>ZIP</strong> المحدثة من الزر بالأعلى (تحتوي على ملف <code className="text-sky-300 font-mono">bot.json</code> ومجلد <code className="text-sky-300 font-mono">commands/</code> بكافة الأوامر).</li>
-          <li>افتح مستودعك على GitHub: <a href="https://github.com/mstfy737216610-prog/ADMIN_-" target="_blank" rel="noreferrer" className="text-sky-400 underline font-mono">mstfy737216610-prog/ADMIN_-</a> وارفع الملفات أو ادفعها عبر Git.</li>
+          <li>افتح مستودعك على GitHub: <a href="https://github.com/mstfy737216610-prog/Booooot_ADMAN" target="_blank" rel="noreferrer" className="text-sky-400 underline font-mono">mstfy737216610-prog/Booooot_ADMAN</a> وارفع الملفات أو ادفعها عبر Git.</li>
           <li>افتح تطبيق <strong className="text-white">Bots.Business</strong> على هاتفك واضغط على زر <strong>Sync Git</strong>. سيتصل فوراً وستظهر كافة الأزرار والأقسام الخمسة في محادثتك مع البوت!</li>
         </ol>
       </div>
