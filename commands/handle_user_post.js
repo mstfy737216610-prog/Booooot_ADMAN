@@ -98,6 +98,12 @@ if (msg_obj && msg_obj.chat && (msg_obj.chat.type === "channel" || msg_obj.chat.
   } else if (msg_obj.forward_origin.sender_user_name) {
     source_origin = "@" + msg_obj.forward_origin.sender_user_name;
   }
+} else if (msg_obj && msg_obj.forward_from) {
+  source_origin = msg_obj.forward_from.username ? ("@" + msg_obj.forward_from.username) : ("" + msg_obj.forward_from.id);
+  source_title = msg_obj.forward_from.first_name || source_origin;
+} else if (msg_obj && msg_obj.forward_sender_name) {
+  source_origin = msg_obj.forward_sender_name;
+  source_title = msg_obj.forward_sender_name;
 } else if (typeof request !== "undefined" && request && request.forward_from_chat) {
   source_origin = request.forward_from_chat.username ? ("@" + request.forward_from_chat.username) : ("" + request.forward_from_chat.id);
   source_title = request.forward_from_chat.title || source_origin;
@@ -132,7 +138,7 @@ function normalizeSource(str) {
 // 6. تحديد القنوات المستهدفة للنشر
 var mappings = Bot.getProperty("channel_mappings");
 if (!mappings || !Array.isArray(mappings) || mappings.length === 0) {
-  var default_target = Bot.getProperty("target_channels") || "@MyUniversityChannel";
+  var default_target = Bot.getProperty("target_channels") || "@jhdhhdcj";
   mappings = [
     {
       target: default_target,
@@ -176,7 +182,7 @@ function getTargetChannels(source) {
   }
   if (targets.length === 0) {
     var saved_single = Bot.getProperty("target_channels");
-    targets.push(saved_single || "@MyUniversityChannel");
+    targets.push(saved_single || "@jhdhhdcj");
   }
   return targets;
 }

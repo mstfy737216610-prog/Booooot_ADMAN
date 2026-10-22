@@ -40,9 +40,15 @@ for (var i = 0; i < monitored.length; i++) {
   var ch_name = cleanChannel(raw_src);
   if (!ch_name) continue;
 
-  // استدعاء صفحة المعاينة العامة لقناة تيليجرام https://t.me/s/channel
+  // استدعاء صفحة المعاينة العامة لقناة تيليجرام https://t.me/s/channel مع ترويسات متصفح حقيقية
   HTTP.get({
     url: "https://t.me/s/" + ch_name,
+    headers: {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+      "Accept-Language": "ar,en-US;q=0.9,en;q=0.8",
+      "Cache-Control": "no-cache"
+    },
     success: "/on_crawl_success " + ch_name,
     error: "/on_crawl_error " + ch_name,
     background: true
@@ -60,7 +66,7 @@ if (auto_crawl) {
 }
 
 // 4. إشعار المشرف إذا تم طلب الفحص يدوياً
-var target_current = Bot.getProperty("target_channels") || "@MyUniversityChannel";
+var target_current = Bot.getProperty("target_channels") || "@jhdhhdcj";
 var status_msg = "🔄 **بدأ فحص وسحب المنشورات من القنوات المصدرية (" + checked_count + ")**:\n" +
   "━━━━━━━━━━━━━━━━━━━\n";
 

@@ -9,7 +9,7 @@
   aliases: 
 CMD*/
 
-var current_target = Bot.getProperty("target_channels") || "@MyUniversityChannel";
+var current_target = Bot.getProperty("target_channels") || "@jhdhhdcj";
 var monitored = Bot.getProperty("monitored_sources", ["@KSU_News", "@moe_gov_sa"]);
 
 var default_mappings = [

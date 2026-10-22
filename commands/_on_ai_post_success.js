@@ -56,7 +56,7 @@ if (valid_targets.length === 0) {
   if (custom_target) {
     valid_targets.push(custom_target);
   } else {
-    valid_targets.push("@MyUniversityChannel");
+    valid_targets.push("@jhdhhdcj");
   }
 }
 
