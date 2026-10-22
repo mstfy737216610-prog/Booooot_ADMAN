@@ -11,9 +11,9 @@ CMD*/
 
 var sample_text = "تعلن عمادة القبول والتسجيل عن بدء استقبال طلبات الالتحاق لبرامج البكالوريوس والدبلوم للفصل الدراسي القادم ابتداءً من يوم الأحد القادم ويستمر حتى نهاية الشهر عبر البوابة الإلكترونية، ويشترط ألا يقل المعدل التراكمي عن 80% واجتياز اختبار القدرات والتحصيلي.";
 
-Bot.sendMessage("🧪 **جاري إرسال عينة خبر جامعي إلى API الذكاء الاصطناعي لإعادة صياغته وعرض النتيجة:**\n`" + sample_text + "`");
+var current_model = Bot.getProperty("ai_model", "DeepSeek-V4-Flash");
 
-var current_model = Bot.getProperty("ai_model", "DeepSeek-V4.1-Flash");
+Bot.sendMessage("🧪 **جاري إرسال عينة خبر جامعي إلى خادم الذكاء الاصطناعي بنموذج `" + current_model + "`:**\n`" + sample_text + "`");
 
 HTTP.post({
   url: "https://api.hcnsec.cn/v1/chat/completions",
@@ -26,16 +26,17 @@ HTTP.post({
     messages: [
       {
         role: "system",
-        content: "أنت محرر محتوى تعليمي جامعي متميز. أعد صياغة الخبر التالي بأسلوب شيق وجذاب مع عنوان بارز (📌) ونقاط واضحة ودعوة تفاعلية (💬) وهاشتاجات مناسبة بدون ذكر أي قنوات منافسة."
+        content: "أنت محرر محتوى تعليمي جامعي متميز. أعد صياغة الخبر التالي بأسلوب إخباري راقٍ وجذاب مع عنوان بارز (📌) ونقاط واضحة ودعوة تفاعلية (💬) وهاشتاجات مناسبة بدون ذكر أي قنوات منافسة."
       },
       {
         role: "user",
         content: sample_text
       }
     ],
-    temperature: 0.4,
-    max_tokens: 800
+    temperature: 0.3,
+    max_tokens: 300
   },
   success: "/on_test_success",
-  error: "/on_api_test_error"
+  error: "/on_test_error",
+  background: true
 });

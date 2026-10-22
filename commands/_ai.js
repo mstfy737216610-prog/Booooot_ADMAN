@@ -20,26 +20,26 @@ var text = "🧠 **إعدادات الذكاء الاصطناعي التفاعل
   "━━━━━━━━━━━━━━━━━━━\n" +
   "• **البوابة (Base URL)**: `" + base_url + "`\n" +
   "• **المفتاح (API Key)**: `" + masked_key + "`\n" +
-  "• **النموذج النشط حالياً**: `" + current_model + "`\n" +
+  "• **النموذج النشط حالياً**: `" + current_model + "` ⚡ (سريع ومستقر)\n" +
   "• **حالة المعالجة التلقائية**: " + (ai_enabled ? "🟢 مفعلة (إعادة صياغة ذكية)" : "🔴 معطلة (نقل مباشر)") + "\n" +
   "━━━━━━━━━━━━━━━━━━━\n\n" +
-  "👇 **استخدم الأزرار التفاعلية لتعديل الإعدادات أو اختيار النموذج بنقرة واحدة:**";
+  "👇 **اختر نموذجاً بالضغط على الزر لتبديله فورياً وبدون كتابة أكواد:**";
 
 var inline_keyboard = [
   [
-    { title: "🌐 تعديل الـ Base URL", command: "/set_base_url" },
-    { title: "🔑 تعديل الـ API Key", command: "/set_api_key" }
+    { title: (current_model == "DeepSeek-V4-Flash" ? "✅ " : "") + "⚡ DeepSeek-V4-Flash (الأسرع والموصى به)", command: "/set_model DeepSeek-V4-Flash" }
   ],
   [
-    { title: (current_model == "DeepSeek-V4.1-Flash" ? "✅ " : "") + "⚡ DeepSeek-V4.1-Flash (الموصى به)", command: "/set_model DeepSeek-V4.1-Flash" }
-  ],
-  [
-    { title: (current_model == "DeepSeek-V4-Flash" ? "✅ " : "") + "🚀 DeepSeek-V4-Flash", command: "/set_model DeepSeek-V4-Flash" },
+    { title: (current_model == "DeepSeek-V4.1-Flash" ? "✅ " : "") + "🚀 DeepSeek-V4.1-Flash", command: "/set_model DeepSeek-V4.1-Flash" },
     { title: (current_model == "Qwen3.8-27B" ? "✅ " : "") + "🧠 Qwen3.8-27B", command: "/set_model Qwen3.8-27B" }
   ],
   [
     { title: (current_model == "glm-5.3" ? "✅ " : "") + "🌐 glm-5.3", command: "/set_model glm-5.3" },
     { title: (current_model == "MiniMax-M3.1-Flash" ? "✅ " : "") + "💫 MiniMax-M3.1-Flash", command: "/set_model MiniMax-M3.1-Flash" }
+  ],
+  [
+    { title: "🌐 تعديل الـ Base URL", command: "/set_base_url" },
+    { title: "🔑 تعديل الـ API Key", command: "/set_api_key" }
   ],
   [
     { title: ai_enabled ? "🔴 تعطيل الذكاء مؤقتاً" : "🟢 تفعيل الذكاء الاصطناعي", command: "/toggle_ai" },

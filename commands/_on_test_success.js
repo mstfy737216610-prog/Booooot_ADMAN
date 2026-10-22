@@ -17,20 +17,21 @@ try {
   }
 } catch (e) {}
 
-var current_model = Bot.getProperty("ai_model", "DeepSeek-V4.1-Flash");
+var current_model = Bot.getProperty("ai_model", "DeepSeek-V4-Flash");
 
 var text = "✨ **نتيجة الصياغة الذكية الفورية بنموذج (" + current_model + "):**\n" +
   "───────────────────\n" +
   rephrased + "\n" +
   "───────────────────\n\n" +
-  "💡 هل أعجبك الأسلوب؟ يمكنك تعديل النموذج أو إضافة قنوات نشر ومصادر جديدة من اللوحة.";
+  "💡 تم التنسيق بنجاح بدون تأخير وبأعلى معايير الدقة الأكاديمية!";
 
 var inline_keyboard = [
   [
-    { title: "⚙️ تغيير النموذج", command: "/ai" },
-    { title: "🗺️ إدارة القنوات والمصادر", command: "/mapping" }
+    { title: "📝 صياغة ونشر خبر حقيقي الآن", command: "/new_post" },
+    { title: "🔄 إعادة تجربة أخرى", command: "/test" }
   ],
   [
+    { title: "⚙️ إعدادات الذكاء الاصطناعي", command: "/ai" },
     { title: "🎛 اللوحة الرئيسية", command: "/start" }
   ]
 ];

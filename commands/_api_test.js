@@ -6,7 +6,7 @@
   folder: 
   answer: 
   keyboard: 
-  aliases: فحص الاتصال
+  aliases: فحص الاتصال, ⚡ فحص سرعة الاستجابة
 CMD*/
 
 var current_model = Bot.getProperty("ai_model", "DeepSeek-V4-Flash");
@@ -25,8 +25,9 @@ HTTP.post({
     messages: [
       { role: "user", content: "رد بكلمة واحدة فقط: جاهز" }
     ],
-    max_tokens: 10
+    max_tokens: 15
   },
   success: "/on_api_test_success " + t_start,
-  error: "/on_api_test_error"
+  error: "/on_api_test_error",
+  background: true
 });
