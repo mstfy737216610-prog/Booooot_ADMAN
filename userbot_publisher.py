@@ -44,10 +44,35 @@ def load_env_file():
 
 ENV_PATH = load_env_file()
 
+def safe_int(val: Any, default: int = 0) -> int:
+    if val is None:
+        return default
+    try:
+        s = str(val).strip()
+        if s.lstrip("-").isdigit():
+            return int(s)
+        digits_match = re.search(r'\b\d{5,10}\b', s)
+        if digits_match:
+            return int(digits_match.group(0))
+        return default
+    except Exception:
+        return default
+
 # ----------------- إعدادات الاعتماد الأساسية -----------------
-API_ID = int(os.getenv("TELEGRAM_API_ID", "20123456"))
+_raw_api_id = os.getenv("TELEGRAM_API_ID", "20123456").strip()
+_raw_session = os.getenv("STRING_SESSION", "").strip()
+
+if not _raw_api_id.lstrip("-").isdigit():
+    if len(_raw_api_id) > 20 and (not _raw_session or len(_raw_session) < 20):
+        _raw_session = _raw_api_id
+    API_ID = 20123456
+else:
+    API_ID = safe_int(_raw_api_id, 20123456)
+if API_ID <= 0:
+    API_ID = 20123456
+
 API_HASH = os.getenv("TELEGRAM_API_HASH", "abcdef0123456789abcdef0123456789")
-STRING_SESSION = os.getenv("STRING_SESSION", "")
+STRING_SESSION = _raw_session
 PHONE_NUMBER = os.getenv("TELEGRAM_PHONE", "")
 
 # إعدادات الـ API الخاص بكم
@@ -73,7 +98,7 @@ if not SOURCE_CHANNELS:
 DESTINATION_CHANNELS = list(set([m["target"] for m in CHANNEL_MAPPINGS]))
 
 # حساب المشرف
-ADMIN_ID = int(os.getenv("ADMIN_ID", "7607633343"))
+ADMIN_ID = safe_int(os.getenv("ADMIN_ID", "7607633343"), 7607633343)
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "M_S_F_G").replace("@", "")
 
 # إعلانات المنافسين لاستبدالها

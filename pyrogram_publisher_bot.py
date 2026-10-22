@@ -71,11 +71,32 @@ STATE_FILE = os.path.join(BASE_DIR, "state.json")
 SOURCES_FILE = os.path.join(BASE_DIR, "sources.json")
 CONFIG_FILE = os.path.join(BASE_DIR, "bot_config.json")
 
+def safe_int(val: Any, default: int = 0) -> int:
+    if val is None:
+        return default
+    try:
+        s = str(val).strip()
+        if s.lstrip("-").isdigit():
+            return int(s)
+        digits_match = re.search(r'\b\d{5,10}\b', s)
+        if digits_match:
+            return int(digits_match.group(0))
+        return default
+    except Exception:
+        return default
+
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8901693218:AAEOQmHMZLy-xaPbTUMq1KGhDwp1l0wFWP4").strip()
-ADMIN_ID = int(os.getenv("ADMIN_ID", "7607633343"))
+ADMIN_ID = safe_int(os.getenv("ADMIN_ID", "7607633343"), 7607633343)
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "M_S_F_G").replace("@", "").strip()
 
-API_ID = int(os.getenv("TELEGRAM_API_ID", "20123456"))
+_raw_api_id = os.getenv("TELEGRAM_API_ID", "20123456").strip()
+if not _raw_api_id.lstrip("-").isdigit():
+    API_ID = 20123456
+else:
+    API_ID = safe_int(_raw_api_id, 20123456)
+if API_ID <= 0:
+    API_ID = 20123456
+
 API_HASH = os.getenv("TELEGRAM_API_HASH", "abcdef0123456789abcdef0123456789").strip()
 
 AI_BASE_URL = os.getenv("AI_BASE_URL", "https://api.hcnsec.cn/v1").rstrip("/")

@@ -4,6 +4,9 @@ import { createServer as createViteServer } from 'vite';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { execFile, spawn } from 'node:child_process';
+import { promisify } from 'node:util';
+import { GoogleGenAI } from '@google/genai';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -150,9 +153,6 @@ app.post('/api/telegram/test-bot', async (req: Request, res: Response) => {
   }
 });
 
-import { execFile, spawn } from 'node:child_process';
-import { promisify } from 'node:util';
-
 let pythonProcess: any = null;
 function startPythonWorker() {
   const pyPath = path.join(__dirname, 'main.py');
@@ -160,9 +160,33 @@ function startPythonWorker() {
 
   try {
     console.log('🐍 تشغيل خادم ومحرك التيليجرام المستقل المزدوج (python3 main.py)...');
+
+    const rawApiId = (process.env.TELEGRAM_API_ID || '').trim();
+    let sanitizedApiId = '20123456';
+    let sanitizedSession = (process.env.STRING_SESSION || '').trim();
+
+    if (/^\d+$/.test(rawApiId)) {
+      sanitizedApiId = rawApiId;
+    } else if (rawApiId.length > 20) {
+      if (!sanitizedSession || sanitizedSession.length < 20) {
+        sanitizedSession = rawApiId;
+      }
+      sanitizedApiId = /^\d+$/.test(sanitizedSession) ? sanitizedSession : '20123456';
+    }
+
+    const rawAdminId = (process.env.ADMIN_ID || '7607633343').trim();
+    const sanitizedAdminId = /^\d+$/.test(rawAdminId) ? rawAdminId : '7607633343';
+
     pythonProcess = spawn('python3', ['main.py'], {
       cwd: __dirname,
-      env: { ...process.env, PORT: '8088', KEEPALIVE_PORT: '8088' }
+      env: {
+        ...process.env,
+        TELEGRAM_API_ID: sanitizedApiId,
+        STRING_SESSION: sanitizedSession,
+        ADMIN_ID: sanitizedAdminId,
+        PORT: '8088',
+        KEEPALIVE_PORT: '8088'
+      }
     });
 
     pythonProcess.stdout.on('data', (d: Buffer) => {
@@ -229,6 +253,19 @@ async function callAICurl(url: string, apiKey: string, payload: any, timeoutSec 
   }
 }
 
+async function callGemini(systemPrompt: string, userContent: string): Promise<string> {
+  const ai = new GoogleGenAI();
+  const response = await ai.models.generateContent({
+    model: 'gemini-3.8-flash',
+    contents: userContent,
+    config: {
+      systemInstruction: systemPrompt || undefined,
+      temperature: 0.4,
+    },
+  });
+  return response.text ? response.text.trim() : '';
+}
+
 // 6. AI Educational Rephrase Endpoint
 app.post('/api/ai/rephrase', async (req: Request, res: Response) => {
   const {
@@ -276,6 +313,9 @@ app.post('/api/ai/rephrase', async (req: Request, res: Response) => {
   const tStart = Date.now();
 
   const tryCallModel = async (targetModel: string) => {
+    if (targetModel.toLowerCase().includes('gemini')) {
+      return await callGemini(finalSystemPrompt, userContent);
+    }
     const payload = {
       model: targetModel,
       messages: [
@@ -297,8 +337,18 @@ app.post('/api/ai/rephrase', async (req: Request, res: Response) => {
       rephrasedText = await tryCallModel(model);
     } catch (primaryErr) {
       console.warn(`Primary model ${model} failed, trying fallback ${fallbackModel}:`, primaryErr);
-      usedModel = fallbackModel;
-      rephrasedText = await tryCallModel(fallbackModel);
+      try {
+        usedModel = fallbackModel;
+        rephrasedText = await tryCallModel(fallbackModel);
+      } catch (fallbackErr) {
+        if (process.env.GEMINI_API_KEY) {
+          console.log('External AI API unreachable, using Gemini 3.8 Flash via Google GenAI...');
+          usedModel = 'gemini-3.8-flash';
+          rephrasedText = await callGemini(finalSystemPrompt, userContent);
+        } else {
+          throw fallbackErr;
+        }
+      }
     }
 
     let finalRephrased = rephrasedText ? rephrasedText.trim() : '';
@@ -341,6 +391,30 @@ app.post('/api/ai/test-connection', async (req: Request, res: Response) => {
   } = req.body;
 
   const tStart = Date.now();
+
+  if (model.toLowerCase().includes('gemini')) {
+    try {
+      const reply = await callGemini('', 'رد بكلمة واحدة فقط: جاهز');
+      const durationMs = Date.now() - tStart;
+      res.json({
+        ok: true,
+        model,
+        durationMs,
+        reply: reply || 'جاهز',
+        message: `الاتصال بنموذج ${model} عبر Google GenAI ناجح ومستقر (${durationMs}ms)`
+      });
+      return;
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({
+        ok: false,
+        durationMs: Date.now() - tStart,
+        error: `فشل الاتصال بنموذج Gemini: ${message}`
+      });
+      return;
+    }
+  }
+
   try {
     const payload = {
       model: model,
@@ -403,6 +477,15 @@ ${text}
     const result = data.choices?.[0]?.message?.content?.trim() || 'VERIFIED';
     res.json({ success: true, verification: result });
   } catch {
+    if (process.env.GEMINI_API_KEY) {
+      try {
+        const vText = await callGemini(verifyPrompt, text);
+        res.json({ success: true, verification: vText || 'VERIFIED' });
+        return;
+      } catch {
+        // fallback
+      }
+    }
     res.json({ success: true, verification: 'VERIFIED' });
   }
 });

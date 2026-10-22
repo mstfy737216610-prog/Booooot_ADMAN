@@ -51,20 +51,58 @@ try:
 except ImportError:
     TELETHON_AVAILABLE = False
 
-# ----------------- الإعدادات والاعتمادات -----------------
+def safe_int(val: Any, default: int = 0) -> int:
+    """تحويل آمن إلى عدد صحيح لتفادي استثناءات ValueError عند وجود نصوص الجلسات أو قيم خاطئة"""
+    if val is None:
+        return default
+    try:
+        s = str(val).strip()
+        if s.lstrip("-").isdigit():
+            return int(s)
+        # استخراج أول كتلة أرقام إن وجدت
+        digits_match = re.search(r'\b\d{5,10}\b', s)
+        if digits_match:
+            return int(digits_match.group(0))
+        return default
+    except Exception:
+        return default
+
+# ----------------- الإعدادات والاعتمادات والتحقق الذاتي -----------------
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8901693218:AAEOQmHMZLy-xaPbTUMq1KGhDwp1l0wFWP4").strip()
-ADMIN_ID = int(os.getenv("ADMIN_ID", "7607633343"))
+ADMIN_ID = safe_int(os.getenv("ADMIN_ID", "7607633343"), 7607633343)
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "M_S_F_G").replace("@", "").strip()
 
-TELEGRAM_API_ID = int(os.getenv("TELEGRAM_API_ID", "20123456"))
+# استرداد آمن ومعالجة الخلط المحتمل بين API_ID و STRING_SESSION
+_raw_api_id = os.getenv("TELEGRAM_API_ID", "20123456").strip()
+_raw_session = os.getenv("STRING_SESSION", "").strip()
+
+# إذا تم وضع كود الجلسة (StringSession) في خانة TELEGRAM_API_ID بالخطأ
+if not _raw_api_id.lstrip("-").isdigit():
+    if len(_raw_api_id) > 20:
+        if not _raw_session or len(_raw_session) < 20:
+            _raw_session = _raw_api_id
+        # إذا كانت الجلسة هي التي تحتوي على رقم الـ API ID
+        if _raw_session.lstrip("-").isdigit() and len(_raw_session) <= 10:
+            TELEGRAM_API_ID = safe_int(_raw_session, 20123456)
+        else:
+            TELEGRAM_API_ID = 20123456
+    else:
+        TELEGRAM_API_ID = safe_int(_raw_api_id, 20123456)
+else:
+    TELEGRAM_API_ID = safe_int(_raw_api_id, 20123456)
+
+if TELEGRAM_API_ID <= 0:
+    TELEGRAM_API_ID = 20123456
+
 TELEGRAM_API_HASH = os.getenv("TELEGRAM_API_HASH", "abcdef0123456789abcdef0123456789").strip()
-STRING_SESSION = os.getenv("STRING_SESSION", "").strip()
+STRING_SESSION = _raw_session
 
 AI_BASE_URL = os.getenv("AI_BASE_URL", "https://api.hcnsec.cn/v1").rstrip("/")
 AI_API_KEY = os.getenv("AI_API_KEY", "sk-J2ky44F6VTDMkL8Q1GHL5sfmbeIpARVDayNuwMfxKI5zCdii").strip()
 PRIMARY_MODEL = os.getenv("PRIMARY_MODEL", "DeepSeek-V4.1-Flash").strip()
 FALLBACK_MODEL = os.getenv("FALLBACK_MODEL", "DeepSeek-V4-Flash").strip()
-PORT = int(os.getenv("PORT", os.getenv("KEEPALIVE_PORT", "8088")))
+_raw_port = safe_int(os.getenv("PORT", os.getenv("KEEPALIVE_PORT", "8088")), 8088)
+PORT = 8088 if _raw_port == 3000 else _raw_port
 
 logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -1167,23 +1205,33 @@ class StandaloneTelegramEducationalBot:
                 return
 
             if clean_text.startswith("/ban "):
-                target_uid = int(clean_text.replace("/ban ", "").strip())
-                db.ban_user(target_uid, True)
-                self.send_msg(chat_id, f"✅ تم حظر المستخدم `{target_uid}` بنجاح.")
+                target_uid = safe_int(clean_text.replace("/ban ", "").strip(), 0)
+                if target_uid > 0:
+                    db.ban_user(target_uid, True)
+                    self.send_msg(chat_id, f"✅ تم حظر المستخدم `{target_uid}` بنجاح.")
+                else:
+                    self.send_msg(chat_id, "⚠️ معرف المستخدم غير صحيح. استخدم: /ban <id>")
                 return
 
             if clean_text.startswith("/unban "):
-                target_uid = int(clean_text.replace("/unban ", "").strip())
-                db.ban_user(target_uid, False)
-                self.send_msg(chat_id, f"✅ تم إلغاء حظر المستخدم `{target_uid}` بنجاح.")
+                target_uid = safe_int(clean_text.replace("/unban ", "").strip(), 0)
+                if target_uid > 0:
+                    db.ban_user(target_uid, False)
+                    self.send_msg(chat_id, f"✅ تم إلغاء حظر المستخدم `{target_uid}` بنجاح.")
+                else:
+                    self.send_msg(chat_id, "⚠️ معرف المستخدم غير صحيح. استخدم: /unban <id>")
                 return
 
             if clean_text.startswith("/set_role "):
                 parts = clean_text.split()
                 if len(parts) >= 3:
-                    u_id, r = int(parts[1]), parts[2].lower()
-                    db.set_user_role(u_id, r)
-                    self.send_msg(chat_id, f"✅ تم تعيين رتبة `{r}` للمستخدم `{u_id}`.")
+                    u_id = safe_int(parts[1], 0)
+                    r = parts[2].lower()
+                    if u_id > 0:
+                        db.set_user_role(u_id, r)
+                        self.send_msg(chat_id, f"✅ تم تعيين رتبة `{r}` للمستخدم `{u_id}`.")
+                    else:
+                        self.send_msg(chat_id, "⚠️ معرف المستخدم غير صحيح. استخدم: /set_role <id> <role>")
                 return
 
             if clean_text.startswith("/set_ad"):
