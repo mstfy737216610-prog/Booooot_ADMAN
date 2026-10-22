@@ -21,32 +21,61 @@ if (!rephrased_text) {
   rephrased_text = Bot.getProperty("pending_raw_text", "");
 }
 
+// كشف الردود الحوارية أو طلبات التزويد بالنص لمنع نشرها في القنوات كأخبار
+var is_conversational_reply = (
+  rephrased_text.indexOf("يرجى تزويدي") !== -1 ||
+  rephrased_text.indexOf("أعد إرسال") !== -1 ||
+  rephrased_text.indexOf("يسعدني إعادة صياغة") !== -1 ||
+  rephrased_text.indexOf("أرسل لي نص الخبر") !== -1 ||
+  rephrased_text.length < 25
+);
+
+if (is_conversational_reply) {
+  Bot.sendMessage("💡 **رد الذكاء الاصطناعي (محادثة/توضيح)**:\n" + rephrased_text + "\n\n⚠️ *لم يتم نشر هذا الرد في القناة لأنه ليس خبراً مكتملاً.*");
+  return;
+}
+
 var media_type = Bot.getProperty("pending_media_type", "text");
 var media_file_id = Bot.getProperty("pending_media_id", "");
 var target_channels = Bot.getProperty("pending_targets", []);
 var current_model = Bot.getProperty("ai_model", "DeepSeek-V4-Flash");
 
-if (!target_channels || target_channels.length === 0) {
-  var mappings = Bot.getProperty("channel_mappings", []);
-  target_channels = [];
-  for (var m = 0; m < mappings.length; m++) {
-    if (mappings[m].enabled && mappings[m].target) {
-      target_channels.push(mappings[m].target);
+// تنقية القنوات من القنوات الوهمية أو الملغاة
+var valid_targets = [];
+if (target_channels && Array.isArray(target_channels)) {
+  for (var t = 0; t < target_channels.length; t++) {
+    var c = target_channels[t];
+    if (c && c !== "@StudentServicesNews" && c !== "@SecondTargetChannel") {
+      valid_targets.push(c);
     }
+  }
+}
+
+if (valid_targets.length === 0) {
+  var custom_target = Bot.getProperty("target_channels");
+  if (custom_target) {
+    valid_targets.push(custom_target);
+  } else {
+    valid_targets.push("@MyUniversityChannel");
   }
 }
 
 var sent_count = 0;
 var target_names = [];
+var failed_targets = [];
 
-for (var i = 0; i < target_channels.length; i++) {
-  var ch = target_channels[i];
+for (var i = 0; i < valid_targets.length; i++) {
+  var ch = valid_targets[i];
   try {
-    if (media_type == "photo" && media_file_id) {
-      Api.sendPhoto({ chat_id: ch, photo: media_file_id, caption: rephrased_text, parse_mode: "Markdown" });
-    } else if (media_type == "video" && media_file_id) {
+    if (media_type === "photo" && media_file_id) {
+      if (media_file_id.indexOf("http") === 0) {
+        Api.sendPhoto({ chat_id: ch, photo: media_file_id, caption: rephrased_text, parse_mode: "Markdown" });
+      } else {
+        Api.sendPhoto({ chat_id: ch, photo: media_file_id, caption: rephrased_text, parse_mode: "Markdown" });
+      }
+    } else if (media_type === "video" && media_file_id) {
       Api.sendVideo({ chat_id: ch, video: media_file_id, caption: rephrased_text, parse_mode: "Markdown" });
-    } else if (media_type == "document" && media_file_id) {
+    } else if (media_type === "document" && media_file_id) {
       Api.sendDocument({ chat_id: ch, document: media_file_id, caption: rephrased_text, parse_mode: "Markdown" });
     } else {
       Api.sendMessage({ chat_id: ch, text: rephrased_text, parse_mode: "Markdown" });
@@ -54,7 +83,7 @@ for (var i = 0; i < target_channels.length; i++) {
     sent_count++;
     target_names.push(ch);
   } catch (send_err) {
-    Bot.sendMessage("⚠️ **تنبيه نشر**: لم يتمكن البوت من النشر في `" + ch + "`، تأكد من إضافة البوت كمشرف (Admin) مع صلاحية النشر.");
+    failed_targets.push(ch);
   }
 }
 
@@ -64,20 +93,27 @@ Bot.setProperty("total_processed", total, "integer");
 Bot.setProperty("last_post_title", rephrased_text.split("\n")[0] || "تحديث أكاديمي جديد", "string");
 Bot.setProperty("last_post_time", new Date().toLocaleTimeString(), "string");
 
-var confirm_text = "✅ **تمت معالجة ونشر المنشور بنجاح!**\n\n" +
+var confirm_text = "✅ **تمت معالجة المنشور وصياغته بذكاء اصطناعي بنجاح!**\n\n" +
   "• **النموذج المستخدم**: `" + current_model + "`\n" +
-  "• **نوع الوسائط**: " + (media_type != "text" ? "مرفق (" + media_type + ") عالي الدقة" : "نص منسق") + "\n" +
-  "• **القنوات المستهدفة المنشور فيها (" + sent_count + ")**: " + target_names.join("، ") + "\n\n" +
-  "👁️ **معاينة النص بعد المعالجة:**\n" +
+  "• **نوع الوسائط**: " + (media_type !== "text" ? "مرفق (" + media_type + ") عالي الدقة" : "نص منسق") + "\n" +
+  "• **القنوات المستهدفة المنشور فيها (" + sent_count + ")**: " + target_names.join("، ") + "\n\n";
+
+if (failed_targets.length > 0) {
+  confirm_text += "⚠️ **تنبيه بخصوص (" + failed_targets.join("، ") + ")**:\n" +
+    "تعذر النشر التلقائي فيها! يرجى التأكد من إضافة البوت كمشرف (Admin) مع صلاحية نشر الرسائل، أو تغيير القناة عبر /set_channel.\n\n";
+}
+
+confirm_text += "👁️ **معاينة النص بعد الصياغة:**\n" +
   "───────────────────\n" +
   rephrased_text;
 
 var inline_keyboard = [
   [
-    { title: "📊 عرض تقرير النشر", command: "/status" },
-    { title: "🔗 خريطة القنوات والمصادر", command: "/mapping" }
+    { title: "🔄 فحص وسحب المصادر مجدداً", command: "/crawl_sources" },
+    { title: "📢 تعديل قناة النشر", command: "/set_channel" }
   ],
   [
+    { title: "📊 عرض تقرير النشر", command: "/status" },
     { title: "🎛 اللوحة الرئيسية", command: "/start" }
   ]
 ];

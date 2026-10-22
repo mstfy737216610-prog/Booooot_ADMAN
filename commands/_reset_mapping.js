@@ -9,21 +9,18 @@
   aliases: 
 CMD*/
 
+var current_target = Bot.getProperty("target_channels") || "@MyUniversityChannel";
+var monitored = Bot.getProperty("monitored_sources", ["@KSU_News", "@moe_gov_sa"]);
+
 var default_mappings = [
   {
-    target: "@MyUniversityChannel",
-    sources: ["@KSU_News", "@moe_gov_sa"],
+    target: current_target,
+    sources: monitored,
     enabled: true,
-    name: "القناة الأكاديمية الرسمية (أ)"
-  },
-  {
-    target: "@StudentServicesNews",
-    sources: ["@saudi_universities", "@kau_edu_sa"],
-    enabled: true,
-    name: "قناة الخدمات والإعلانات (ب)"
+    name: "قناة النشر الرسمية الأساسية"
   }
 ];
 
 Bot.setProperty("channel_mappings", default_mappings, "json");
-Bot.sendMessage("🔄 **تمت استعادة خريطة القنوات والمصادر الافتراضية بنجاح!**");
+Bot.sendMessage("🔄 **تمت استعادة خريطة القنوات بنجاح!**\nالقناة الهدف الحالية: `" + current_target + "`\nالمصادر المربوطة: " + monitored.join("، "));
 Bot.runCommand("/mapping");

@@ -5,7 +5,7 @@
   auto_retry_time: 
   folder: 
   answer: 
-  keyboard: 🟢 تشغيل / إيقاف البوت, 📝 صياغة ونشر خبر فوري\n⚙️ إعدادات الذكاء الاصطناعي, 🔗 إدارة وربط المصادر\n👤 نظام السحب واليوزربوت, 📊 حالة النظام والتقارير\n🎯 إعلان خدماتي البديل, 🧪 تجربة الصياغة الفورية
+  keyboard: 🔄 فحص وسحب المنشورات, ➕ إضافة مصادر خارجية\n📢 تحديد قناة النشر, 📝 صياغة ونشر خبر فوري\n📋 قائمة المصادر, ⚙️ إعدادات الذكاء الاصطناعي\n🔗 ربط القنوات والأهداف, 🎯 إعلان خدماتي البديل\n🟢 تشغيل / إيقاف البوت, 🧪 تجربة الصياغة الفورية
   aliases: 🎛 لوحة التحكم الرئيسية, لوحة التحكم, /help, /menu, /admin, الرئيسية
 CMD*/
 
@@ -18,66 +18,52 @@ var is_paused = Bot.getProperty("bot_paused", false);
 var current_model = Bot.getProperty("ai_model", "DeepSeek-V4-Flash");
 var base_url = Bot.getProperty("ai_base_url", "https://api.hcnsec.cn/v1");
 var total_processed = Bot.getProperty("total_processed", 0);
-var mappings = Bot.getProperty("channel_mappings");
+var monitored_sources = Bot.getProperty("monitored_sources", ["@KSU_News", "@moe_gov_sa"]);
+var target_current = Bot.getProperty("target_channels") || "@MyUniversityChannel";
+var auto_crawl = Bot.getProperty("auto_crawl_enabled", true);
 
-if (!mappings || !Array.isArray(mappings)) {
-  mappings = [
-    {
-      target: "@MyUniversityChannel",
-      sources: ["@KSU_News", "@moe_gov_sa"],
-      enabled: true,
-      name: "القناة الأكاديمية (أ)"
-    },
-    {
-      target: "@StudentServicesNews",
-      sources: ["@saudi_universities", "@kau_edu_sa"],
-      enabled: true,
-      name: "قناة الخدمات (ب)"
-    }
-  ];
-  Bot.setProperty("channel_mappings", mappings, "json");
-}
-
-var session_active = Bot.getProperty("userbot_session_active", true);
 var status_emoji = is_paused ? "🔴 متوقف مؤقتاً" : "🟢 نشط ويعمل 24/7";
-var session_status = session_active ? "🟢 متصل (Chrome 154 on Android)" : "🔴 غير مسجل";
+var crawler_status = auto_crawl ? "🟢 سحب آلي كل 90 ثانية" : "🔴 سحب يدوي";
 
 var bot_text = "👑 **مرحباً بك يا مديرنا العزيز @" + ADMIN_USER + "**!\n" +
   "أنت المشرف المعتمد والمخول بالتحكم الكامل في النظام (ID: `" + ADMIN_ID + "`)\n\n" +
-  "🎛 **نظام إدارة ونشر المحتوى الأكاديمي واليوزربوت (Bots.Business Engine)**:\n" +
+  "🎛 **نظام النشر الأكاديمي والساحب الذكي للمصادر (Bots.Business Engine)**:\n" +
   "━━━━━━━━━━━━━━━━━━━\n" +
   "• **حالة البوت**: " + status_emoji + "\n" +
-  "• **نموذج الذكاء المعتمد**: `" + current_model + "` ⚡ (الأسرع والأدق)\n" +
+  "• **الساحب الآلي للمصادر**: " + crawler_status + " ⚡\n" +
+  "• **المصادر المراقبة**: " + monitored_sources.length + " مصدر نشط\n" +
+  "• **قناة النشر الهدف**: `" + target_current + "`\n" +
+  "• **نموذج الذكاء المعتمد**: `" + current_model + "`\n" +
   "• **بوابة الذكاء الاصطناعي**: `" + base_url + "`\n" +
-  "• **جلسة سحب المنشورات**: " + session_status + "\n" +
-  "• **قنوات النشر المربوطة**: " + mappings.length + " قناة هدف مستقلة\n" +
   "• **إجمالي المنشورات المعالجة**: " + total_processed + " منشور\n" +
-  "• **نقل الوسائط**: صور أصلية، فيديو، ومستندات PDF كاملة\n" +
+  "• **نقل الوسائط**: صور أصلية، فيديو، ومستندات كاملة\n" +
   "━━━━━━━━━━━━━━━━━━━\n\n" +
-  "💡 **طريقة التشغيل من تيليجرام مباشرة**:\n" +
-  "وجّه أي منشور من أي قناة إلى البوت هنا، أو اكتب خبراً عبر زر 'نشر خبر فوري'، وسيتكفل البوت بالباقي!\n\n" +
+  "💡 **طريقة العمل وسحب المنشورات**:\n" +
+  "  1️⃣ **الساحب التلقائي**: اضغط `🔄 فحص وسحب المنشورات الآن` لسحب أحدث الأخبار فوراً من القنوات المراقبة دون الحاجة لصلاحية مشرف.\n" +
+  "  2️⃣ **تحديد قناتك**: اضغط `📢 تحديد قناة النشر` لتحديد القناة التي ترغب في النشر إليها وتأكد من رفع البوت مشرفاً فيها.\n" +
+  "  3️⃣ **التوجيه المباشر**: وجّه (Forward) أي منشور من أي قناة إلى البوت ليقوم بصياغته ونشره فوراً.\n\n" +
   "👇 **تحكم بكافة أقسام ووظائف البوت من الأزرار التفاعلية أدناه:**";
 
 var inline_keyboard = [
   [
-    { title: "📝 صياغة ونشر خبر فوري جديد", command: "/new_post" },
-    { title: is_paused ? "▶️ تشغيل البوت" : "⏸️ إيقاف البوت", command: "/pause" }
+    { title: "🔄 فحص وسحب المنشورات الآن", command: "/crawl_sources" },
+    { title: "➕ إضافة مصادر خارجية", command: "/add_source" }
+  ],
+  [
+    { title: "📢 تحديد قناة النشر الهدف", command: "/set_channel" },
+    { title: "📋 قائمة المصادر المراقبة", command: "/sources" }
   ],
   [
     { title: "⚙️ إعدادات الذكاء الاصطناعي", command: "/ai" },
-    { title: "🔗 ربط القنوات والمصادر", command: "/mapping" }
-  ],
-  [
-    { title: "👤 نظام السحب وقراءة القنوات", command: "/userbot" },
-    { title: "📊 حالة النظام والتقارير", command: "/status" }
+    { title: "🔗 ربط القنوات والأهداف", command: "/mapping" }
   ],
   [
     { title: "🎯 إعلان خدماتي البديل", command: "/ad" },
-    { title: "🧪 تجربة الصياغة الفورية", command: "/test" }
+    { title: "📝 صياغة ونشر خبر فوري", command: "/new_post" }
   ],
   [
-    { title: "📋 مصادر المراقبة", command: "/sources" },
-    { title: "⚡ فحص سرعة الاستجابة", command: "/api_test" }
+    { title: is_paused ? "▶️ تشغيل البوت" : "⏸️ إيقاف البوت", command: "/pause" },
+    { title: "🧪 تجربة الصياغة الفورية", command: "/test" }
   ]
 ];
 

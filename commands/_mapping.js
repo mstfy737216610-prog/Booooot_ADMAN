@@ -6,15 +6,16 @@
   folder: 
   answer: 
   keyboard: 
-  aliases: 🗺️ ربط القنوات والمصادر, /channels
+  aliases: 🗺️ ربط القنوات والمصادر, /channels, 🔗 ربط القنوات والأهداف
 CMD*/
 
 var mappings = Bot.getProperty("channel_mappings");
 if (!mappings || !Array.isArray(mappings) || mappings.length === 0) {
+  var sources = Bot.getProperty("monitored_sources", ["@KSU_News", "@moe_gov_sa"]);
   mappings = [
     {
       target: "@MyUniversityChannel",
-      sources: ["@KSU_News", "@moe_gov_sa"],
+      sources: sources,
       enabled: true,
       name: "قناة النشر الرسمية (أ)"
     }
@@ -22,8 +23,8 @@ if (!mappings || !Array.isArray(mappings) || mappings.length === 0) {
   Bot.setProperty("channel_mappings", mappings, "json");
 }
 
-var text = "🗺️ **إدارة القنوات والمصادر المنفصلة (Multi-Source Mapping)**:\n" +
-  "تتيح لك هذه الميزة تحديد مصادر مخصصة لكل قناة نشر على حدة، بحيث تنشر القناة (أ) أخباراً مختلفة تماماً عن القناة (ب)!\n\n" +
+var text = "🗺️ **إدارة وتوزيع القنوات والمصادر (Multi-Source Mapping)**:\n" +
+  "تتيح لك هذه الميزة تخصيص مصادر محددة لكل قناة نشر، أو توجيه مصادر معينة لقناة خاصة!\n\n" +
   "━━━━━━━━━━━━━━━━━━━\n";
 
 for (var i = 0; i < mappings.length; i++) {
@@ -45,13 +46,15 @@ text += "\n👇 **اختر إجراءً للتحكم بالقنوات والمص
 
 var inline_keyboard = [
   [
-    { title: "➕ إضافة ربط قناة نشر ومصادر جديدة", command: "/add_mapping" }
+    { title: "➕ إضافة مصادر خارجية للمراقبة", command: "/add_source" },
+    { title: "➕ ربط قناة هدف جديدة", command: "/add_mapping" }
   ],
   [
-    { title: "🗑️ حذف ربط قناة", command: "/del_mapping" },
-    { title: "🔄 إعادة ضبط التعيينات الافتراضية", command: "/reset_mapping" }
+    { title: "📋 قائمة كافة المصادر", command: "/sources" },
+    { title: "🗑️ حذف ربط قناة", command: "/del_mapping" }
   ],
   [
+    { title: "🔄 إعادة ضبط التعيينات الافتراضية", command: "/reset_mapping" },
     { title: "🎛 اللوحة الرئيسية", command: "/start" }
   ]
 ];

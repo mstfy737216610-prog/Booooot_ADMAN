@@ -55,17 +55,14 @@ AI_BASE_URL = os.getenv("AI_BASE_URL", "https://api.hcnsec.cn/v1/chat/completion
 AI_API_KEY = os.getenv("AI_API_KEY", "sk-J2ky44F6VTDMkL8Q1GHL5sfmbeIpARVDayNuwMfxKI5zCdii")
 AI_MODEL = os.getenv("PRIMARY_MODEL", "DeepSeek-V4.1-Flash")
 
+TARGET_CHANNEL = os.getenv("TARGET_CHANNEL", "@MyUniversityChannel")
+
 # القنوات المصدر والقنوات المستهدفة المنفصلة (Multi-Source Mapping)
 CHANNEL_MAPPINGS = [
     {
-        "target": "@MyUniversityChannel",
+        "target": TARGET_CHANNEL,
         "sources": ["@KSU_News", "@moe_gov_sa"],
         "name": "قناة النشر الرسمية (أ)"
-    },
-    {
-        "target": "@SecondTargetChannel",
-        "sources": ["@OtherUniversityChannel"],
-        "name": "القناة الثانية (ب)"
     }
 ]
 
