@@ -64,14 +64,14 @@ if (is_instruction_command && new_instruction_text.length > 5) {
 Bot.setProperty("last_user_query", raw_msg, "string");
 Bot.sendMessage("🔍 **جاري البحث والمعالجة الذكية لسؤالك عبر خوارزميات الذكاء الأكاديمي...**\n`" + raw_msg + "`");
 
-var current_model = Bot.getProperty("ai_model", "auto");
+var current_model = Bot.getProperty("ai_model", "DeepSeek-V4-Flash");
 var base_url = Bot.getProperty("ai_base_url", "https://api.hcnsec.cn/v1");
 var api_key = Bot.getProperty("ai_api_key", "sk-J2ky44F6VTDMkL8Q1GHL5sfmbeIpARVDayNuwMfxKI5zCdii");
 var saved_ins = Bot.getProperty("custom_instructions", "");
 
-var system_chat_prompt = "أنت مستشار ومساعد أكاديمي ذكي متخصص في الجامعات ونظم التعليم في المملكة العربية السعودية والوطن العربي. أجب بدقة وموثوقية عالية وبأسلوب راقٍ منظم بنقاط واضحة ومباشرة مع إيموجي مناسب وهاشتاجات ذات صلة. إذا طلب المشرف معلومة ابحث وقدم أحدث التفاصيل المعتمدة.";
+var system_chat_prompt = "أنت مستشار ومحرر أكاديمي ذكي متخصص في الجامعات ونظم التعليم في المملكة العربية السعودية والوطن العربي. أجب بدقة وموثوقية عالية وبأسلوب راقٍ منظم بنقاط واضحة ومباشرة مع هاشتاجات ذات صلة.\n\nتنبيه تقني صارم جداً: ممنوع استخدام الرموز التعبيرية (الإيموجي الرسومية مثل 📅 📚 🎓) لأنها تسبب تلف تشفير الحروف في شات تيليجرام. استخدم بدلاً منها علامات التنسيق النصية العادية فقط مثل [•] أو [-] أو [تنبيه:] أو [*].\nإذا أرسل المستخدم خبراً جامعياً أو إعلاناً قم بصياغته كمنشور رسمي مكتمل ومرتب.";
 if (saved_ins) {
-  system_chat_prompt += "\nملاحظة تعليمات المشرف: " + saved_ins;
+  system_chat_prompt += "\nملاحظة تعليمات المشرف الخاصة: " + saved_ins;
 }
 
 var endpoint_url = base_url.replace(/\/+$/, "") + "/chat/completions";

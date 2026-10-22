@@ -372,9 +372,10 @@ class StandaloneTelegramEducationalBot:
         cleaned = re.sub(r'(وفقاً لـ?|بحسب|نقلاً عن|المصدر:|قناة|حساب)\s+[^\s\n]+', '', cleaned)
         cleaned = re.sub(r'لا تنسوا الاشتراك[^\n.]*', '', cleaned)
         cleaned = re.sub(r'تابعونا على[^\n.]*', '', cleaned)
-        cleaned = re.sub(r'انضموا إلى[^\n.]*', '', cleaned)
         cleaned = re.sub(r'\n{3,}', '\n\n', cleaned).strip()
-        return cleaned
+        cleaned = cleaned.replace("ߓ堙噈اعيد", "مواعيد").replace("ߓꠙ嘰كرات", "مذكرات").replace("ߎ㠘㙆ظمة", "أنظمة")
+        cleaned = re.sub(r'[\u07C0-\u07FF\u4E00-\u9FFF\uF000-\uFFFF]', '', cleaned)
+        return cleaned.strip()
 
     def call_ai(self, raw_text: str, custom_instruction: str = "") -> str:
         clean_input = self.clean_text_from_sources(raw_text)

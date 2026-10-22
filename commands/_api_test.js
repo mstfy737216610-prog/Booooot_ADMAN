@@ -9,7 +9,7 @@
   aliases: فحص الاتصال, ⚡ فحص سرعة الاستجابة
 CMD*/
 
-var current_model = Bot.getProperty("ai_model", "auto");
+var current_model = Bot.getProperty("ai_model", "DeepSeek-V4-Flash");
 var base_url = Bot.getProperty("ai_base_url", "https://api.hcnsec.cn/v1");
 var api_key = Bot.getProperty("ai_api_key", "sk-J2ky44F6VTDMkL8Q1GHL5sfmbeIpARVDayNuwMfxKI5zCdii");
 

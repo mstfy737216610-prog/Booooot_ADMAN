@@ -9,6 +9,19 @@
   aliases: 
 CMD*/
 
+function cleanArabicText(txt) {
+  if (!txt) return "";
+  var s = txt;
+  s = s.replace(/ߓ堙噈اعيد/g, "مواعيد");
+  s = s.replace(/ߓꠙ嘰كرات/g, "مذكرات");
+  s = s.replace(/ߎ㠘㙆ظمة/g, "أنظمة");
+  s = s.replace(/ߓ/g, "• ");
+  s = s.replace(/ߎ/g, "• ");
+  s = s.replace(/ߌ/g, "");
+  s = s.replace(/[\u07C0-\u07FF\u4E00-\u9FFF\uF000-\uFFFF]/g, "");
+  return s.trim();
+}
+
 var rephrased_text = "";
 try {
   var data = JSON.parse(content);
@@ -20,6 +33,8 @@ try {
 if (!rephrased_text) {
   rephrased_text = Bot.getProperty("pending_raw_text", "");
 }
+
+rephrased_text = cleanArabicText(rephrased_text);
 
 // تنظيف الرد والتأكد من وجود عنوان أكاديمي بارز
 if (rephrased_text.indexOf("📌") === -1 && rephrased_text.indexOf("📢") === -1 && rephrased_text.indexOf("🎓") === -1) {
@@ -74,7 +89,7 @@ if (media_file_id && (media_file_id.indexOf("http") === 0 || media_file_id.index
 }
 
 var target_channels = Bot.getProperty("pending_targets", []);
-var current_model = Bot.getProperty("ai_model", "auto");
+var current_model = Bot.getProperty("ai_model", "DeepSeek-V4-Flash");
 
 // تنقية القنوات من القنوات الوهمية أو الملغاة
 var valid_targets = [];
