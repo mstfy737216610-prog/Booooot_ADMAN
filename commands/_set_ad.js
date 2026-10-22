@@ -1,19 +1,20 @@
 /*CMD
   command: /set_ad
-  help: تعديل إعلان خدمات الطلاب
-  need_reply: false
+  help: تعديل نص الإعلان البديل
+  need_reply: true
   auto_retry_time: 
   folder: 
-  answer: 
+  answer: ✏️ **أرسل الآن نص الإعلان البديل الجديد**:\n\n(اكتب النص بالكامل متضمناً رقمك أو معرفك @M_S_F_G، أو اكتب /cancel للإلغاء)
   keyboard: 
   aliases: 
 CMD*/
 
-var raw = message || "";
-var new_ad = raw.replace("/set_ad", "").trim();
-if (new_ad.length > 5) {
-  Bot.setProperty("custom_ad", new_ad, "string");
-  Bot.sendMessage("✅ تم حفظ وتحديث إعلان خدماتك الطلابية البديل بنجاح!");
-} else {
-  Bot.sendMessage("يرجى كتابة نص الإعلان بعد الأمر، مثال:\n`/set_ad إعلانك الجديد هنا`");
+if (!message || message.trim() == "/cancel") {
+  Bot.sendMessage("تم إلغاء تعديل الإعلان ✅");
+  Bot.runCommand("/ad");
+  return;
 }
+
+Bot.setProperty("custom_ad", message, "string");
+Bot.sendMessage("✅ **تم بنجاح حفظ نص الإعلان الجديد!**\nسيتم استخدامه فوراً عند رصد أي إعلان منافس.");
+Bot.runCommand("/ad");

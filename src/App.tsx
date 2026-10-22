@@ -190,7 +190,7 @@ export default function App() {
   });
 
   const [logs, setLogs] = useState<ActivityLogItem[]>(INITIAL_LOGS);
-  const [activeTab, setActiveTab] = useState<'all' | 'userbot' | 'github' | 'sources' | 'ai' | 'ad' | 'sim' | 'code' | 'guide'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'userbot' | 'github' | 'sources' | 'ai' | 'ad' | 'sim' | 'code' | 'guide'>('github');
   const [isLicenseOpen, setIsLicenseOpen] = useState(false);
   const [isTesterModalOpen, setIsTesterModalOpen] = useState(false);
   const [isTestingBot, setIsTestingBot] = useState(false);

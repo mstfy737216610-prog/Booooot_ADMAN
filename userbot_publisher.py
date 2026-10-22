@@ -55,9 +55,25 @@ AI_BASE_URL = os.getenv("AI_BASE_URL", "https://api.hcnsec.cn/v1/chat/completion
 AI_API_KEY = os.getenv("AI_API_KEY", "sk-J2ky44F6VTDMkL8Q1GHL5sfmbeIpARVDayNuwMfxKI5zCdii")
 AI_MODEL = os.getenv("PRIMARY_MODEL", "DeepSeek-V4.1-Flash")
 
-# القنوات المصدر والقنوات المستهدفة
-SOURCE_CHANNELS = ["@KSU_News", "@moe_gov_sa"]
-DESTINATION_CHANNELS = ["@MyUniversityChannel"]
+# القنوات المصدر والقنوات المستهدفة المنفصلة (Multi-Source Mapping)
+CHANNEL_MAPPINGS = [
+    {
+        "target": "@MyUniversityChannel",
+        "sources": ["@KSU_News", "@moe_gov_sa"],
+        "name": "قناة النشر الرسمية (أ)"
+    },
+    {
+        "target": "@SecondTargetChannel",
+        "sources": ["@OtherUniversityChannel"],
+        "name": "القناة الثانية (ب)"
+    }
+]
+
+# تجميع كافة المصادر المراقبة تلقائياً من المخطط
+SOURCE_CHANNELS = list(set([s for m in CHANNEL_MAPPINGS for s in m.get("sources", [])]))
+if not SOURCE_CHANNELS:
+    SOURCE_CHANNELS = ["@KSU_News", "@moe_gov_sa"]
+DESTINATION_CHANNELS = list(set([m["target"] for m in CHANNEL_MAPPINGS]))
 
 # حساب المشرف
 ADMIN_ID = int(os.getenv("ADMIN_ID", "7607633343"))
@@ -161,8 +177,12 @@ def process_post_with_ai(post_text: str) -> str:
         "max_tokens": 800
     }
 
+    endpoint = AI_BASE_URL.strip().rstrip("/")
+    if not endpoint.endswith("/chat/completions"):
+        endpoint += "/chat/completions"
+
     try:
-        response = requests.post(AI_BASE_URL, headers=headers, json=payload, timeout=25)
+        response = requests.post(endpoint, headers=headers, json=payload, timeout=25)
         if response.status_code == 200:
             result = response.json()
             return result["choices"][0]["message"]["content"].strip()
@@ -187,11 +207,35 @@ async def main():
     logging.info(f"النموذج: {AI_MODEL} | القنوات المصدر: {len(SOURCE_CHANNELS)}")
     logging.info("=" * 60)
 
-    # إنشاء العميل بجلسة StringSession أو ملف محلي
+    # إعداد بصمة الجهاز التلقائية لتظهر في إشعارات تيليجرام كـ (متصفح: Chrome 154 on Android)
+    device_model = "Chrome 154 on Android"
+    system_version = "Android 14"
+    app_version = "1.0.0"
+    lang_code = "ar"
+    system_lang_code = "ar"
+
     if STRING_SESSION:
-        client = TelegramClient(StringSession(STRING_SESSION), API_ID, API_HASH)
+        client = TelegramClient(
+            StringSession(STRING_SESSION),
+            API_ID,
+            API_HASH,
+            device_model=device_model,
+            system_version=system_version,
+            app_version=app_version,
+            lang_code=lang_code,
+            system_lang_code=system_lang_code
+        )
     else:
-        client = TelegramClient("userbot_session", API_ID, API_HASH)
+        client = TelegramClient(
+            "userbot_session",
+            API_ID,
+            API_HASH,
+            device_model=device_model,
+            system_version=system_version,
+            app_version=app_version,
+            lang_code=lang_code,
+            system_lang_code=system_lang_code
+        )
 
     try:
         await client.start(phone=PHONE_NUMBER if PHONE_NUMBER else None)
@@ -242,15 +286,27 @@ async def main():
                 logging.info(f"🧠 جاري معالجة النص بواسطة {AI_MODEL}...")
                 final_caption = process_post_with_ai(raw_text)
 
-            # 3. النشر في كافة القنوات المستهدفة مع الوسائط
-            for dest in DESTINATION_CHANNELS:
+            # 3. توجيه المنشور فقط للقنوات الهدف المخصصة لمتابعة هذا المصدر (Multi-Source Mapping)
+            chat_username = f"@{chat.username}" if getattr(chat, 'username', None) else ""
+            matched_targets = []
+            for m in CHANNEL_MAPPINGS:
+                for s in m.get("sources", []):
+                    s_clean = s.lower().replace("@", "").strip()
+                    if (chat_username and s_clean in chat_username.lower()) or (s in chat_title) or (str(event.chat_id) in s):
+                        matched_targets.append(m["target"])
+                        break
+
+            if not matched_targets:
+                matched_targets = DESTINATION_CHANNELS
+
+            for dest in set(matched_targets):
                 try:
                     if media:
                         # تحميل ونشر الوسائط الأصلية (صور، فيديو، مستند، صوت) مع النص المعالج
                         await client.send_file(dest, media, caption=final_caption)
                     else:
                         await client.send_message(dest, final_caption)
-                    logging.info(f"✅ تم النشر بنجاح في القناة المستهدفة: {dest}")
+                    logging.info(f"✅ تم النشر بنجاح في القناة المخصصة: {dest}")
                 except Exception as pub_err:
                     logging.error(f"❌ فشل النشر في {dest}: {pub_err}")
 
