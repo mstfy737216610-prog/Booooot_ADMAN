@@ -6,7 +6,7 @@
   folder: 
   answer: 
   keyboard: 
-  aliases: 👤 إدارة الحساب المسجل, /session
+  aliases: 👤 إدارة اليوزربوت وجلسة الحساب, 👤 إدارة اليوزربوت, اليوزربوت, 👤 إدارة الحساب المسجل, /session, /userbot
 CMD*/
 
 var has_session = Bot.getProperty("userbot_session_active", true);

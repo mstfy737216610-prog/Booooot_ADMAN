@@ -6,7 +6,7 @@
   folder: 
   answer: 
   keyboard: 
-  aliases: ⏸ إيقاف / استئناف, ⏸ إيقاف / تشغيل البوت, /resume, /toggle
+  aliases: 🟢 تشغيل / إيقاف البوت, تشغيل / إيقاف البوت, ⏸️ تشغيل / إيقاف البوت, ⏸ إيقاف / استئناف, ⏸ إيقاف / تشغيل البوت, /resume, /toggle, إيقاف البوت, تشغيل البوت
 CMD*/
 
 var is_paused = Bot.getProperty("bot_paused", false);

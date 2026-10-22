@@ -6,7 +6,7 @@
   folder: 
   answer: 
   keyboard: 
-  aliases: 📊 تقارير النشر, 📊 حالة البوت, /stats, /report
+  aliases: 📊 حالة النظام والتقارير, حالة النظام, 📊 تقارير النشر, 📊 حالة البوت, /stats, /report, تقارير النشر
 CMD*/
 
 var is_paused = Bot.getProperty("bot_paused", false);

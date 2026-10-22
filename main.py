@@ -1130,15 +1130,36 @@ class StandaloneTelegramEducationalBot:
         backoff_delay = 1
         logger.info("🎧 جاري الاستماع لتحديثات وأوامر تيليجرام...")
 
+        # فحص وجود ويب هوك نشط
+        webhook_info = self.tg_request("getWebhookInfo")
+        has_active_webhook = bool(webhook_info.get("ok") and webhook_info.get("result", {}).get("url"))
+        if has_active_webhook:
+            logger.info(f"🔗 تم رصد Webhook نشط على: {webhook_info['result']['url']}")
+            logger.info("⚡️ البوت يعمل بنمط التناغم الكامل: الأوامر التفاعلية عبر Webhook + الساحب الآلي المتقدم والمراقب في الخلفية 24/7")
+
         while self.running:
             try:
+                # إذا كان الويب هوك نشطاً، نترك استقبال الرسائل للويب هوك ونبقي خيوط السحب والنشر نشطة
+                if has_active_webhook:
+                    time.sleep(25)
+                    # فحص دوري كل دقيقة إذا تغيرت حالة الويب هوك
+                    chk = self.tg_request("getWebhookInfo", timeout=10)
+                    if chk.get("ok") and not chk.get("result", {}).get("url"):
+                        has_active_webhook = False
+                        logger.info("🔄 تم إلغاء Webhook، تفعيل الاستماع المباشر getUpdates فوراً...")
+                    continue
+
                 res = self.tg_request(f"getUpdates?offset={offset}&timeout=25", timeout=35)
                 
-                # فحص خطأ 409 Conflict (نسخة أخرى تعمل)
+                # فحص خطأ 409 Conflict (نسخة أخرى تعمل أو ويب هوك مفعل)
                 if not res.get("ok"):
                     http_code = res.get("http_code") or res.get("error_code")
                     if http_code == 409:
-                        logger.warning(f"⚠️ خطأ 409 Conflict (نسخة أخرى من البوت تعمل بالتوازي). إعادة المحاولة بعد {backoff_delay} ثانية...")
+                        chk = self.tg_request("getWebhookInfo", timeout=10)
+                        if chk.get("ok") and chk.get("result", {}).get("url"):
+                            has_active_webhook = True
+                            logger.info(f"🔗 تم تفعيل الويب هوك على {chk['result']['url']} - الانتقال لنمط مراقبة السحب الخلفي.")
+                            continue
                         time.sleep(backoff_delay)
                         backoff_delay = min(backoff_delay * 2, 60)
                         continue

@@ -127,6 +127,75 @@ if (msg_obj && msg_obj.chat && (msg_obj.chat.type === "channel" || msg_obj.chat.
 var is_private_chat = (msg_obj && msg_obj.chat && msg_obj.chat.type === "private") || (typeof chat !== "undefined" && chat && chat.chat_type === "private");
 var is_forwarded = !!(source_origin || (msg_obj && (msg_obj.forward_date || msg_obj.forward_from_chat || msg_obj.forward_origin)));
 
+// توجيه نصوص أزرار الكيبورد إلى الأوامر المخصصة لمنع صياغتها كمنشورات
+if (is_private_chat && !is_forwarded && !media_file_id && raw_text) {
+  var t = raw_text.trim();
+  if (t === "🔄 فحص وسحب المنشورات" || t === "فحص وسحب المنشورات" || t === "🔄 سحب وفحص المصادر") {
+    Bot.runCommand("/crawl_sources");
+    return;
+  }
+  if (t === "➕ إضافة مصادر خارجية" || t === "إضافة مصادر خارجية" || t === "إضافة مصدر") {
+    Bot.runCommand("/add_source");
+    return;
+  }
+  if (t === "📢 تحديد قناة النشر" || t === "تحديد قناة النشر" || t === "📢 قنوات النشر" || t === "📢 تحديد قناة النشر الهدف") {
+    Bot.runCommand("/set_channel");
+    return;
+  }
+  if (t === "📝 صياغة ونشر خبر فوري" || t === "صياغة ونشر خبر فوري" || t === "نشر خبر فوري") {
+    Bot.runCommand("/new_post");
+    return;
+  }
+  if (t === "📋 قائمة المصادر" || t === "قائمة المصادر" || t === "المصادر") {
+    Bot.runCommand("/sources");
+    return;
+  }
+  if (t === "⚙️ إعدادات الذكاء الاصطناعي" || t === "إعدادات الذكاء الاصطناعي" || t === "الذكاء الاصطناعي") {
+    Bot.runCommand("/ai");
+    return;
+  }
+  if (t === "🔗 ربط القنوات والأهداف" || t === "ربط القنوات والأهداف" || t === "خريطة القنوات") {
+    Bot.runCommand("/mapping");
+    return;
+  }
+  if (t === "🎯 إعلان خدماتي البديل" || t === "إعلان خدماتي البديل" || t === "الإعلان البديل") {
+    Bot.runCommand("/ad");
+    return;
+  }
+  if (t === "👤 إدارة اليوزربوت وجلسة الحساب" || t === "إدارة اليوزربوت" || t === "اليوزربوت" || t === "👤 إدارة اليوزربوت") {
+    Bot.runCommand("/userbot");
+    return;
+  }
+  if (t === "📊 حالة النظام والتقارير" || t === "حالة النظام" || t === "تقارير النشر" || t === "📊 تقارير النشر") {
+    Bot.runCommand("/status");
+    return;
+  }
+  if (t === "⚙️ تعليمات المحرر الأكاديمي" || t === "تعليمات المحرر الأكاديمي" || t === "التعليمات") {
+    Bot.runCommand("/instructions");
+    return;
+  }
+  if (t === "🔑 المفاتيح والاعتمادات" || t === "المفاتيح والاعتمادات" || t === "المفاتيح" || t === "🔑 المفاتيح والبيانات") {
+    Bot.runCommand("/keys");
+    return;
+  }
+  if (t === "👥 إدارة المستخدمين" || t === "إدارة المستخدمين والصلاحيات" || t === "👥 إدارة المستخدمين والصلاحيات") {
+    Bot.runCommand("/users");
+    return;
+  }
+  if (t === "🟢 تشغيل / إيقاف البوت" || t === "تشغيل / إيقاف البوت" || t === "إيقاف / تشغيل" || t === "⏸️ تشغيل / إيقاف البوت") {
+    Bot.runCommand("/pause");
+    return;
+  }
+  if (t === "🧪 تجربة الصياغة الفورية" || t === "تجربة الصياغة") {
+    Bot.runCommand("/test");
+    return;
+  }
+  if (t === "🎛 لوحة التحكم الرئيسية" || t === "لوحة التحكم" || t === "الرئيسية") {
+    Bot.runCommand("/start");
+    return;
+  }
+}
+
 // تجنب الكلمات الترحيبية المفردة في الخاص
 var short_greetings = ["مرحبا", "سلام", "الو", "هلا", "hi", "hello"];
 if (is_private_chat && !is_forwarded && !media_file_id && short_greetings.indexOf(raw_text.toLowerCase()) !== -1) {

@@ -6,7 +6,7 @@
   folder: 
   answer: 
   keyboard: 
-  aliases: 📝 نشر خبر جديد, /post, نشر خبر
+  aliases: 📝 صياغة ونشر خبر فوري, صياغة ونشر خبر فوري, 📝 نشر خبر جديد, /post, نشر خبر, نشر خبر فوري
 CMD*/
 
 var text = "📝 **صانع ومنسق الأخبار الأكاديمية الفوري (Instant Post Publisher)**:\n" +

@@ -6,7 +6,7 @@
   folder: 
   answer: 
   keyboard: 
-  aliases: ⚙️ تعليمات المحرر, تعليمات المحرر, التعليمات
+  aliases: ⚙️ تعليمات المحرر الأكاديمي, تعليمات المحرر الأكاديمي, ⚙️ تعليمات المحرر, تعليمات المحرر, التعليمات, /prompt
 CMD*/
 
 var ins = Bot.getProperty("custom_instructions");

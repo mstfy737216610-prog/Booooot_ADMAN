@@ -150,8 +150,39 @@ app.post('/api/telegram/test-bot', async (req: Request, res: Response) => {
   }
 });
 
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
+
+let pythonProcess: any = null;
+function startPythonWorker() {
+  const pyPath = path.join(__dirname, 'main.py');
+  if (!fs.existsSync(pyPath)) return;
+
+  try {
+    console.log('🐍 تشغيل خادم ومحرك التيليجرام المستقل المزدوج (python3 main.py)...');
+    pythonProcess = spawn('python3', ['main.py'], {
+      cwd: __dirname,
+      env: { ...process.env, PORT: '8088', KEEPALIVE_PORT: '8088' }
+    });
+
+    pythonProcess.stdout.on('data', (d: Buffer) => {
+      const s = d.toString().trim();
+      if (s) console.log(`[PythonBot] ${s}`);
+    });
+
+    pythonProcess.stderr.on('data', (d: Buffer) => {
+      const s = d.toString().trim();
+      if (s && !s.includes('CertificateError')) console.warn(`[PythonBot] ${s}`);
+    });
+
+    pythonProcess.on('close', (code: number | null) => {
+      console.warn(`[PythonBot] انتهت العملية برمز ${code}. إعادة التشغيل التلقائي بعد 5 ثوانٍ...`);
+      setTimeout(startPythonWorker, 5000);
+    });
+  } catch (err) {
+    console.warn('[PythonBot] خطأ أثناء تشغيل عملية بايثون:', err);
+  }
+}
 
 const execFileAsync = promisify(execFile);
 
@@ -409,6 +440,7 @@ async function startServer() {
   const port = Number(PORT) || 3000;
   app.listen(port, host, () => {
     console.log(`🚀 Telegram Educational Studio running on http://${host}:${port}`);
+    startPythonWorker();
   });
 }
 

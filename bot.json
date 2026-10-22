@@ -50,6 +50,7 @@
     { "name": "handle_user_post" },
     { "name": "_default" },
     { "name": "/on_ai_post_success" },
-    { "name": "/on_ai_post_error" }
+    { "name": "/on_ai_post_error" },
+    { "name": "/users" }
   ]
 }
