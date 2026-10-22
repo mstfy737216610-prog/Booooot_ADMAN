@@ -137,49 +137,40 @@ for (var i = 0; i < valid_targets.length; i++) {
 
   if ((media_type === "photo" || media_type === "photo_doc") && media_file_id) {
     var p_success = false;
-    // 1. محاولة الإرسال مع HTML والشرح
+    var clean_cap = rephrased_text.length > 1024 ? rephrased_text.substring(0, 1020) + "..." : rephrased_text;
+
+    // 1. محاولة الإرسال المباشر بالصورة والشرح دون parse_mode لتفادي أخطاء الرموز مثل > و &
     try {
       if (media_type === "photo_doc") {
-        Api.sendDocument({ chat_id: ch, document: media_file_id, caption: safe_caption, parse_mode: "HTML" });
+        Api.sendDocument({ chat_id: ch, document: media_file_id, caption: clean_cap });
       } else {
-        Api.sendPhoto({ chat_id: ch, photo: media_file_id, caption: safe_caption, parse_mode: "HTML" });
+        Api.sendPhoto({ chat_id: ch, photo: media_file_id, caption: clean_cap });
       }
       p_success = true;
     } catch (e1) {
-      // 2. محاولة الإرسال بدون HTML كنص عادي لتفادي أي رمز خاص
+      // 2. محاولة ثانية مع HTML
       try {
-        var raw_cap = rephrased_text.length > 1024 ? rephrased_text.substring(0, 1020) + "..." : rephrased_text;
         if (media_type === "photo_doc") {
-          Api.sendDocument({ chat_id: ch, document: media_file_id, caption: raw_cap });
+          Api.sendDocument({ chat_id: ch, document: media_file_id, caption: safe_caption, parse_mode: "HTML" });
         } else {
-          Api.sendPhoto({ chat_id: ch, photo: media_file_id, caption: raw_cap });
+          Api.sendPhoto({ chat_id: ch, photo: media_file_id, caption: safe_caption, parse_mode: "HTML" });
         }
         p_success = true;
       } catch (e2) {
-        // 3. إرسال الصورة وحدها بدون شرح لضمان وصول الصورة للطلاب دائماً
+        // 3. إرسال الصورة أولاً ثم إرسال النص لضمان ظهور الصورة دائماً للطلاب
         try {
           if (media_type === "photo_doc") {
             Api.sendDocument({ chat_id: ch, document: media_file_id });
           } else {
             Api.sendPhoto({ chat_id: ch, photo: media_file_id });
           }
-          try {
-            Api.sendMessage({ chat_id: ch, text: safe_post_text, parse_mode: "HTML" });
-          } catch (e_txt) {
-            Api.sendMessage({ chat_id: ch, text: rephrased_text });
-          }
+          Api.sendMessage({ chat_id: ch, text: clean_cap });
           p_success = true;
         } catch (e3) {
-          // 4. حل أخير إذا كان الرابط الخارجي محظوراً من تيليجرام
           try {
-            Api.sendMessage({ chat_id: ch, text: safe_post_text, parse_mode: "HTML" });
+            Api.sendMessage({ chat_id: ch, text: clean_cap });
             p_success = true;
-          } catch (e4) {
-            try {
-              Api.sendMessage({ chat_id: ch, text: rephrased_text });
-              p_success = true;
-            } catch (e5) {}
-          }
+          } catch (e4) {}
         }
       }
     }

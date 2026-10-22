@@ -89,7 +89,7 @@ SYSTEM_PROMPT_REPHRASE = """# الدور: الناشر والكاتب الرسم
 2. احذف نهائياً أي روابط أو معرفات قنوات تيليجرام أخرى (مثل @channel أو t.me).
 3. اكتب بأسلوب عربي فصيح، راقٍ، منظم بنقاط واضحة ومباشرة للطلاب.
 4. حافظ بدقة تامة على الأرقام، النسب، التواريخ، والمواعيد الرسمية، والشروط دون أي تحريف.
-5. احتفظ فقط بالروابط الحكومية والجامعية الرسمية المباشرة (مثل مواقع الجامعات الرسمية أو الوزارة).
+5. احتفظ بجميع الروابط الخارجية المفيدة للطلاب وبوابات الكليات والجامعات (مثل HCT Portal أو AUM Portal ومواقع التسجيل) واجعلها واضحة ومباشرة ليتمكن الطلاب من فتحها وتصفحها بسهولة.
 
 ## التنسيق المطلوب:
 📌 [عنوان بارز وجذاب بدون أي إشارة لمصادر]
@@ -145,6 +145,7 @@ def run_keepalive_server():
 # ----------------- فئة البوت الرئيسية -----------------
 class StandaloneTelegramEducationalBot:
     def __init__(self):
+        self.token = BOT_TOKEN
         self.user_waiting_state: Dict[int, str] = {}
         self.cached_forwarded_post: Dict[int, Dict[str, Any]] = {}
         self.telethon_client: Optional[Any] = None
@@ -201,7 +202,18 @@ class StandaloneTelegramEducationalBot:
         safe_caption = self.to_safe_html(caption) if parse_mode == "HTML" else caption
         lead_caption = safe_caption[:1020] if len(safe_caption) > 1024 else safe_caption
 
-        # 1. إذا كانت الصورة رابط إنترنت (URL)، نقوم بتحميلها كـ bytes ورفعها عبر multipart لمنع خطأ 400 failed to get HTTP URL content
+        # 0. إذا كانت الصورة عبارة عن file_id، نحصل على مسار التحميل المباشر لضمان رفع الـ bytes بنجاح
+        if photo and not (photo.startswith("http://") or photo.startswith("https://")):
+            try:
+                gf = self.tg_request("getFile", {"file_id": photo})
+                if gf.get("ok"):
+                    f_path = gf["result"].get("file_path")
+                    if f_path:
+                        photo = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{f_path}"
+            except Exception as e:
+                logger.warning(f"تعذر استخراج مسار الصورة من getFile: {e}")
+
+        # 1. إذا كانت الصورة رابط إنترنت (URL أو مسار Telegram)، نقوم بتحميلها كـ bytes ورفعها عبر multipart
         if photo and (photo.startswith("http://") or photo.startswith("https://")):
             try:
                 import uuid
@@ -209,10 +221,10 @@ class StandaloneTelegramEducationalBot:
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
                     "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
                 })
-                with urllib.request.urlopen(img_req, context=ssl_ctx, timeout=12) as img_resp:
+                with urllib.request.urlopen(img_req, context=ssl_ctx, timeout=15) as img_resp:
                     img_bytes = img_resp.read()
 
-                if img_bytes and len(img_bytes) > 100:
+                if img_bytes and len(img_bytes) > 50:
                     boundary = uuid.uuid4().hex
                     body = bytearray()
                     def add_field(name: str, val: str):
@@ -228,13 +240,13 @@ class StandaloneTelegramEducationalBot:
                     body.extend(img_bytes)
                     body.extend(f'\r\n--{boundary}--\r\n'.encode('utf-8'))
 
-                    url = f"https://api.telegram.org/bot{self.token}/sendPhoto"
+                    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
                     upload_req = urllib.request.Request(
                         url,
                         data=body,
                         headers={"Content-Type": f"multipart/form-data; boundary={boundary}"}
                     )
-                    with urllib.request.urlopen(upload_req, context=ssl_ctx, timeout=25) as u_resp:
+                    with urllib.request.urlopen(upload_req, context=ssl_ctx, timeout=30) as u_resp:
                         res = json.loads(u_resp.read().decode("utf-8"))
                         if res.get("ok"):
                             if len(safe_caption) > 1024:
@@ -499,8 +511,105 @@ class StandaloneTelegramEducationalBot:
             except Exception as e:
                 logger.error(f"❌ خطأ أثناء معالجة مهمة في الطابور: {e}")
 
-    # ----------------- مراقبة القنوات والمصادر (MTProto + Scraper) -----------------
-    def check_telegram_channel_scraper(self, src: Dict[str, Any]):
+    # ----------------- البحث المباشر عبر الإنترنت واستجابة الاستفسارات الأكاديمية -----------------
+    def search_web_live(self, query: str) -> List[Dict[str, str]]:
+        """يبحث عبر الإنترنت في الأخبار والمواقع الأكاديمية والجامعية في الوقت الفعلي بدقة ومرونة فائقة"""
+        clean_q = re.sub(r'^(ابحث عبر الانترنت|ابحث في الانترنت|ابحث عن|ابحث لي عن|ابحث|/search)\s*', '', query, flags=re.IGNORECASE).strip()
+        clean_q = re.sub(r'^(اريد ان تبحث|أريد أن تبحث|اريد ان اعرف|أريد أن أعرف|هل تم اليوم|هل تم)\s*', '', clean_q, flags=re.IGNORECASE).strip()
+        if not clean_q:
+            clean_q = query.strip()
+
+        # استخراج كلمات مفتاحية ذكية لتجنب فشل البحث بالعبارات الطويلة
+        words = [w for w in clean_q.split() if w not in {'اريد', 'أريد', 'ان', 'أن', 'تبحث', 'هل', 'تم', 'اليوم', 'لي', 'عبر', 'الإنترنت', 'الانترنت', 'في', 'عن', 'من'}]
+        candidate_queries = [
+            clean_q,
+            ' '.join(words),
+            ' '.join([w for w in words if len(w) > 2][:4]),
+            ' '.join([w for w in words if w.lower() in ['aum', 'ksu', 'hct', 'puc'] or any(k in w for k in ['جامع', 'إعان', 'مكاف', 'قبول', 'تسجيل'])])
+        ]
+
+        results = []
+        seen_titles = set()
+        seen_candidates = set()
+
+        for cand in candidate_queries:
+            cand = cand.strip()
+            if not cand or cand in seen_candidates:
+                continue
+            seen_candidates.add(cand)
+            encoded_q = urllib.parse.quote(cand)
+
+            urls = [
+                f"https://news.google.com/rss/search?q={encoded_q}&hl=ar&gl=KW&ceid=KW:ar",
+                f"https://news.google.com/rss/search?q={encoded_q}&hl=ar&gl=SA&ceid=SA:ar"
+            ]
+            for url in urls:
+                try:
+                    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
+                    with urllib.request.urlopen(req, context=ssl_ctx, timeout=7) as r:
+                        root = ET.fromstring(r.read())
+                        items = root.findall('.//item')
+                        for it in items[:4]:
+                            title = it.findtext("title") or ""
+                            link = it.findtext("link") or ""
+                            pub = it.findtext("pubDate") or ""
+                            desc = it.findtext("description") or ""
+                            clean_desc = re.sub(r'<[^>]+>', '', desc).strip()
+                            if title and title not in seen_titles:
+                                seen_titles.add(title)
+                                results.append({
+                                    "title": title,
+                                    "link": link,
+                                    "pub_date": pub,
+                                    "snippet": clean_desc[:250]
+                                })
+                except Exception as e:
+                    logger.debug(f"فحص محرك البحث لـ {url}: {e}")
+
+            if len(results) >= 3:
+                break
+
+        return results
+
+    def answer_search_or_chat_query(self, chat_id: int, user_query: str):
+        """يجيب على أسئلة المشرف واستفسارات الطلاب بدقة مع دمج البحث الحي عبر الإنترنت"""
+        self.send_msg(chat_id, "🔍 **جاري البحث الفوري عبر الإنترنت وتحليل البيانات بالذكاء الأكاديمي...**")
+
+        search_results = self.search_web_live(user_query)
+        web_context = ""
+        if search_results:
+            web_context = "\n\n🌐 نتائج البحث الحي المباشر من مصادر الإنترنت والأخبار:\n"
+            for i, res in enumerate(search_results, 1):
+                web_context += f"{i}. {res['title']} (التاريخ: {res['pub_date']})\n   {res['snippet']}\n   رابط المصدر: {res['link']}\n"
+
+        system_prompt = f"""أنت مستشار وباحث أكاديمي وجامعي فائق الذكاء ومحرر محتوى متمكن.
+تتحدث مع المشرف بحرية كاملة ودون أي قيود أو قوالب نمطية مصطنعة.
+- إذا كان السؤال عن إعانة ومكافأة طلبة جامعة AUM (الكويت) أو الجامعات الخاصة: وضح أن المكافأة الاجتماعية (200 دينار كويتي شهرياً) تصرف عبر مجلس الجامعات الخاصة (PUC) ويتم إيداعها للبنوك عادة بين 20 إلى 26 من كل شهر ميلادي بعد اعتماد الكشوفات، ويمكن للطالب التأكد عبر تطبيق بنكه أو بوابة الطالب My AUM Portal أو التواصل مع شؤون الطلبة عبر هاتف 22260100.
+- إذا كانت هناك روابط خارجية أو بوابات كليات ومعاهد، احتفظ بها واضحة ليتمكن الطلاب من النقر عليها وفتحها مباشرة.
+- أسلوبك راقٍ، مباشر، عربي فصيح، بدون أي إيموجي رسومية تالفة، واستخدم النقاط المنظمة [•] أو [*].
+{web_context}"""
+
+        reply = self.call_ai(user_query, system_prompt=system_prompt)
+        if not reply or len(reply) < 15:
+            reply = f"بخصوص استفسارك عن: {user_query}\n\nتعتمد الأنظمة الجامعية الإعلانات الرسمية عبر بوابات الطلبة والتطبيقات المعتمدة."
+
+        # حفظ الرد لتمكين النشر الفوري في القناة إذا رغب المشرف
+        self.cached_forwarded_post[chat_id] = {
+            "text": reply,
+            "photo": None,
+            "channel": db.get_target_channels()[0] if db.get_target_channels() else "@jhdhhdcj"
+        }
+
+        kb = {
+            "inline_keyboard": [
+                [{"text": "📢 نشر هذه الصياغة في قناتي (@jhdhhdcj)", "callback_data": "panel_test"}],
+                [{"text": "💬 طرح سؤال جديد", "callback_data": "panel_cancel"}]
+            ]
+        }
+        self.send_msg(chat_id, f"💡 **إجابة المساعد الأكاديمي الذكي (مدعومة بالبحث المباشر):**\n━━━━━━━━━━━━━━━━━━━\n\n{reply}", kb)
+
+    # ----------------- مراقبة القنوات والمصادر (تليجرام + تويتر/X + RSS) -----------------
+    def check_telegram_channel_scraper(self, src: Dict[str, Any], is_manual: bool = False):
         channel_name = src.get("target", "").replace("@", "").replace("https://t.me/s/", "").replace("https://t.me/", "").strip()
         if not channel_name:
             return
@@ -515,6 +624,7 @@ class StandaloneTelegramEducationalBot:
                 html = resp.read().decode("utf-8")
                 blocks = html.split('class="tgme_widget_message_wrap')
                 if len(blocks) <= 1:
+                    logger.warning(f"⚠️ تعذر سحب محتوى القناة {channel_name} عبر الويب (قد تكون القناة خاصة أو مقيدة).")
                     return
 
                 posts_extracted = []
@@ -544,12 +654,10 @@ class StandaloneTelegramEducationalBot:
                         if "emoji" in photo_url or "telegram.org/img" in photo_url or "website_icon" in photo_url:
                             photo_url = None
 
-                    # الإصلاح الحرج للـ Regex كما طلب المشرف بدقة:
                     text_m = re.search(r'class=\"tgme_widget_message_text[^\"]*js-message_text\"[^>]*>(.*?)</div>', b, re.DOTALL)
                     text_content = ""
                     if text_m:
                         raw_h = text_m.group(1)
-                        # استبدال سليم لوسوم br دون تفريغ النمط
                         clean_h = re.sub(r'<br\s*/?>', '\n', raw_h)
                         text_content = re.sub(r'<[^>]+>', '', clean_h).strip()
 
@@ -558,7 +666,7 @@ class StandaloneTelegramEducationalBot:
                 if not posts_extracted:
                     return
 
-                # ترتيب المنشورات تصاعدياً لضمان نشر المنشورات بالترتيب الزمني الصحيح
+                # ترتيب المنشورات تصاعدياً
                 posts_extracted.sort(key=lambda x: x["num_id"])
 
                 last_known = str(src.get("last_post_id") or "")
@@ -568,14 +676,26 @@ class StandaloneTelegramEducationalBot:
                     if num_match:
                         last_known_num = int(num_match.group(1))
 
-                # إذا كانت أول مرة نسجل فقط آخر منشور لمنع نشر الأرشيف القديم
+                # إذا كانت أول مرة نسجل آخر منشور، وإذا كان فحصاً يدوياً ننشر أحدث منشور فوراً ليرى المشرف النتيجة
                 if not last_known or last_known_num == 0:
                     latest = posts_extracted[-1]
                     db.update_source_last_id(src.get("target"), latest["id"])
                     logger.info(f"📌 تمت تهيئة المصدر {src.get('target')} عند المنشور #{latest['id']}")
+                    if is_manual and latest.get("text"):
+                        p_hash = hashlib.md5(latest["text"][:80].encode("utf-8")).hexdigest()
+                        if not db.is_post_seen(latest["id"], p_hash):
+                            db.mark_post_seen(latest["id"], p_hash, src.get("target"))
+                            logger.info(f"⚡️ [فحص يدوي] جاري نشر أحدث منشور متاح من {src.get('target')}")
+                            post_queue.put({
+                                "type": "crawled_post",
+                                "text": latest["text"],
+                                "photo": latest.get("photo"),
+                                "targets": db.get_target_channels(),
+                                "user_id": ADMIN_ID
+                            })
                     return
 
-                # حلقة فحص ونشر كافة المنشورات الجديدة المتراكمة وليس آخر واحد فقط!
+                # حلقة فحص ونشر كافة المنشورات الجديدة المتراكمة
                 new_posts = [p for p in posts_extracted if p["num_id"] > last_known_num]
                 for p in new_posts:
                     p_text = p.get("text", "")
@@ -601,7 +721,76 @@ class StandaloneTelegramEducationalBot:
         except Exception as e:
             logger.debug(f"فحص القناة عبر Scraper {channel_name}: {e}")
 
-    def check_rss_feed(self, src: Dict[str, Any]):
+    def check_twitter_feed(self, src: Dict[str, Any], is_manual: bool = False):
+        """يسحب التغريدات والمنشورات من تويتر/X وشبكات التواصل المعتمدة عبر الفيد الإخباري الذكي"""
+        raw_target = src.get("target", "").replace("@", "").replace("https://x.com/", "").replace("https://twitter.com/", "").strip()
+        if not raw_target:
+            return
+        handle = raw_target.split("/")[0].strip()
+
+        q = urllib.parse.quote(f"from:{handle} OR site:x.com/{handle} OR site:twitter.com/{handle}")
+        url = f"https://news.google.com/rss/search?q={q}&hl=ar&gl=SA&ceid=SA:ar"
+
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
+            with urllib.request.urlopen(req, context=ssl_ctx, timeout=12) as resp:
+                root = ET.fromstring(resp.read())
+                items = root.findall(".//item")
+                if not items:
+                    return
+
+                last_known = str(src.get("last_post_id") or "")
+                new_items = []
+                for it in items[:15]:
+                    t = it.findtext("title") or ""
+                    l = it.findtext("link") or ""
+                    d = it.findtext("description") or ""
+
+                    clean_title = re.sub(r'\s*-\s*(X|Twitter|تويتر)\s*$', '', t).strip()
+                    clean_desc = re.sub(r'<[^>]+>', '', d).strip()
+                    full_text = f"{clean_title}\n{clean_desc}".strip()
+
+                    pid = l or hashlib.md5(full_text.encode("utf-8")).hexdigest()
+                    if pid == last_known:
+                        break
+                    new_items.append((pid, full_text))
+
+                if not new_items:
+                    return
+
+                if not last_known:
+                    latest_pid, latest_txt = new_items[0]
+                    db.update_source_last_id(src.get("target"), latest_pid)
+                    if is_manual:
+                        p_hash = hashlib.md5(latest_txt[:80].encode("utf-8")).hexdigest()
+                        if not db.is_post_seen(latest_pid, p_hash):
+                            db.mark_post_seen(latest_pid, p_hash, src.get("target"))
+                            post_queue.put({
+                                "type": "twitter_post",
+                                "text": latest_txt,
+                                "photo": None,
+                                "targets": db.get_target_channels(),
+                                "user_id": ADMIN_ID
+                            })
+                    return
+
+                db.update_source_last_id(src.get("target"), new_items[0][0])
+                for pid, full_txt in reversed(new_items):
+                    p_hash = hashlib.md5(full_txt[:80].encode("utf-8")).hexdigest()
+                    if not db.is_post_seen(pid, p_hash):
+                        db.mark_post_seen(pid, p_hash, src.get("target"))
+                        logger.info(f"⚡️ [Twitter/X] تغريدة جديدة تم التقاطها من @{handle}")
+                        post_queue.put({
+                            "type": "twitter_post",
+                            "text": full_txt,
+                            "photo": None,
+                            "targets": db.get_target_channels(),
+                            "user_id": ADMIN_ID
+                        })
+        except Exception as e:
+            logger.debug(f"خطأ في سحب تويتر/X للحساب {handle}: {e}")
+
+    def check_rss_feed(self, src: Dict[str, Any], is_manual: bool = False):
         url = src.get("target", "")
         if not url.startswith("http"):
             return
@@ -626,8 +815,23 @@ class StandaloneTelegramEducationalBot:
                     new_items.append((pid, t, d))
 
                 if new_items:
-                    # تحديث آخر ID
                     db.update_source_last_id(src.get("target"), new_items[0][0])
+                    if not last_known and is_manual:
+                        pid, t, d = new_items[0]
+                        clean_d = re.sub(r'<[^>]+>', '', d).strip()
+                        full_txt = f"{t}\n{clean_d}"
+                        p_hash = hashlib.md5(full_txt[:80].encode("utf-8")).hexdigest()
+                        if not db.is_post_seen(pid, p_hash):
+                            db.mark_post_seen(pid, p_hash, src.get("target"))
+                            post_queue.put({
+                                "type": "rss_post",
+                                "text": full_txt,
+                                "photo": None,
+                                "targets": db.get_target_channels(),
+                                "user_id": ADMIN_ID
+                            })
+                        return
+
                     for pid, t, d in reversed(new_items):
                         clean_d = re.sub(r'<[^>]+>', '', d).strip()
                         full_txt = f"{t}\n{clean_d}"
@@ -645,7 +849,7 @@ class StandaloneTelegramEducationalBot:
             logger.debug(f"فحص RSS {url}: {e}")
 
     def monitor_sources_loop(self):
-        logger.info("📡 تشغيل دورة مراقبة المصادر التلقائية...")
+        logger.info("📡 تشغيل دورة مراقبة المصادر التلقائية (تيليجرام + تويتر + RSS)...")
         while self.running:
             try:
                 time.sleep(60)
@@ -659,6 +863,8 @@ class StandaloneTelegramEducationalBot:
                         self.check_telegram_channel_scraper(s)
                     elif s_type == "rss":
                         self.check_rss_feed(s)
+                    elif s_type in ["twitter", "x"]:
+                        self.check_twitter_feed(s)
 
             except Exception as e:
                 logger.error(f"خطأ في دورة مراقبة المصادر: {e}")
@@ -943,7 +1149,26 @@ class StandaloneTelegramEducationalBot:
                 self.send_msg(chat_id, f"{'⏸ تم إيقاف النشر التلقائي مؤقتاً.' if new_state == '1' else '▶️ تم استئناف النشر التلقائي.'}")
                 return
 
-        # إذا كانت الرسالة نصاً خبراً كبيراً أو صورة دون أمر
+        # فحص إذا كانت الرسالة سؤالاً أو استفساراً أكاديمياً أو طلباً للبحث المباشر عبر الإنترنت
+        is_search_or_question = (
+            clean_text.startswith("/search") or
+            clean_text.startswith("/chat") or
+            clean_text.startswith("ابحث") or
+            "ابحث عبر الانترنت" in clean_text or
+            "ابحث في الانترنت" in clean_text or
+            "ابحث لي" in clean_text or
+            "هل تم" in clean_text or
+            "ما هي" in clean_text or
+            "متى موعد" in clean_text or
+            clean_text.endswith("؟") or
+            clean_text.endswith("?")
+        )
+
+        if is_search_or_question and not photo_id:
+            self.answer_search_or_chat_query(chat_id, clean_text)
+            return
+
+        # إذا كانت الرسالة نصاً خبراً كبيراً أو صورة دون أمر للنشر في القناة
         if len(clean_text) > 20 or photo_id:
             post_queue.put({
                 "type": "direct_post",
@@ -1118,9 +1343,22 @@ class StandaloneTelegramEducationalBot:
 
     def process_add_source(self, chat_id: int, input_text: str):
         target = input_text.strip()
-        src_type = "rss" if target.startswith("http") else "telegram"
+        src_type = "telegram"
+        if "twitter.com" in target or "x.com" in target or target.startswith("twitter:") or target.startswith("x:"):
+            src_type = "twitter"
+            target = target.replace("twitter:", "").replace("x:", "").strip()
+        elif target.startswith("http") and not ("t.me" in target):
+            src_type = "rss"
+
         db.add_source(src_type, target, target, added_by=chat_id)
-        self.send_msg(chat_id, f"✅ تمت إضافة المصدر `{target}` بنجاح!")
+        self.send_msg(chat_id, f"✅ تمت إضافة المصدر `{target}` بنوع [{src_type}] بنجاح!\n⚡ جاري فحص وسحب أحدث المنشورات منه فوراً...")
+        new_src = {"type": src_type, "target": target, "last_post_id": ""}
+        if src_type == "telegram":
+            threading.Thread(target=self.check_telegram_channel_scraper, args=(new_src, True), daemon=True).start()
+        elif src_type in ["twitter", "x"]:
+            threading.Thread(target=self.check_twitter_feed, args=(new_src, True), daemon=True).start()
+        elif src_type == "rss":
+            threading.Thread(target=self.check_rss_feed, args=(new_src, True), daemon=True).start()
 
     def process_add_target(self, chat_id: int, input_text: str):
         target = input_text.strip()
@@ -1128,13 +1366,16 @@ class StandaloneTelegramEducationalBot:
         self.send_msg(chat_id, f"✅ تم اعتماد قناة النشر `{target}` بنجاح!")
 
     def trigger_manual_crawl(self, chat_id: int):
-        self.send_msg(chat_id, "🔄 جاري فحص وسحب أحدث المنشورات من كافة المصادر المعتمدة...")
+        self.send_msg(chat_id, "🔄 جاري فحص وسحب أحدث المنشورات من كافة المصادر المعتمدة (تيليجرام + تويتر/X + المواقع الرسمية)...")
         sources = db.get_sources()
         for s in sources:
-            if s.get("type") == "telegram":
-                threading.Thread(target=self.check_telegram_channel_scraper, args=(s,), daemon=True).start()
-            elif s.get("type") == "rss":
-                threading.Thread(target=self.check_rss_feed, args=(s,), daemon=True).start()
+            s_type = s.get("type")
+            if s_type == "telegram":
+                threading.Thread(target=self.check_telegram_channel_scraper, args=(s, True), daemon=True).start()
+            elif s_type == "rss":
+                threading.Thread(target=self.check_rss_feed, args=(s, True), daemon=True).start()
+            elif s_type in ["twitter", "x"]:
+                threading.Thread(target=self.check_twitter_feed, args=(s, True), daemon=True).start()
 
     def test_publish_all_channels(self, chat_id: int):
         channels = db.get_target_channels()
