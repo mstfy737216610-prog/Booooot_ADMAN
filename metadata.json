@@ -1,0 +1,6 @@
+{
+  "name": "مُعيد توجيه وبوت النشر الذكي تيليجرام | Telegram Auto-Publisher UserBot Pro",
+  "description": "لوحة تحكم وبوت تيليجرام متقدم (UserBot & Bot API) لسحب المنشورات والوسائط من القنوات والمصادر، ومعالجتها بذكاء اصطناعي فائق الدقة (DeepSeek-V4.1-Flash) ونشرها آلياً.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

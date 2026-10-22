@@ -1,11 +1,51 @@
-<div align="center">
+# محرر المحتوى التعليمي الجامعي الذكي - Telegram Educational Bot
+**تطوير خاص للمشرف:** @M_S_F_G (معرف: 7607633343)
+**البوت:** @admiuin_bot
+**الترخيص الأصلي:** مستند إلى Telegram-Autoforwarder بواسطة Redian Marku تحت رخصة MIT.
 
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+---
 
-  <h1>Built with AI Studio</h2>
+## 🌟 مميزات البوت الرئيسية:
+1. **لوحة تحكم تفاعلية متكاملة بالأزرار** داخل تيليجرام مباشرة (Reply Keyboard + Inline Buttons).
+2. **يعمل بدون أي مكتبات خارجية (Zero Dependencies)**: متوافق مع كافة المنصات السحابية ومواقع الاستضافة المجانية وبوت بزنس (Bots.Business).
+3. **نظام استبدال إعلانات المنافسين**: عند رصد إعلانات حل واجبات أو خدمات طلابية، يستبدلها البوت تلقائياً بإعلان خدماتك الطلابية الخاص بك.
+4. **صياغة ذكية بالذكاء الاصطناعي**: يدعم نموذج `DeepSeek-V4.1-Flash` مع صياغة أكاديمية منظمة تبدأ بـ 📌 عنوان، نقاط مرتبة، 💬 دعوة تفاعلية، وهاشتاجات تعليمية.
+5. **خادم Keep-Alive داخلي**: يعمل على المنفذ `8080` لمنع توقف البوت على المنصات المجانية.
 
-  <p>The fastest path from prompt to production with Gemini.</p>
+---
 
-  <a href="https://aistudio.google.com/apps">Start building</a>
+## 🚀 كيفية الرفع إلى GitHub والربط مع Bots.Business أو الاستضافة المجانية:
 
-</div>
+### الخطوة 1: الرفع إلى مستودع GitHub الخاص بك
+1. قم بإنشاء مستودع جديد على GitHub (مثلاً: `Telegram-Educational-Bot`).
+2. ارفع جميع الملفات الموجودة في هذا المجلد إلى المستودع:
+   - `main.py`
+   - `Procfile`
+   - `requirements.txt`
+   - `runtime.txt`
+   - `sources.json`
+   - `state.json`
+   - `.env.example`
+
+### الخطوة 2: الربط بتطبيق Bots.Business أو Telegram Bot Free Hosting
+1. افتح تطبيق **Bots.Business** أو منصة الاستضافة.
+2. اختر **Git Import** أو **Link GitHub Repository**.
+3. ضع رابط مستودعك على GitHub.
+4. اضغط **Deploy** أو **Run**.
+5. أمر التشغيل هو ببساطة:
+   ```bash
+   python3 main.py
+   ```
+
+---
+
+## 🎛 الأوامر والأزرار في تيليجرام:
+- `/start` : فتح لوحة التحكم الرئيسية بالأزرار التفاعلية.
+- `/status` : عرض إحصائيات المعالجة والنشر وحالة البوت.
+- `/sources` : عرض قنوات تيليجرام وحسابات تويتر والمصادر المراقبة.
+- `/add_source tg @channel` : إضافة قناة جديدة إلى `sources.json`.
+- `/remove_source @channel` : حذف قناة من قائمة المراقبة.
+- `/set_ad النص الجديد` : تغيير إعلان الخدمات الطلابية البديل.
+- `/set_instruction النص` : تخصيص توجيهات المشرف لمحرر الذكاء الاصطناعي.
+- `/keys` : عرض جميع بيانات المفاتيح والاعتمادات.
+- **إرسال أي خبر أو منشور**: يعيد البوت صياغته فوراً وينسقه بأسلوب أكاديمي مميز!

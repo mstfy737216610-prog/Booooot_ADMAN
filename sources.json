@@ -1,0 +1,78 @@
+{
+  "_info": "Telegram University Educational AutoForwarder Watchlist",
+  "version": "2.1.0",
+  "lastUpdated": "2026-10-22T00:00:00.000Z",
+  "target_channels": [
+    "@MyUniversityChannel"
+  ],
+  "sources": [
+    {
+      "id": "src_tg_univ_news",
+      "type": "telegram",
+      "target": "@KSU_News",
+      "title": "أخبار الجامعة والقبول الرسمي",
+      "priority": "high",
+      "rule": "official",
+      "keywords": [
+        "قبول",
+        "تسجيل",
+        "نتائج",
+        "مواعيد",
+        "منح",
+        "امتحان",
+        "بي دي اف",
+        "pdf"
+      ],
+      "blacklist": [
+        "إعلان ممول",
+        "خدمات طلابية مدفوعة",
+        "حل واجبات",
+        "بحوث تخرج"
+      ],
+      "enabled": true,
+      "lastPostId": "184920",
+      "lastChecked": "2026-10-22T00:00:00.000Z"
+    },
+    {
+      "id": "src_x_moe",
+      "type": "twitter",
+      "target": "@moe_gov_sa",
+      "title": "الحساب الرسمي لوزارة التعليم",
+      "priority": "high",
+      "rule": "official",
+      "keywords": [
+        "تقويم دراسي",
+        "إجازة",
+        "جامعات",
+        "منح",
+        "تسجيل"
+      ],
+      "blacklist": [
+        "إعلان تجاري"
+      ],
+      "enabled": true,
+      "lastPostId": "178294104",
+      "lastChecked": "2026-10-22T00:00:00.000Z"
+    },
+    {
+      "id": "src_rss_dept",
+      "type": "rss",
+      "target": "https://news.ksu.edu.sa/ar/rss",
+      "title": "بوابة الأخبار والفعاليات الجامعية",
+      "priority": "medium",
+      "rule": "semi-official",
+      "keywords": [
+        "مؤتمر",
+        "كتب",
+        "بحث علمي",
+        "وظائف معيدين"
+      ],
+      "blacklist": [
+        "رعاية إعلانية"
+      ],
+      "enabled": true,
+      "lastPostId": "rss_item_9402",
+      "lastChecked": "2026-10-22T00:00:00.000Z"
+    }
+  ]
+}
