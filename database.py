@@ -129,6 +129,22 @@ def init_db():
             )
             """)
 
+            # 8. جدول مشاريع الجامعات وقنوات النشر المستقلة والبحث المخصص
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS university_projects (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                target_channel TEXT NOT NULL,
+                telegram_sources TEXT DEFAULT '[]',
+                twitter_sources TEXT DEFAULT '[]',
+                google_news_query TEXT,
+                google_news_enabled INTEGER DEFAULT 1,
+                keywords TEXT DEFAULT '[]',
+                enabled INTEGER DEFAULT 1,
+                created_at TEXT
+            )
+            """)
+
             conn.commit()
             logger.info("✅ تم تهيئة جداول قاعدة البيانات SQLite بنجاح.")
 
@@ -628,6 +644,151 @@ def mark_scheduled_post_status(post_id: int, status: str):
             conn.close()
 
 
+# ----------------- إدارة مشاريع الجامعات وقنوات النشر المستقلة -----------------
+
+def add_university_project(
+    name: str,
+    target_channel: str,
+    telegram_sources: List[str],
+    twitter_sources: List[str],
+    google_news_query: Optional[str] = None,
+    keywords: Optional[List[str]] = None
+) -> Dict[str, Any]:
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            target_ch = target_channel.strip()
+            if not target_ch.startswith("@") and not target_ch.startswith("-100"):
+                target_ch = "@" + target_ch
+
+            import re, time
+            clean_tag = re.sub(r'[^a-zA-Z0-9_]', '', target_ch.replace("@", "")) or "univ"
+            univ_id = f"univ_{clean_tag}_{int(time.time())}"
+            now_str = datetime.utcnow().isoformat()
+
+            if not google_news_query:
+                google_news_query = name.strip()
+
+            if keywords is None:
+                keywords = [name.strip()]
+                for word in name.strip().split():
+                    if len(word) > 3 and word not in ["جامعة", "كلية", "عمادة"]:
+                        keywords.append(word)
+
+            cursor.execute("""
+                INSERT OR REPLACE INTO university_projects 
+                (id, name, target_channel, telegram_sources, twitter_sources, google_news_query, google_news_enabled, keywords, enabled, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, 1, ?, 1, ?)
+            """, (
+                univ_id,
+                name.strip(),
+                target_ch,
+                json.dumps(telegram_sources, ensure_ascii=False),
+                json.dumps(twitter_sources, ensure_ascii=False),
+                google_news_query,
+                json.dumps(keywords, ensure_ascii=False),
+                now_str
+            ))
+            cursor.execute("""
+                INSERT OR IGNORE INTO target_channels (channel_id, title, status, created_at)
+                VALUES (?, ?, 'active', ?)
+            """, (target_ch, f"قناة {name.strip()}", now_str))
+
+            conn.commit()
+            sync_to_json_files()
+            return {
+                "id": univ_id,
+                "name": name.strip(),
+                "target_channel": target_ch,
+                "telegram_sources": telegram_sources,
+                "twitter_sources": twitter_sources,
+                "google_news_query": google_news_query,
+                "google_news_enabled": True,
+                "keywords": keywords,
+                "enabled": True
+            }
+        finally:
+            conn.close()
+
+
+def get_university_projects() -> List[Dict[str, Any]]:
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM university_projects ORDER BY created_at ASC")
+            rows = cursor.fetchall()
+            results = []
+            for r in rows:
+                results.append({
+                    "id": r["id"],
+                    "name": r["name"],
+                    "target_channel": r["target_channel"],
+                    "telegram_sources": json.loads(r["telegram_sources"] or "[]"),
+                    "twitter_sources": json.loads(r["twitter_sources"] or "[]"),
+                    "google_news_query": r["google_news_query"] or r["name"],
+                    "google_news_enabled": bool(r["google_news_enabled"]),
+                    "keywords": json.loads(r["keywords"] or "[]"),
+                    "enabled": bool(r["enabled"]),
+                    "created_at": r["created_at"]
+                })
+            if not results:
+                def_proj = add_university_project(
+                    name="جامعة الملك سعود",
+                    target_channel="@jhdhhdcj",
+                    telegram_sources=["@KSU_News"],
+                    twitter_sources=["@ksu_news"],
+                    google_news_query="جامعة الملك سعود",
+                    keywords=["جامعة الملك سعود", "الملك سعود", "KSU", "قبول", "تسجيل"]
+                )
+                results.append(def_proj)
+            return results
+        finally:
+            conn.close()
+
+
+def delete_university_project(univ_id: str) -> bool:
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM university_projects WHERE id = ?", (univ_id,))
+            conn.commit()
+            sync_to_json_files()
+            return cursor.rowcount > 0
+        finally:
+            conn.close()
+
+
+def find_university_for_post(source: str, text: str) -> Optional[Dict[str, Any]]:
+    projects = get_university_projects()
+    clean_src = (source or "").strip().lower().replace("https://t.me/s/", "").replace("https://t.me/", "").replace("t.me/", "")
+    if not clean_src.startswith("@") and clean_src:
+        clean_src = "@" + clean_src
+
+    # 1. First priority: direct match on university's telegram or twitter sources
+    for p in projects:
+        if not p.get("enabled"):
+            continue
+        all_sources = [s.lower() for s in p.get("telegram_sources", []) + p.get("twitter_sources", [])]
+        if clean_src in all_sources:
+            return p
+
+    # 2. Second priority: match on keywords in text
+    lower_text = (text or "").lower()
+    for p in projects:
+        if not p.get("enabled"):
+            continue
+        if p["name"].lower() in lower_text:
+            return p
+        for kw in p.get("keywords", []):
+            if kw and len(kw) >= 3 and kw.lower() in lower_text:
+                return p
+
+    return None
+
+
 # ----------------- المزامنة مع ملفات JSON لدعم Bots.Business -----------------
 
 def sync_to_json_files():
@@ -635,12 +796,23 @@ def sync_to_json_files():
     try:
         chs = get_target_channels()
         srcs = get_sources()
+        univs = get_university_projects()
 
         sources_data = {
             "_info": "Telegram University Educational AutoForwarder Watchlist (Synced from SQLite)",
-            "version": "3.0.0",
+            "version": "3.1.0",
             "lastUpdated": datetime.utcnow().isoformat(),
             "target_channels": chs,
+            "university_projects": univs,
+            "channel_mappings": [
+                {
+                    "target": u["target_channel"],
+                    "sources": u["telegram_sources"] + u["twitter_sources"],
+                    "university_name": u["name"],
+                    "enabled": u["enabled"]
+                }
+                for u in univs
+            ],
             "sources": [
                 {
                     "id": s["id"],

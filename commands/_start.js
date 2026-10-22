@@ -1,85 +1,90 @@
 /*CMD
   command: /start
-  help: لوحة التحكم الرئيسية الشاملة في تيليجرام عبر Bots.Business
+  help: لوحة التحكم الرئيسية المنظمة لبوت النشر الأكاديمي والجامعي الذكي V3.1
   need_reply: false
   auto_retry_time: 
   folder: 
   answer: 
-  keyboard: 🔄 فحص وسحب المنشورات, ➕ إضافة مصادر خارجية\n📢 تحديد قناة النشر, 📝 صياغة ونشر خبر فوري\n📋 قائمة المصادر, ⚙️ إعدادات الذكاء الاصطناعي\n🔗 ربط القنوات والأهداف, 🎯 إعلان خدماتي البديل\n💬 محادثة الذكاء والبحث, ⚙️ تعليمات المحرر الأكاديمي\n👤 إدارة اليوزربوت وجلسة الحساب, 📊 حالة النظام والتقارير\n🔑 المفاتيح والاعتمادات, 👥 إدارة المستخدمين\n🟢 تشغيل / إيقاف البوت, 🧪 تجربة الصياغة الفورية
+  keyboard: 🏛️ إدارة الجامعات وقنوات النشر, 🔄 فحص وسحب أخبار الجامعات\n➕ إضافة جامعة وقناة نشر, 🌐 بحث أخبار جوجل للجامعة\n📝 صياغة ونشر خبر فوري, 🎯 إعلان خدماتي البديل\n⚙️ إعدادات الذكاء الاصطناعي, 💬 محادثة الذكاء والبحث\n📊 حالة النظام والتقارير, 🟢 تشغيل / إيقاف البوت
   aliases: 🎛 لوحة التحكم الرئيسية, لوحة التحكم, /help, /menu, /admin, الرئيسية
 CMD*/
 
-// بيانات الآدمن المشرف
 var ADMIN_ID = 7607633343;
 var ADMIN_USER = "M_S_F_G";
 
-// جلب الحالة والخصائص المخزنة
 var is_paused = Bot.getProperty("bot_paused", false);
 var current_model = Bot.getProperty("ai_model", "DeepSeek-V4-Flash");
 var base_url = Bot.getProperty("ai_base_url", "https://api.hcnsec.cn/v1");
 var total_processed = Bot.getProperty("total_processed", 0);
-var monitored_sources = Bot.getProperty("monitored_sources", ["@KSU_News", "@moe_gov_sa", "@mstfyuhhh"]);
-var target_current = Bot.getProperty("target_channels") || "@jhdhhdcj";
-var auto_crawl = Bot.getProperty("auto_crawl_enabled", true);
 var total_ads_replaced = Bot.getProperty("total_ads_replaced", 0);
-var custom_ins = Bot.getProperty("custom_instructions", "كن مثل مشرفين القروبات الذي يبحث عن الأخبار الجديدة ويعطيها للطلاب بوضوح");
+var custom_ins = Bot.getProperty("custom_instructions", "كن مثل مشرفين القروبات الذي يبحث عن الأخبار الأكاديمية الجديدة ويعطيها للطلاب بوضوح تام");
+
+// جلب مشاريع الجامعات المنفصلة
+var univ_projects = Bot.getProperty("university_projects");
+if (!univ_projects || !Array.isArray(univ_projects) || univ_projects.length === 0) {
+  var target_ch = Bot.getProperty("target_channels") || "@jhdhhdcj";
+  univ_projects = [
+    {
+      id: "univ_ksu",
+      name: "جامعة الملك سعود",
+      target_channel: target_ch,
+      telegram_sources: ["@KSU_News"],
+      twitter_sources: ["@ksu_news"],
+      google_news_query: "جامعة الملك سعود",
+      google_news_enabled: true,
+      keywords: ["جامعة الملك سعود", "الملك سعود", "KSU", "القبول الموحد", "تسجيل"],
+      enabled: true
+    }
+  ];
+  Bot.setProperty("university_projects", univ_projects, "json");
+}
 
 var status_emoji = is_paused ? "🔴 متوقف مؤقتاً" : "🟢 نشط ويعمل 24/7";
-var crawler_status = auto_crawl ? "🟢 سحب آلي كل 90 ثانية" : "🔴 سحب يدوي";
 
 var bot_text = "👑 **مرحباً بك يا مديرنا العزيز @" + ADMIN_USER + "**!\n" +
-  "أنت المشرف المعتمد والمخول بالتحكم الكامل في النظام (ID: `" + ADMIN_ID + "`)\n\n" +
-  "🎛 **نظام النشر الأكاديمي والساحب الذكي للمصادر (Telegram Engine)**:\n" +
+  "أنت المشرف العام المعتمد للنظام الأكاديمي الذكي (ID: `" + ADMIN_ID + "`)\n\n" +
+  "🏛️ **نظام النشر الجامعي الذكي المعزول (Multi-University Channels V3.1)**:\n" +
   "━━━━━━━━━━━━━━━━━━━\n" +
-  "• **حالة البوت**: " + status_emoji + "\n" +
-  "• **الساحب الآلي للمصادر**: " + crawler_status + " ⚡\n" +
-  "• **المصادر المراقبة**: " + monitored_sources.length + " مصدر نشط\n" +
-  "• **قناة النشر الهدف**: `" + target_current + "`\n" +
-  "• **نموذج الذكاء المعتمد**: `" + current_model + "`\n" +
-  "• **بوابة الذكاء الاصطناعي**: `" + base_url + "`\n" +
-  "• **التعليمات المعتمدة**: *\"" + custom_ins + "\"*\n" +
+  "• **حالة البوت العامة**: " + status_emoji + "\n" +
+  "• **الجامعات المستهدفة المعتمدة**: " + univ_projects.length + " جامعة مستقلة\n" +
+  "• **الذكاء الاصطناعي**: `" + current_model + "` عبر " + base_url + "\n" +
+  "• **فلترة المحتوى**: عزل تام لكل جامعة (لا يتم خلط الأخبار إطلاقاً)\n" +
+  "• **بحث جوجل نيوز**: مفعل آلياً لكل جامعة لجلب أحدث أخبارها\n" +
+  "• **تنقية الويب**: إزالة مخلفات HTML و &nbsp; و X نهائياً\n" +
   "• **إجمالي المنشورات المعالجة**: " + total_processed + " منشور\n" +
   "• **إعلانات المنافسين المستبدلة**: " + total_ads_replaced + " إعلان\n" +
-  "• **نقل الوسائط**: صور أصلية، فيديو، ومستندات كاملة\n" +
   "━━━━━━━━━━━━━━━━━━━\n\n" +
-  "💡 **طريقة العمل وسحب المنشورات**:\n" +
-  "  1️⃣ **الساحب التلقائي**: اضغط `🔄 فحص وسحب المنشورات الآن` لسحب أحدث الأخبار فوراً من القنوات المراقبة دون الحاجة لصلاحية مشرف.\n" +
-  "  2️⃣ **تحديد قناتك**: اضغط `📢 تحديد قناة النشر` لتحديد القناة التي ترغب في النشر إليها وتأكد من رفع البوت مشرفاً فيها.\n" +
-  "  3️⃣ **محادثة الذكاء وتحديث التعليمات**: اضغط `💬 محادثة الذكاء والبحث` لسؤال الذكاء أو إعطائه تعليمات جديدة يتم حفظها فوراً!\n" +
-  "  4️⃣ **التوجيه المباشر**: وجّه (Forward) أي منشور من أي قناة إلى البوت ليقوم بصياغته ونشره فوراً.\n\n" +
-  "👇 **تحكم بكافة أقسام ووظائف البوت من الأزرار التفاعلية أدناه:**";
+  "📋 **الجامعات وقنوات النشر المربوطة حالياً**:\n";
+
+for (var u = 0; u < univ_projects.length; u++) {
+  var un = univ_projects[u];
+  var u_st = un.enabled ? "🟢" : "🔴";
+  bot_text += u_st + " **" + un.name + "** ➔ `" + un.target_channel + "`\n" +
+    "   └ مصادر تيليجرام: " + (un.telegram_sources ? un.telegram_sources.join("، ") : "لا يوجد") + "\n" +
+    "   └ حسابات X: " + (un.twitter_sources ? un.twitter_sources.join("، ") : "لا يوجد") + "\n";
+}
+
+bot_text += "\n👇 **اختر الإجراء المطلوب من الأزرار المنظمة أدناه:**";
 
 var inline_keyboard = [
   [
-    { title: "🔄 فحص وسحب المنشورات الآن", command: "/crawl_sources" },
-    { title: "➕ إضافة مصادر خارجية", command: "/add_source" }
+    { title: "🏛️ إدارة الجامعات وقنوات النشر", command: "/universities" },
+    { title: "➕ إضافة جامعة وقناة نشر جديدة", command: "/add_university" }
   ],
   [
-    { title: "📢 تحديد قناة النشر الهدف", command: "/set_channel" },
-    { title: "📋 قائمة المصادر المراقبة", command: "/sources" }
+    { title: "🔄 فحص وسحب أخبار الجامعات", command: "/crawl_sources" },
+    { title: "🌐 بحث أخبار جوجل لجامعة", command: "/google_news" }
   ],
   [
-    { title: "💬 محادثة الذكاء والبحث", command: "/chat" },
-    { title: "⚙️ تعليمات المحرر الأكاديمي", command: "/instructions" }
+    { title: "📝 صياغة ونشر خبر فوري", command: "/new_post" },
+    { title: "🎯 إعلان خدماتي البديل", command: "/ad" }
   ],
   [
     { title: "⚙️ إعدادات الذكاء الاصطناعي", command: "/ai" },
-    { title: "🔗 ربط القنوات والأهداف", command: "/mapping" }
+    { title: "💬 محادثة الذكاء والبحث", command: "/chat" }
   ],
   [
-    { title: "🎯 إعلان خدماتي البديل", command: "/ad" },
-    { title: "📝 صياغة ونشر خبر فوري", command: "/new_post" }
-  ],
-  [
-    { title: "👤 إدارة اليوزربوت وجلسة الحساب", command: "/userbot" },
-    { title: "📊 حالة النظام والتقارير", command: "/status" }
-  ],
-  [
-    { title: "🔑 المفاتيح والاعتمادات", command: "/keys" },
-    { title: "👥 إدارة المستخدمين والصلاحيات", command: "/users" }
-  ],
-  [
-    { title: "🧪 تجربة الصياغة الفورية", command: "/test" },
+    { title: "📊 حالة النظام والتقارير", command: "/status" },
     { title: is_paused ? "▶️ تشغيل البوت الآن" : "⏸️ إيقاف البوت مؤقتاً", command: "/pause" }
   ]
 ];

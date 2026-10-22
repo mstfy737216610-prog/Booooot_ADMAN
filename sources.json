@@ -1,9 +1,44 @@
 {
   "_info": "Telegram University Educational AutoForwarder Watchlist (Synced from SQLite)",
-  "version": "3.0.0",
-  "lastUpdated": "2026-10-22T11:17:41.430242",
+  "version": "3.1.0",
+  "lastUpdated": "2026-10-22T17:30:39.195439",
   "target_channels": [
     "@jhdhhdcj"
+  ],
+  "university_projects": [
+    {
+      "id": "univ_jhdhhdcj_1792690239",
+      "name": "جامعة الملك سعود",
+      "target_channel": "@jhdhhdcj",
+      "telegram_sources": [
+        "@KSU_News"
+      ],
+      "twitter_sources": [
+        "@ksu_news"
+      ],
+      "google_news_query": "جامعة الملك سعود",
+      "google_news_enabled": true,
+      "keywords": [
+        "جامعة الملك سعود",
+        "الملك سعود",
+        "KSU",
+        "قبول",
+        "تسجيل"
+      ],
+      "enabled": true,
+      "created_at": "2026-10-22T17:30:39.193267"
+    }
+  ],
+  "channel_mappings": [
+    {
+      "target": "@jhdhhdcj",
+      "sources": [
+        "@KSU_News",
+        "@ksu_news"
+      ],
+      "university_name": "جامعة الملك سعود",
+      "enabled": true
+    }
   ],
   "sources": [
     {
@@ -34,7 +69,7 @@
       "priority": "high",
       "rule": "official",
       "enabled": true,
-      "lastPostId": "178294104"
+      "lastPostId": "https://news.google.com/rss/articles/CBMiPEFVX3lxTFBudHBMbmdyNEZrQUM1b2ZaWktDUWFITGxFNk9wZlhyUHlJRXZ0RkE2M2lNS0tVREtqb3BfeQ?oc=5"
     },
     {
       "id": "src_1792667841",
@@ -54,7 +89,7 @@
       "priority": "high",
       "rule": "official",
       "enabled": true,
-      "lastPostId": ""
+      "lastPostId": "Next_Plus_BOT0/37"
     }
   ]
 }
