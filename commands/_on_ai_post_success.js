@@ -64,26 +64,42 @@ var sent_count = 0;
 var target_names = [];
 var failed_targets = [];
 
+function toSafeHtml(txt) {
+  if (!txt) return "";
+  var s = txt;
+  s = s.replace(/\*\*(.*?)\*\*/g, "<b>$1</b>");
+  return s;
+}
+
+var safe_post_text = toSafeHtml(rephrased_text);
+
 for (var i = 0; i < valid_targets.length; i++) {
   var ch = valid_targets[i];
   try {
     if (media_type === "photo" && media_file_id) {
-      if (media_file_id.indexOf("http") === 0) {
-        Api.sendPhoto({ chat_id: ch, photo: media_file_id, caption: rephrased_text, parse_mode: "Markdown" });
-      } else {
-        Api.sendPhoto({ chat_id: ch, photo: media_file_id, caption: rephrased_text, parse_mode: "Markdown" });
-      }
+      Api.sendPhoto({ chat_id: ch, photo: media_file_id, caption: safe_post_text, parse_mode: "HTML" });
     } else if (media_type === "video" && media_file_id) {
-      Api.sendVideo({ chat_id: ch, video: media_file_id, caption: rephrased_text, parse_mode: "Markdown" });
+      Api.sendVideo({ chat_id: ch, video: media_file_id, caption: safe_post_text, parse_mode: "HTML" });
     } else if (media_type === "document" && media_file_id) {
-      Api.sendDocument({ chat_id: ch, document: media_file_id, caption: rephrased_text, parse_mode: "Markdown" });
+      Api.sendDocument({ chat_id: ch, document: media_file_id, caption: safe_post_text, parse_mode: "HTML" });
     } else {
-      Api.sendMessage({ chat_id: ch, text: rephrased_text, parse_mode: "Markdown" });
+      Api.sendMessage({ chat_id: ch, text: safe_post_text, parse_mode: "HTML" });
     }
     sent_count++;
     target_names.push(ch);
   } catch (send_err) {
-    failed_targets.push(ch);
+    // محاولة إرسال بدون parse_mode كحماية نهائية
+    try {
+      if (media_type === "photo" && media_file_id) {
+        Api.sendPhoto({ chat_id: ch, photo: media_file_id, caption: rephrased_text });
+      } else {
+        Api.sendMessage({ chat_id: ch, text: rephrased_text });
+      }
+      sent_count++;
+      target_names.push(ch);
+    } catch (e2) {
+      failed_targets.push(ch);
+    }
   }
 }
 

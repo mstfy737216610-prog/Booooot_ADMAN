@@ -60,24 +60,39 @@ var fallback_text = "📌 **" + title + "**\n\n" +
   "#أخبار_الجامعة #التعليم #شؤون_الطلاب #مواعيد";
 
 // 3. النشر الفوري للوسائط والنصوص في كافة القنوات المستهدفة
-var sent_count = 0;
-var target_names = [];
+function toSafeHtmlFallback(txt) {
+  if (!txt) return "";
+  return txt.replace(/\*\*(.*?)\*\*/g, "<b>$1</b>");
+}
+
+var safe_fallback_text = toSafeHtmlFallback(fallback_text);
+
 for (var i = 0; i < target_channels.length; i++) {
   var ch = target_channels[i];
   try {
     if (media_type == "photo" && media_file_id) {
-      Api.sendPhoto({ chat_id: ch, photo: media_file_id, caption: fallback_text, parse_mode: "Markdown" });
+      Api.sendPhoto({ chat_id: ch, photo: media_file_id, caption: safe_fallback_text, parse_mode: "HTML" });
     } else if (media_type == "video" && media_file_id) {
-      Api.sendVideo({ chat_id: ch, video: media_file_id, caption: fallback_text, parse_mode: "Markdown" });
+      Api.sendVideo({ chat_id: ch, video: media_file_id, caption: safe_fallback_text, parse_mode: "HTML" });
     } else if (media_type == "document" && media_file_id) {
-      Api.sendDocument({ chat_id: ch, document: media_file_id, caption: fallback_text, parse_mode: "Markdown" });
+      Api.sendDocument({ chat_id: ch, document: media_file_id, caption: safe_fallback_text, parse_mode: "HTML" });
     } else {
-      Api.sendMessage({ chat_id: ch, text: fallback_text, parse_mode: "Markdown" });
+      Api.sendMessage({ chat_id: ch, text: safe_fallback_text, parse_mode: "HTML" });
     }
     sent_count++;
     target_names.push(ch);
   } catch (e) {
-    Bot.sendMessage("⚠️ لم يتمكن البوت من النشر في `" + ch + "`. تأكد من رفع البوت كمشرف في القناة.");
+    try {
+      if (media_type == "photo" && media_file_id) {
+        Api.sendPhoto({ chat_id: ch, photo: media_file_id, caption: fallback_text });
+      } else {
+        Api.sendMessage({ chat_id: ch, text: fallback_text });
+      }
+      sent_count++;
+      target_names.push(ch);
+    } catch (e2) {
+      Bot.sendMessage("⚠️ لم يتمكن البوت من النشر في `" + ch + "`. تأكد من رفع البوت كمشرف في القناة.");
+    }
   }
 }
 

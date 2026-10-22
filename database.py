@@ -21,8 +21,8 @@ DB_FILE = os.path.join(BASE_DIR, "bot_database.db")
 SOURCES_FILE = os.path.join(BASE_DIR, "sources.json")
 STATE_FILE = os.path.join(BASE_DIR, "state.json")
 
-# قفل لضمان سلامة العمليات متزامنة بين الـ Threads
-_db_lock = threading.Lock()
+# قفل عودي لضمان سلامة العمليات متزامنة بين الـ Threads دون deadlock
+_db_lock = threading.RLock()
 
 
 def get_db_connection() -> sqlite3.Connection:
@@ -170,6 +170,7 @@ def migrate_from_json(conn: sqlite3.Connection):
             ("src_tg_univ_news", "telegram", "@KSU_News", "أخبار الجامعة والقبول الرسمي", "184920"),
             ("src_x_moe", "twitter", "@moe_gov_sa", "الحساب الرسمي لوزارة التعليم", "178294104"),
             ("src_tg_mstfy", "telegram", "@mstfyuhhh", "قناة المحتوى الطلابي", ""),
+            ("src_bot_next", "telegram", "@Next_Plus_BOT0", "مصدر الأخبار Next Plus", ""),
             ("src_rss_dept", "rss", "https://news.ksu.edu.sa/ar/rss", "بوابة الأخبار والفعاليات الجامعية", "rss_item_9402")
         ]
         if os.path.exists(SOURCES_FILE):

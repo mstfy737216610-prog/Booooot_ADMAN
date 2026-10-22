@@ -9,6 +9,14 @@
   aliases: 
 CMD*/
 
+// دالة تحويل الماركداون إلى HTML آمن لمنع أخطاء تيليجرام 400 بسبب الشَرطات السفلية مثل @M_S_F_G و @Next_Plus_BOT0
+function toSafeHtml(txt) {
+  if (!txt) return "";
+  var s = txt;
+  s = s.replace(/\*\*(.*?)\*\*/g, "<b>$1</b>");
+  return s;
+}
+
 // 1. استخراج كائن الرسالة سواء كان منشور قناة (channel_post) أو رسالة خاصة/توجيه (message)
 var msg_obj = null;
 if (typeof request !== "undefined" && request) {
@@ -64,7 +72,7 @@ if (photo_arr && photo_arr.length > 0) {
   media_file_id = vce.file_id;
 }
 
-// إذا كانت الرسالة أمراً برمجياً (Command) مثل /start أو /sources دون ميديا، لا تعالجها كمنشور
+// إذا كانت الرسالة أمراً برمجياً (Command) مثل /start دون ميديا، لا تعالجها كمنشور
 if (raw_text && raw_text.indexOf("/") === 0 && !media_file_id) {
   return;
 }
@@ -81,7 +89,7 @@ if (is_paused) {
   return;
 }
 
-// 5. استخراج المصدر بدقة (قناة ناشرة، توجيه مباشر، أو Telegram 7.0+ Forward Origin)
+// 5. استخراج المصدر بدقة (قنوات، بوتات مثل @Next_Plus_BOT0، مستخدمين، توجيه)
 var source_origin = null;
 var source_title = null;
 
@@ -95,8 +103,15 @@ if (msg_obj && msg_obj.chat && (msg_obj.chat.type === "channel" || msg_obj.chat.
   if (msg_obj.forward_origin.chat) {
     source_origin = msg_obj.forward_origin.chat.username ? ("@" + msg_obj.forward_origin.chat.username) : ("" + msg_obj.forward_origin.chat.id);
     source_title = msg_obj.forward_origin.chat.title || source_origin;
+  } else if (msg_obj.forward_origin.sender_chat) {
+    source_origin = msg_obj.forward_origin.sender_chat.username ? ("@" + msg_obj.forward_origin.sender_chat.username) : ("" + msg_obj.forward_origin.sender_chat.id);
+    source_title = msg_obj.forward_origin.sender_chat.title || source_origin;
+  } else if (msg_obj.forward_origin.sender_user) {
+    source_origin = msg_obj.forward_origin.sender_user.username ? ("@" + msg_obj.forward_origin.sender_user.username) : ("" + msg_obj.forward_origin.sender_user.id);
+    source_title = msg_obj.forward_origin.sender_user.first_name || source_origin;
   } else if (msg_obj.forward_origin.sender_user_name) {
     source_origin = "@" + msg_obj.forward_origin.sender_user_name;
+    source_title = msg_obj.forward_origin.sender_user_name;
   }
 } else if (msg_obj && msg_obj.forward_from) {
   source_origin = msg_obj.forward_from.username ? ("@" + msg_obj.forward_from.username) : ("" + msg_obj.forward_from.id);
@@ -109,91 +124,28 @@ if (msg_obj && msg_obj.chat && (msg_obj.chat.type === "channel" || msg_obj.chat.
   source_title = request.forward_from_chat.title || source_origin;
 }
 
-// تجنب نشر المحادثات العادية أو الكلمات القصيرة المرسلة في الخاص كأخبار في القنوات
 var is_private_chat = (msg_obj && msg_obj.chat && msg_obj.chat.type === "private") || (typeof chat !== "undefined" && chat && chat.chat_type === "private");
 var is_forwarded = !!(source_origin || (msg_obj && (msg_obj.forward_date || msg_obj.forward_from_chat || msg_obj.forward_origin)));
 
-if (is_private_chat && !is_forwarded && !media_file_id && raw_text.length < 20) {
-  Bot.sendMessage("👋 **أهلاً بك في بوت النشر الأكاديمي واليوزربوت!**\n\n" +
-    "💡 **كيفية استخدام البوت للنشر:**\n" +
-    "• **توجيه مباشر**: وجّه (Forward) أي منشور من أي قناة إلى هنا ليقوم البوت بصياغته ونشره فوراً.\n" +
-    "• **سحب آلي**: اضغط `🔄 سحب وفحص المصادر` لفحص وسحب آخر منشورات القنوات المراقبة.\n" +
-    "• **خبر مخصص**: اكتب نص الخبر كاملاً (أكثر من 20 حرفاً) لإعادة صياغته.\n\n" +
-    "👇 اختر من القائمة للتحكم:");
+// تجنب الكلمات الترحيبية المفردة في الخاص
+var short_greetings = ["مرحبا", "سلام", "الو", "هلا", "hi", "hello"];
+if (is_private_chat && !is_forwarded && !media_file_id && short_greetings.indexOf(raw_text.toLowerCase()) !== -1) {
+  Bot.sendMessage("👋 **أهلاً بك يا مديرنا!**\nوجّه أي منشور أو أرسل نص الخبر كاملاً وسأقوم بإعادة صياغته ونشره فوراً في قناتك @jhdhhdcj.");
   Bot.runCommand("/start");
   return;
 }
 
-// دالة توحيد ومقارنة المعرفات
-function normalizeSource(str) {
-  if (!str) return "";
-  var s = String(str).trim().toLowerCase();
-  s = s.replace(/^https?:\/\/t\.me\//i, "");
-  s = s.replace(/^t\.me\//i, "");
-  s = s.replace(/^@/, "");
-  s = s.replace(/\/.*$/, "");
-  return s;
+// 6. تحديد القنوات المستهدفة للنشر (دائماً تضمن @jhdhhdcj)
+var target_channels = ["@jhdhhdcj"];
+var custom_saved_target = Bot.getProperty("target_channels");
+if (custom_saved_target && custom_saved_target !== "@MyUniversityChannel" && target_channels.indexOf(custom_saved_target) === -1) {
+  target_channels.push(custom_saved_target);
 }
 
-// 6. تحديد القنوات المستهدفة للنشر
-var mappings = Bot.getProperty("channel_mappings");
-if (!mappings || !Array.isArray(mappings) || mappings.length === 0) {
-  var default_target = Bot.getProperty("target_channels") || "@jhdhhdcj";
-  mappings = [
-    {
-      target: default_target,
-      sources: ["@KSU_News", "@moe_gov_sa"],
-      enabled: true,
-      name: "قناة النشر الرسمية المعتمدة"
-    }
-  ];
-  Bot.setProperty("channel_mappings", mappings, "json");
-}
-
-function getTargetChannels(source) {
-  var targets = [];
-  var norm_src = normalizeSource(source);
-  
-  if (norm_src) {
-    for (var m = 0; m < mappings.length; m++) {
-      var item = mappings[m];
-      if (!item.enabled || !item.target) continue;
-      if (item.target === "@StudentServicesNews" || item.target === "@SecondTargetChannel") continue;
-      if (item.sources && Array.isArray(item.sources)) {
-        for (var s = 0; s < item.sources.length; s++) {
-          if (normalizeSource(item.sources[s]) === norm_src) {
-            targets.push(item.target);
-            break;
-          }
-        }
-      }
-    }
-  }
-  
-  // إذا لم يطابق مصدراً معيناً، يُنشر في كافة القنوات النشطة المربوطة
-  if (targets.length === 0) {
-    for (var d = 0; d < mappings.length; d++) {
-      if (mappings[d].enabled && mappings[d].target) {
-        if (mappings[d].target !== "@StudentServicesNews" && mappings[d].target !== "@SecondTargetChannel") {
-          targets.push(mappings[d].target);
-        }
-      }
-    }
-  }
-  if (targets.length === 0) {
-    var saved_single = Bot.getProperty("target_channels");
-    targets.push(saved_single || "@jhdhhdcj");
-  }
-  return targets;
-}
-
-var target_channels = getTargetChannels(source_origin);
-
-// 7. إشعار فوري في المحادثة بأن المنشور تم استلامه وقراءته بنجاح (Feedback Confirmation)
-var is_private_chat = (msg_obj && msg_obj.chat && msg_obj.chat.type === "private") || (typeof chat !== "undefined" && chat && chat.chat_type === "private");
+// 7. إشعار فوري في المحادثة بأن المنشور تم استلامه وقراءته بنجاح
 if (is_private_chat) {
   var display_src = source_origin ? ("من المصدر `" + source_origin + "`") : "المباشر";
-  Bot.sendMessage("📥 **تم استلام المنشور " + display_src + " بنجاح!**\n⚡ جاري الفحص والمعالجة بالذكاء الاصطناعي (DeepSeek-V4-Flash) والنشر في: `" + target_channels.join("`، `") + "`...");
+  Bot.sendMessage("📥 **تم استلام المنشور " + display_src + " بنجاح!**\n⚡ جاري المعالجة بالذكاء الاصطناعي (DeepSeek-V4.1-Flash) والنشر فوراً في: `" + target_channels.join("`، `") + "`...");
 }
 
 // 8. كشف إعلانات المنافسين واستبدالها بإعلان خدمات المشرف @M_S_F_G
@@ -218,23 +170,28 @@ if (is_ad) {
     "📞 **للتواصل والطلب المباشر عبر المشرف**: @M_S_F_G\n" +
     "✨ *جودة أكاديمية موثوقة، دقة في المواعيد، وأسعار خاصة للطلاب!*");
 
+  var safe_ad = toSafeHtml(custom_ad);
   var total_ads = Bot.getProperty("total_ads_replaced", 0) + 1;
   Bot.setProperty("total_ads_replaced", total_ads, "integer");
 
-  // نشر الإعلان البديل في القنوات المستهدفة
+  // نشر الإعلان البديل عبر HTML لمنع أخطاء @M_S_F_G
   for (var k = 0; k < target_channels.length; k++) {
     var ch_target = target_channels[k];
     try {
       if (media_type === "photo") {
-        Api.sendPhoto({ chat_id: ch_target, photo: media_file_id, caption: custom_ad, parse_mode: "Markdown" });
+        Api.sendPhoto({ chat_id: ch_target, photo: media_file_id, caption: safe_ad, parse_mode: "HTML" });
       } else if (media_type === "video") {
-        Api.sendVideo({ chat_id: ch_target, video: media_file_id, caption: custom_ad, parse_mode: "Markdown" });
+        Api.sendVideo({ chat_id: ch_target, video: media_file_id, caption: safe_ad, parse_mode: "HTML" });
       } else if (media_type === "document") {
-        Api.sendDocument({ chat_id: ch_target, document: media_file_id, caption: custom_ad, parse_mode: "Markdown" });
+        Api.sendDocument({ chat_id: ch_target, document: media_file_id, caption: safe_ad, parse_mode: "HTML" });
       } else {
-        Api.sendMessage({ chat_id: ch_target, text: custom_ad, parse_mode: "Markdown" });
+        Api.sendMessage({ chat_id: ch_target, text: safe_ad, parse_mode: "HTML" });
       }
-    } catch (e) {}
+    } catch (e) {
+      try {
+        Api.sendMessage({ chat_id: ch_target, text: custom_ad });
+      } catch (e2) {}
+    }
   }
 
   Bot.sendMessage("🎯 **تم كشف إعلان منافس واستبداله تلقائياً!**\nتم نشر إعلان خدماتك في: `" + target_channels.join("`، `") + "`");
@@ -249,29 +206,34 @@ Bot.setProperty("pending_targets", target_channels, "json");
 
 // 10. فحص حالة الذكاء الاصطناعي والإعدادات الديناميكية
 var ai_enabled = Bot.getProperty("ai_enabled", true);
-var current_model = Bot.getProperty("ai_model", "DeepSeek-V4-Flash");
+var current_model = Bot.getProperty("ai_model", "DeepSeek-V4.1-Flash");
 var base_url = Bot.getProperty("ai_base_url", "https://api.hcnsec.cn/v1");
 var api_key = Bot.getProperty("ai_api_key", "sk-J2ky44F6VTDMkL8Q1GHL5sfmbeIpARVDayNuwMfxKI5zCdii");
 
 if (!ai_enabled || !raw_text) {
-  // نشر مباشر دون إعادة صياغة
+  // نشر مباشر دون إعادة صياغة عبر HTML الآمن
+  var safe_raw = toSafeHtml(raw_text);
   for (var p = 0; p < target_channels.length; p++) {
     var dest = target_channels[p];
     try {
       if (media_type === "photo") {
-        Api.sendPhoto({ chat_id: dest, photo: media_file_id, caption: raw_text, parse_mode: "Markdown" });
+        Api.sendPhoto({ chat_id: dest, photo: media_file_id, caption: safe_raw, parse_mode: "HTML" });
       } else if (media_type === "video") {
-        Api.sendVideo({ chat_id: dest, video: media_file_id, caption: raw_text, parse_mode: "Markdown" });
+        Api.sendVideo({ chat_id: dest, video: media_file_id, caption: safe_raw, parse_mode: "HTML" });
       } else if (media_type === "document") {
-        Api.sendDocument({ chat_id: dest, document: media_file_id, caption: raw_text, parse_mode: "Markdown" });
+        Api.sendDocument({ chat_id: dest, document: media_file_id, caption: safe_raw, parse_mode: "HTML" });
       } else {
-        Api.sendMessage({ chat_id: dest, text: raw_text, parse_mode: "Markdown" });
+        Api.sendMessage({ chat_id: dest, text: safe_raw, parse_mode: "HTML" });
       }
-    } catch (err) {}
+    } catch (err) {
+      try {
+        Api.sendMessage({ chat_id: dest, text: raw_text });
+      } catch (err2) {}
+    }
   }
   var total = Bot.getProperty("total_processed", 0) + 1;
   Bot.setProperty("total_processed", total, "integer");
-  Bot.sendMessage("⚡ **تم النشر المباشر (دون ذكاء اصطناعي)** في: `" + target_channels.join("`، `") + "`");
+  Bot.sendMessage("⚡ **تم النشر المباشر** في: `" + target_channels.join("`، `") + "`");
   return;
 }
 
@@ -296,7 +258,7 @@ HTTP.post({
       { role: "user", content: raw_text }
     ],
     temperature: 0.35,
-    max_tokens: 450
+    max_tokens: 600
   },
   success: "/on_ai_post_success",
   error: "/on_ai_post_error",

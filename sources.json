@@ -1,11 +1,21 @@
 {
-  "_info": "Telegram University Educational AutoForwarder Watchlist",
-  "version": "2.1.0",
-  "lastUpdated": "2026-10-22T00:00:00.000Z",
+  "_info": "Telegram University Educational AutoForwarder Watchlist (Synced from SQLite)",
+  "version": "3.0.0",
+  "lastUpdated": "2026-10-22T11:17:41.430242",
   "target_channels": [
     "@jhdhhdcj"
   ],
   "sources": [
+    {
+      "id": "src_rss_dept",
+      "type": "rss",
+      "target": "https://news.ksu.edu.sa/ar/rss",
+      "title": "بوابة الأخبار والفعاليات الجامعية",
+      "priority": "medium",
+      "rule": "semi-official",
+      "enabled": true,
+      "lastPostId": "rss_item_9402"
+    },
     {
       "id": "src_tg_univ_news",
       "type": "telegram",
@@ -13,25 +23,8 @@
       "title": "أخبار الجامعة والقبول الرسمي",
       "priority": "high",
       "rule": "official",
-      "keywords": [
-        "قبول",
-        "تسجيل",
-        "نتائج",
-        "مواعيد",
-        "منح",
-        "امتحان",
-        "بي دي اف",
-        "pdf"
-      ],
-      "blacklist": [
-        "إعلان ممول",
-        "خدمات طلابية مدفوعة",
-        "حل واجبات",
-        "بحوث تخرج"
-      ],
       "enabled": true,
-      "lastPostId": "184920",
-      "lastChecked": "2026-10-22T00:00:00.000Z"
+      "lastPostId": "184920"
     },
     {
       "id": "src_x_moe",
@@ -40,39 +33,28 @@
       "title": "الحساب الرسمي لوزارة التعليم",
       "priority": "high",
       "rule": "official",
-      "keywords": [
-        "تقويم دراسي",
-        "إجازة",
-        "جامعات",
-        "منح",
-        "تسجيل"
-      ],
-      "blacklist": [
-        "إعلان تجاري"
-      ],
       "enabled": true,
-      "lastPostId": "178294104",
-      "lastChecked": "2026-10-22T00:00:00.000Z"
+      "lastPostId": "178294104"
     },
     {
-      "id": "src_rss_dept",
-      "type": "rss",
-      "target": "https://news.ksu.edu.sa/ar/rss",
-      "title": "بوابة الأخبار والفعاليات الجامعية",
-      "priority": "medium",
-      "rule": "semi-official",
-      "keywords": [
-        "مؤتمر",
-        "كتب",
-        "بحث علمي",
-        "وظائف معيدين"
-      ],
-      "blacklist": [
-        "رعاية إعلانية"
-      ],
+      "id": "src_1792667841",
+      "type": "telegram",
+      "target": "@mstfyuhhh",
+      "title": "قناة المحتوى الطلابي",
+      "priority": "high",
+      "rule": "official",
       "enabled": true,
-      "lastPostId": "rss_item_9402",
-      "lastChecked": "2026-10-22T00:00:00.000Z"
+      "lastPostId": ""
+    },
+    {
+      "id": "src_1792667861",
+      "type": "telegram",
+      "target": "@Next_Plus_BOT0",
+      "title": "مصدر الأخبار Next Plus",
+      "priority": "high",
+      "rule": "official",
+      "enabled": true,
+      "lastPostId": ""
     }
   ]
 }

@@ -6,10 +6,5 @@
   "processed_count": 18,
   "forwarded_count": 15,
   "ad_replaced_count": 3,
-  "last_run_timestamp": "2026-10-22T00:00:00.000Z",
-  "last_processed_ids": {
-    "@KSU_News": "184920",
-    "@moe_gov_sa": "178294104",
-    "https://news.ksu.edu.sa/ar/rss": "rss_item_9402"
-  }
+  "last_run_timestamp": "2026-10-22T11:17:41.431483"
 }

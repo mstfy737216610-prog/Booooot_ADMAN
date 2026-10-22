@@ -176,19 +176,38 @@ class StandaloneTelegramEducationalBot:
         except Exception as e:
             return {"ok": False, "description": str(e)}
 
-    def send_msg(self, chat_id: Any, text: str, reply_markup: Optional[Dict] = None, parse_mode: Optional[str] = "Markdown") -> Dict[str, Any]:
-        payload = {"chat_id": chat_id, "text": text}
+    def to_safe_html(self, text: str) -> str:
+        if not text:
+            return ""
+        s = text
+        s = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', s)
+        return s
+
+    def send_msg(self, chat_id: Any, text: str, reply_markup: Optional[Dict] = None, parse_mode: Optional[str] = "HTML") -> Dict[str, Any]:
+        safe_text = self.to_safe_html(text) if parse_mode == "HTML" else text
+        payload = {"chat_id": chat_id, "text": safe_text}
         if reply_markup:
             payload["reply_markup"] = reply_markup
         if parse_mode:
             payload["parse_mode"] = parse_mode
-        return self.tg_request("sendMessage", payload)
+        res = self.tg_request("sendMessage", payload)
+        if not res.get("ok"):
+            payload.pop("parse_mode", None)
+            payload["text"] = text
+            res = self.tg_request("sendMessage", payload)
+        return res
 
-    def send_photo(self, chat_id: Any, photo: str, caption: str = "", parse_mode: Optional[str] = "Markdown") -> Dict[str, Any]:
-        if len(caption) <= 1024:
-            payload = {"chat_id": chat_id, "photo": photo, "caption": caption}
+    def send_photo(self, chat_id: Any, photo: str, caption: str = "", parse_mode: Optional[str] = "HTML") -> Dict[str, Any]:
+        safe_caption = self.to_safe_html(caption) if parse_mode == "HTML" else caption
+        if len(safe_caption) <= 1024:
+            payload = {"chat_id": chat_id, "photo": photo, "caption": safe_caption}
             if parse_mode:
                 payload["parse_mode"] = parse_mode
+            res = self.tg_request("sendPhoto", payload)
+            if res.get("ok"):
+                return res
+            payload.pop("parse_mode", None)
+            payload["caption"] = caption
             res = self.tg_request("sendPhoto", payload)
             if res.get("ok"):
                 return res
