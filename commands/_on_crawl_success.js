@@ -38,18 +38,16 @@ if (!channel_name) {
 }
 if (!channel_name) return;
 
-// 1. استخراج معرفات المنشورات
-var post_regex = /data-post="[^"]*\/(\d+)"/g;
-var match;
-var max_id = 0;
-while ((match = post_regex.exec(work_content)) !== null) {
-  var p_id = parseInt(match[1], 10);
-  if (p_id > max_id) {
-    max_id = p_id;
-  }
-}
+// 1. استخراج كتلة أحدث منشور بسرعة فائقة بدون حلقات تكرار
+var last_post_marker = work_content.lastIndexOf('data-post="');
+if (last_post_marker === -1) return;
 
-if (max_id === 0) return;
+var post_chunk = work_content.substring(last_post_marker, last_post_marker + 5000);
+var id_match = post_chunk.match(/data-post="[^"]*\/(\d+)"/);
+if (!id_match) return;
+
+var max_id = parseInt(id_match[1], 10);
+if (!max_id || max_id === 0) return;
 
 var last_seen_id = Bot.getProperty("last_crawl_id_" + channel_name, 0);
 if (!last_seen_id || last_seen_id === 0) {
@@ -58,21 +56,7 @@ if (!last_seen_id || last_seen_id === 0) {
 
 if (max_id <= last_seen_id) return;
 
-// 2. استخراج كتلة أحدث منشور
-var post_marker = 'data-post="' + channel_name + '/' + max_id + '"';
-var marker_idx = work_content.indexOf(post_marker);
-if (marker_idx === -1) {
-  marker_idx = work_content.lastIndexOf('data-post=');
-}
-
-var post_chunk = "";
-if (marker_idx !== -1) {
-  post_chunk = work_content.substring(marker_idx, marker_idx + 6000);
-} else {
-  post_chunk = work_content;
-}
-
-// 3. استخراج النص وتنظيفه الشامل من شوائب الويب وتويتر و&nbsp;
+// 2. استخراج النص وتنظيفه المحكم دون تشويه المحتوى أو حذف الروابط والمعرفات
 var text_match = post_chunk.match(/<div class="tgme_widget_message_text[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
 var raw_html_text = text_match ? text_match[1] : "";
 
@@ -81,14 +65,14 @@ function deepCleanWebGarbage(html) {
   var s = html;
   // تحويل فواصل الأسطر
   s = s.replace(/<br\s*[\/]?>/gi, "\n");
-  // استخراج الروابط النصية
+  // استخراج الروابط مع الحفاظ التام عليها
   s = s.replace(/<a [^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi, function(match, link, anchor) {
-    if (anchor.indexOf("http") === 0 || anchor === link) return link;
+    if (!anchor || anchor.indexOf("http") === 0 || anchor === link) return "\n" + link + "\n";
     return anchor + " (" + link + ")";
   });
-  // حذف بقية الوسوم
+  // حذف بقية وسوم html
   s = s.replace(/<[^>]+>/g, " ");
-  // إزالة الكيانات الخاصة
+  // معالجة الكيانات
   s = s.replace(/&amp;/g, "&");
   s = s.replace(/&quot;/g, '"');
   s = s.replace(/&#39;/g, "'");
@@ -96,18 +80,16 @@ function deepCleanWebGarbage(html) {
   s = s.replace(/&gt;/g, ">");
   s = s.replace(/&nbsp;/gi, " ");
 
-  // 🚨 إزالة مخلفات تويتر X ورمز &nbsp;&nbsp;X نهائياً!
+  // تنظيف بقايا تويتر في نهاية النص فقط دون تشويه المحتوى
   s = s.replace(/\s+X\s*$/g, "");
-  s = s.replace(/&nbsp;\s*X/gi, "");
   s = s.replace(/\bX\s*$/g, "");
 
-  // تنظيف الأسطر والنقاط الفارغة
+  // تنظيف الأسطر مع الحفاظ على المحتوى الأكاديمي والروابط
   var lines = s.split("\n");
   var clean_lines = [];
   for (var i = 0; i < lines.length; i++) {
     var l = lines[i].trim();
-    // إزالة النقاط الفارغة تماماً
-    if (!l || l === "•" || l === "-" || l === "*" || l === "📌" || l === "🎓") continue;
+    if (!l || l === "•" || l === "-" || l === "*") continue;
     clean_lines.push(l);
   }
   return clean_lines.join("\n").trim();

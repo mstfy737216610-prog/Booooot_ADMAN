@@ -68,6 +68,7 @@
     { "name": "/receive_chat" },
     { "name": "/on_chat_success" },
     { "name": "/on_chat_error" },
-    { "name": "/publish_chat_post" }
+    { "name": "/publish_chat_post" },
+    { "name": "/help" }
   ]
 }

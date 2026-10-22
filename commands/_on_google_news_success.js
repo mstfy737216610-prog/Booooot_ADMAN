@@ -40,32 +40,44 @@ function cleanHtml(html) {
   return s.trim();
 }
 
-// استخراج عناصر <item> من الـ XML
-var item_regex = /<item>([\s\S]*?)<\/item>/gi;
-var match;
+// استخراج عناصر الأخبار بسرعة فائقة وتفادي انتهاء المهلة (Execution Timeout)
+var safe_content = content.length > 10000 ? content.substring(0, 10000) : content;
+var item_chunks = safe_content.split("<item>");
 var found_article = null;
 
-while ((match = item_regex.exec(content)) !== null) {
-  var item_str = match[1];
+for (var idx = 1; idx < item_chunks.length && idx <= 4; idx++) {
+  var item_str = item_chunks[idx].split("</item>")[0];
 
-  var title_m = item_str.match(/<title>([\s\S]*?)<\/title>/i);
-  var link_m = item_str.match(/<link>([\s\S]*?)<\/link>/i);
-  var desc_m = item_str.match(/<description>([\s\S]*?)<\/description>/i);
-  var guid_m = item_str.match(/<guid[^>]*>([\s\S]*?)<\/guid>/i);
+  var title_start = item_str.indexOf("<title>");
+  var title_end = item_str.indexOf("</title>");
+  var raw_title = "";
+  if (title_start !== -1 && title_end !== -1) {
+    raw_title = cleanHtml(item_str.substring(title_start + 7, title_end));
+  }
 
-  var raw_title = title_m ? cleanHtml(title_m[1]) : "";
-  var raw_desc = desc_m ? cleanHtml(desc_m[1]) : "";
-  var raw_link = link_m ? link_m[1].trim() : "";
-  var raw_guid = guid_m ? guid_m[1].trim() : raw_title;
+  var desc_start = item_str.indexOf("<description>");
+  var desc_end = item_str.indexOf("</description>");
+  var raw_desc = "";
+  if (desc_start !== -1 && desc_end !== -1) {
+    raw_desc = cleanHtml(item_str.substring(desc_start + 13, desc_end));
+  }
+
+  var link_start = item_str.indexOf("<link>");
+  var link_end = item_str.indexOf("</link>");
+  var raw_link = "";
+  if (link_start !== -1 && link_end !== -1) {
+    raw_link = cleanHtml(item_str.substring(link_start + 6, link_end));
+  }
 
   if (!raw_title || raw_title.length < 15) continue;
 
-  // فحص صلة الخبر بالجامعة المستهدفة
+  // تنظيف المصدر الخارجي من نهاية العنوان (مثل "- جريدة الرياض" أو "- الوطن")
+  raw_title = raw_title.replace(/\s*-\s*[^-]+$/, "").trim();
+
+  // فحص الصلة بالجامعة
   var combined = (raw_title + " " + raw_desc).toLowerCase();
-  var is_relevant = false;
-  if (combined.indexOf(target_univ.name.toLowerCase()) !== -1) {
-    is_relevant = true;
-  } else {
+  var is_relevant = (combined.indexOf(target_univ.name.toLowerCase()) !== -1);
+  if (!is_relevant) {
     for (var k = 0; k < (target_univ.keywords || []).length; k++) {
       if (combined.indexOf(target_univ.keywords[k].toLowerCase()) !== -1) {
         is_relevant = true;
@@ -74,15 +86,10 @@ while ((match = item_regex.exec(content)) !== null) {
     }
   }
 
-  if (!is_relevant) {
-    continue; // تجاهل الخبر إذا لم يذكر الجامعة
-  }
+  if (!is_relevant) continue;
 
-  // فحص منع التكرار
-  var seen_key = "seen_gnews_" + encodeURIComponent(raw_guid.slice(-30));
-  if (Bot.getProperty(seen_key)) {
-    continue;
-  }
+  var seen_key = "seen_gnews_" + encodeURIComponent(raw_title.slice(0, 25));
+  if (Bot.getProperty(seen_key)) continue;
 
   Bot.setProperty(seen_key, true, "boolean");
   found_article = {
@@ -90,11 +97,11 @@ while ((match = item_regex.exec(content)) !== null) {
     desc: raw_desc,
     link: raw_link
   };
-  break; // معالجة الخبر الأحدث غير المكرر
+  break;
 }
 
 if (!found_article) {
-  Bot.sendMessage("ℹ️ **أخبار جوجل نيوز لـ " + target_univ.name + "**: لا توجد أخبار جديدة غير مكررة حالياً.");
+  Bot.sendMessage("ℹ️ **أخبار جوجل لـ " + target_univ.name + "**: لا توجد أخبار جديدة حالياً.");
   return;
 }
 

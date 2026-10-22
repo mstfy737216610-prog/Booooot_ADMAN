@@ -59,11 +59,11 @@ var toggle_btn_title = is_active ? "⏸️ إيقاف النشر لهذه الج
 
 var inline_keyboard = [
   [
-    { title: "🔄 فحص وسحب أخبار " + target_univ.name.slice(0, 15), command: "/univ_crawl " + target_univ.id },
+    { title: "🔄 فحص وسحب الأخبار", command: "/univ_crawl " + target_univ.id },
     { title: toggle_btn_title, command: "/univ_toggle " + target_univ.id }
   ],
   [
-    { title: "🌐 أخبار جوجل المباشرة", command: "/google_news " + gnews_q },
+    { title: "🌐 أخبار جوجل المباشرة", command: "/google_news " + target_univ.id },
     { title: "📝 صياغة ونشر خبر فوري", command: "/univ_post " + target_univ.id }
   ],
   [

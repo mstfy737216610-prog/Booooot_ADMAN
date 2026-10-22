@@ -426,15 +426,13 @@ class StandaloneTelegramEducationalBot:
             return ""
         cleaned = text.replace("&nbsp;&nbsp;X", "").replace("&nbsp;X", "").replace("&nbsp;", " ")
         cleaned = re.sub(r'\s+X\s*$', '', cleaned)
-        cleaned = re.sub(r'@[a-zA-Z0-9_]+', '', cleaned)
-        cleaned = re.sub(r'https?://t\.me/[^\s]+', '', cleaned)
-        cleaned = re.sub(r'(وفقاً لـ?|بحسب|نقلاً عن|المصدر:|قناة|حساب)\s+[^\s\n]+', '', cleaned)
-        cleaned = re.sub(r'لا تنسوا الاشتراك[^\n.]*', '', cleaned)
-        cleaned = re.sub(r'تابعونا على[^\n.]*', '', cleaned)
+        # إزالة روابط قنوات تيليجرام الترويجية فقط دون مساس بالروابط الرسمية أو أسماء الجامعات
+        cleaned = re.sub(r'https?://(?:t\.me|telegram\.me)/[a-zA-Z0-9_+/]+', '', cleaned)
+        cleaned = re.sub(r'(?:لا تنسوا الاشتراك|تابعونا على تليجرام|اشترك في القناة)[^\n.]*', '', cleaned, flags=re.IGNORECASE)
         cleaned = cleaned.replace("ߓ堙噈اعيد", "مواعيد").replace("ߓꠙ嘰كرات", "مذكرات").replace("ߎ㠘㙆ظمة", "أنظمة")
         cleaned = re.sub(r'[\u07C0-\u07FF\u4E00-\u9FFF\uF000-\uFFFF]', '', cleaned)
 
-        # حذف الأسطر الفارغة والنقاط الفارغة
+        # حذف الأسطر الفارغة والنقاط الفارغة مع الحفاظ الكامل على نصوص المنشور
         lines = cleaned.split("\n")
         clean_lines = []
         for l in lines:
@@ -442,9 +440,7 @@ class StandaloneTelegramEducationalBot:
             if not t or t in ["•", "-", "*", "📌", "🎓", "• ", "- ", "* "]:
                 continue
             clean_lines.append(t)
-        cleaned = "\n".join(clean_lines)
-        cleaned = re.sub(r'\n{3,}', '\n\n', cleaned).strip()
-        return cleaned
+        return "\n".join(clean_lines).strip()
 
     def extract_external_links(self, text: str) -> List[str]:
         if not text:
@@ -500,7 +496,7 @@ class StandaloneTelegramEducationalBot:
         # محاولة النموذج الأساسي
         try:
             req = urllib.request.Request(endpoint, data=json.dumps(payload).encode("utf-8"), headers=headers)
-            with urllib.request.urlopen(req, context=ssl_ctx, timeout=14) as resp:
+            with urllib.request.urlopen(req, context=ssl_ctx, timeout=6) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 if "choices" in data and len(data["choices"]) > 0:
                     ai_text = data["choices"][0]["message"]["content"].strip()
@@ -515,7 +511,7 @@ class StandaloneTelegramEducationalBot:
         try:
             payload["model"] = FALLBACK_MODEL
             req = urllib.request.Request(endpoint, data=json.dumps(payload).encode("utf-8"), headers=headers)
-            with urllib.request.urlopen(req, context=ssl_ctx, timeout=10) as resp:
+            with urllib.request.urlopen(req, context=ssl_ctx, timeout=5) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 if "choices" in data and len(data["choices"]) > 0:
                     ai_text = data["choices"][0]["message"]["content"].strip()
@@ -1630,6 +1626,7 @@ class StandaloneTelegramEducationalBot:
 • **سحب المصادر**: مفعل (MTProto + Scraper)
 ━━━━━━━━━━━━━━━━━━━
 👇 **اختر الإجراء المطلوب من الأزرار أدناه:**"""
+        self.send_msg(chat_id, "⌨️ **لوحة المفاتيح الدائمة نشطة على شاشتك للتحكم السريع:**", self.get_main_reply_keyboard(role))
         self.send_msg(chat_id, text, self.get_control_panel_inline_keyboard(role == "admin"))
 
     def show_account_panel(self, chat_id: int, user_data: Dict[str, Any]):
