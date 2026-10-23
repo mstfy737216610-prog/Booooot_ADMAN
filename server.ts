@@ -714,22 +714,39 @@ function extractExternalLinks(text: string): string[] {
     .filter(u => !u.includes('t.me/') && !u.includes('telegram.me/'));
 }
 
+function cleanWebGarbage(txt: string): string {
+  if (!txt) return "";
+  let s = txt;
+  s = s.replace(/&nbsp;\s*X/gi, "");
+  s = s.replace(/&nbsp;/gi, " ");
+  s = s.replace(/\s+X\s*$/gm, "");
+  s = s.replace(/\bX\s*$/gm, "");
+  s = s.replace(/[\u07C0-\u07FF\u4E00-\u9FFF\uF000-\uFFFF]/g, "");
+  return s;
+}
+
 // Fallback intelligent rephraser
 function fallbackRephrase(rawText: string, instructions?: string): string {
+  const sanitized = cleanWebGarbage(rawText);
   const extLinks = extractExternalLinks(rawText);
-  const cleanLines = rawText
+  const cleanLines = sanitized
     .split('\n')
     .map(l => l.trim())
-    .filter(l => l.length > 0 && !l.includes('t.me/') && !l.startsWith('@'));
+    .filter(l => l.length > 0 && !l.includes('t.me/') && !l.startsWith('@') && l !== '•' && l !== '-' && l !== '*' && l !== '📌' && l !== '🎓');
 
   // Separate text lines from URL lines
-  const textLines = cleanLines.filter(l => !l.startsWith('http://') && !l.startsWith('https://'));
-  const firstLine = (textLines[0] || 'إعلان أكاديمي وجامعي هام').replace(/^[•\-*#📌📢✨🎓]\s*/, '').trim();
+  const textLines = cleanLines.filter(l => !l.startsWith('http://') && !l.startsWith('https://') && l.length > 3);
+  if (textLines.length === 0) {
+    return `📌 **تحديث جامعي وأكاديمي هام**\n\n• متابعة مستمرة لأحدث الأخبار الأكاديمية والقرارات الجامعية.\n\n💬 يسعدنا استقبال استفساراتكم ومشاركة المنشور مع زملائكم الطلاب!\n\n#جامعة #أخبار_التعليم #مواعيد #شؤون_الطلاب`;
+  }
+
+  const rawFirst = textLines[0].replace(/^[•\-*#📌📢✨🎓]\s*/, '').trim();
+  const firstLine = rawFirst.length > 0 ? rawFirst : 'تحديث جامعي وأكاديمي هام';
   const title = firstLine.length < 70 ? firstLine : firstLine.slice(0, 65) + '...';
 
-  const bodyLines = textLines.slice(1);
+  const bodyLines = textLines.slice(1).filter(l => l.length > 3);
   const bullets = bodyLines.length > 0
-    ? bodyLines.map(l => `• ${l}`).join('\n')
+    ? bodyLines.map(l => `• ${l.replace(/^[•\-*#📌📢✨🎓]\s*/, '')}`).join('\n')
     : `• ${firstLine}`;
 
   let linksSection = '';

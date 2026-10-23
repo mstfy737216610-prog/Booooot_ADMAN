@@ -67,14 +67,21 @@ if (rephrased_text.indexOf("[IGNORED]") !== -1 || rephrased_text.indexOf("IGNORE
 
 rephrased_text = cleanArabicAndWebGarbage(rephrased_text);
 
-// تنظيف الرد والتأكد من وجود عنوان أكاديمي بارز
+// تنظيف الكليشيهات الآلية والمقدمات الإنشائية المكررة
+rephrased_text = rephrased_text.replace(/^(?:يسرنا أن نعلن|في إطار حرص الجامعة|أعزاءنا الطلاب|مرحباً بكم متابعينا|يسعدنا إبلاغكم|نحيطكم علماً بأن)\s*[,:،]?\s*/gi, "");
+
+var target_univ_name = Bot.getProperty("pending_target_univ", "جامعة");
+
+// ضمان ذكر اسم الجامعة في العنوان لتوثيق الهوية الأكاديمية
 if (rephrased_text.indexOf("📌") === -1 && rephrased_text.indexOf("📢") === -1 && rephrased_text.indexOf("🎓") === -1) {
   rephrased_text = "📌 " + rephrased_text;
 }
+if (target_univ_name && rephrased_text.indexOf(target_univ_name) === -1) {
+  rephrased_text = rephrased_text.replace(/^([📌📢🎓]\s*)([^\n]+)/, "$1$2 - " + target_univ_name);
+}
 
-// ضمان وجود الهاشتاجات الأكاديمية
+// ضمان وجود الهاشتاجات الأكاديمية الرسمية
 if (rephrased_text.indexOf("#") === -1) {
-  var target_univ_name = Bot.getProperty("pending_target_univ", "جامعة");
   var univ_tag = "#" + target_univ_name.replace(/\s+/g, "_");
   rephrased_text += "\n\n" + univ_tag + " #أخبار_التعليم #شؤون_الطلاب #مواعيد";
 }

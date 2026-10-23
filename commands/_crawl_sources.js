@@ -81,6 +81,18 @@ for (var u = 0; u < univ_projects.length; u++) {
     }
   }
 
+  // فحص حسابات تويتر (X) الرسمية التابعة لهذه الجامعة حصراً
+  if (univ.twitter_sources && Array.isArray(univ.twitter_sources)) {
+    for (var tw = 0; tw < univ.twitter_sources.length; tw++) {
+      var tw_handle = String(univ.twitter_sources[tw]).trim().replace(/^@/, "");
+      if (!tw_handle) continue;
+
+      status_msg += "   └ 🐦 تويتر: @" + tw_handle + " (جاري الجلب)\n";
+      Bot.runCommand("/crawl_twitter " + univ.id + "|" + tw_handle);
+      checked_count++;
+    }
+  }
+
   // فحص أخبار جوجل لهذه الجامعة
   if (univ.google_news_enabled) {
     status_msg += "   └ 🌐 جوجل نيوز: بحث عن '" + (univ.google_news_query || univ.name) + "'\n";

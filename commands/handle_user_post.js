@@ -272,17 +272,26 @@ if (!matched_univ && raw_text) {
   }
 }
 
-// ثالثاً: إذا لم نجد تطابقاً صريحاً (مثل منشور مباشر أرسله المشرف)، نعتمد أول جامعة نشطة
+// ثالثاً: حماية القنوات من التداخل العشوائي
 if (!matched_univ) {
-  for (var u3 = 0; u3 < univ_projects.length; u3++) {
-    if (univ_projects[u3].enabled) {
-      matched_univ = univ_projects[u3];
-      break;
+  if (is_forwarded || source_origin || !is_private_chat) {
+    // المنشور مسحوب أو معاد توجيهه من قناة عامة ولا يحتوي اسم أي جامعة مسجلة
+    if (is_private_chat) {
+      Bot.sendMessage("🛡️ **تم استبعاد المنشور تلقائياً منعاً لتداخل القنوات**:\nالمنشور الوارد من `" + (source_origin || "قناة عامة") + "` لا يتضمن اسم أي جامعة معتمدة أو كلماتها المفتاحية.");
+    }
+    return;
+  } else {
+    // منشور صريح كتبه المشرف مباشرة في المحادثة الخاصة
+    for (var u3 = 0; u3 < univ_projects.length; u3++) {
+      if (univ_projects[u3].enabled) {
+        matched_univ = univ_projects[u3];
+        break;
+      }
+    }
+    if (!matched_univ && univ_projects.length > 0) {
+      matched_univ = univ_projects[0];
     }
   }
-}
-if (!matched_univ && univ_projects.length > 0) {
-  matched_univ = univ_projects[0];
 }
 
 if (!matched_univ) {
@@ -318,19 +327,26 @@ if (is_private_chat) {
     "⚡ جاري المعالجة بالذكاء الاصطناعي بنظام العزل الصارم...");
 }
 
-// 9. كشف إعلانات المنافسين واستبدالها بإعلان خدمات المشرف
-// (معطل افتراضياً لحماية كافة أخبار ومنشورات الجامعات الرسمية ونشرها مع صورها الأصلية)
+// 9. كشف إعلانات المنافسين وحظرها أو استبدالها بإعلان خدمات المشرف
 var ad_replacement_enabled = Bot.getProperty("ad_replacement_enabled", false);
-var ad_keywords = ["حل واجبات بمقابل", "حل واجبات واختبارات", "حل كويزات", "حل فاينل", "حل اسايمنت", "كتابة بحوث بمقابل", "عمل بحوث ورسائل بمقابل", "إعلان مدفوع للخدمات"];
+var ad_keywords = ["حل واجبات", "حل واجب", "حل كويزات", "حل كويز", "حل فاينل", "حل اسايمنت", "كتابة بحوث بمقابل", "عمل بحوث ورسائل بمقابل", "إعلان مدفوع للخدمات", "مساعدات دراسية مدفوعة"];
 var is_ad = false;
 
-if (ad_replacement_enabled && cleaned_raw_text) {
+if (cleaned_raw_text) {
+  var low_raw = cleaned_raw_text.toLowerCase();
   for (var i = 0; i < ad_keywords.length; i++) {
-    if (cleaned_raw_text.indexOf(ad_keywords[i]) !== -1) {
+    if (low_raw.indexOf(ad_keywords[i]) !== -1) {
       is_ad = true;
       break;
     }
   }
+}
+
+if (is_ad && !ad_replacement_enabled) {
+  if (is_private_chat) {
+    Bot.sendMessage("🚫 **تم حظر المنشور الإعلاني**: تم رصد إعلان خدمات طلابية تجاري واستبعاده نهائياً من النشر.");
+  }
+  return;
 }
 
 if (is_ad) {

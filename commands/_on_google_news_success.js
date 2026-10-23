@@ -74,21 +74,25 @@ for (var idx = 1; idx < item_chunks.length && idx <= 4; idx++) {
   // تنظيف المصدر الخارجي من نهاية العنوان (مثل "- جريدة الرياض" أو "- الوطن")
   raw_title = raw_title.replace(/\s*-\s*[^-]+$/, "").trim();
 
-  // فحص الصلة بالجامعة
+  // فحص الصلة الصارمة بالجامعة: يجب ذكر اسم الجامعة أو كلياتها حصراً
   var combined = (raw_title + " " + raw_desc).toLowerCase();
   var is_relevant = (combined.indexOf(target_univ.name.toLowerCase()) !== -1);
-  if (!is_relevant) {
-    for (var k = 0; k < (target_univ.keywords || []).length; k++) {
-      if (combined.indexOf(target_univ.keywords[k].toLowerCase()) !== -1) {
+  if (!is_relevant && target_univ.keywords && Array.isArray(target_univ.keywords)) {
+    for (var k = 0; k < target_univ.keywords.length; k++) {
+      var kw = target_univ.keywords[k].toLowerCase();
+      if (kw.length >= 4 && combined.indexOf(kw) !== -1) {
         is_relevant = true;
         break;
       }
     }
   }
 
+  // إذا لم يذكر اسم الجامعة أو كلماتها المعتمدة، نتجاهل الخبر فوراً
   if (!is_relevant) continue;
 
-  var seen_key = "seen_gnews_" + encodeURIComponent(raw_title.slice(0, 25));
+  // بصمة فريدة مطهرة لمنع تكرار نشر الخبر
+  var normalized_hash = raw_title.replace(/[^\u0621-\u064A0-9a-zA-Z]/g, "").substring(0, 45);
+  var seen_key = "seen_gnews_hash_" + target_univ.id + "_" + normalized_hash;
   if (Bot.getProperty(seen_key)) continue;
 
   Bot.setProperty(seen_key, true, "boolean");

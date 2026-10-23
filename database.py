@@ -845,21 +845,7 @@ def find_university_for_post(source: str, text: str = "") -> Optional[Dict[str, 
                 if kw and kw.lower() in text_lower:
                     return p
 
-    # 3. إذا كان المصدر مسجلاً في جدول المصادر العام أو تم الفحص اليدوي
-    # نوجهه لأول مشروع جامعة مفعل أو للقناة المستهدفة الأولى لضمان عدم ضياع أي موعد أو إعلان
-    if active_projects:
-        return active_projects[0]
-
-    # 4. في حالة عدم وجود أي مشروع جامعة، نوجهه للقناة المستهدفة الافتراضية
-    target_chs = get_target_channels()
-    if target_chs:
-        return {
-            "id": "default_academic",
-            "name": "الأخبار والخدمات الأكاديمية",
-            "target_channel": target_chs[0],
-            "enabled": True
-        }
-
+    # 3. إذا لم يتطابق المصدر ولم يُذكر اسم الجامعة أو كلماتها المفتاحية، نُرجع None لمنع التداخل العشوائي بين القنوات
     return None
 
 

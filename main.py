@@ -890,8 +890,8 @@ class StandaloneTelegramEducationalBot:
                         if not db.is_post_seen(latest["id"], p_hash):
                             matched_univ = db.find_university_for_post(src.get("target"), latest.get("text", ""))
                             if not matched_univ:
-                                def_targets = db.get_target_channels()
-                                matched_univ = {"name": "الأخبار الأكاديمية", "target_channel": def_targets[0] if def_targets else "@jhdhhdcj"}
+                                logger.info(f"🛡️ تخطي منشور من {src.get('target')}: لا يحتوي على اسم أو كلمات الجامعة المعتمدة.")
+                                return
                             db.mark_post_seen(latest["id"], p_hash, src.get("target"))
                             logger.info(f"⚡️ [فحص يدوي] جاري نشر أحدث منشور متاح من {src.get('target')} للجامعة {matched_univ['name']} مع الصورة: {'نعم' if latest.get('photo') else 'لا'}")
                             post_queue.put({
@@ -913,8 +913,8 @@ class StandaloneTelegramEducationalBot:
 
                     matched_univ = db.find_university_for_post(src.get("target"), p_text)
                     if not matched_univ:
-                        def_targets = db.get_target_channels()
-                        matched_univ = {"name": "الأخبار الأكاديمية", "target_channel": def_targets[0] if def_targets else "@jhdhhdcj"}
+                        logger.debug(f"🛡️ تخطي منشور غير متطابق مع الجامعة: {p_id}")
+                        continue
 
                     p_hash = hashlib.md5(p_text[:80].encode("utf-8")).hexdigest()
                     if db.is_post_seen(p_id, p_hash):
@@ -1047,6 +1047,15 @@ class StandaloneTelegramEducationalBot:
                     clean_desc = re.sub(r'<[^>]+>', '', d).strip()
                     full_text = f"{clean_title}\n{clean_desc}".strip()
                     photo_url = self.extract_image_from_xml_item(it, d)
+
+                    # التحقق الصارم من ذكر اسم الجامعة أو كلماتها المعتمدة حصراً
+                    if matched_univ and univ_name:
+                        keywords = [univ_name.lower()]
+                        if matched_univ.get("keywords"):
+                            keywords.extend([kw.lower() for kw in matched_univ.get("keywords", []) if len(kw) >= 3])
+                        full_lower = full_text.lower()
+                        if not any(kw in full_lower for kw in keywords):
+                            continue
 
                     # منع التكرار الصارم
                     norm_t = re.sub(r'[^\w\s]', '', clean_title)

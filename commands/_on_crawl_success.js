@@ -162,22 +162,46 @@ if (!target_univ && univ_projects.length > 0) {
 }
 if (!target_univ) return;
 
-// 5. التوجيه الأكاديمي المباشر:
-// كافة منشورات المصدر المعتمد (سواء تواريخ، مواعيد اختبارات، أو إعلانات طلابية) تُنشر مباشرة للجامعة المحددة
-// ولا يشترط أبداً وجود اسم الجامعة في نص المنشور لضمان وصول المواعيد والجداول للطلاب كاملة
+// 5. 🛡️ التحقق الصارم من هوية الجامعة (Strict University Identity Gatekeeper)
+// قاعدة حاسمة: لا يُنشر أي خبر في قناة الجامعة إلا إذا تضمن صراحةً اسم الجامعة أو كلماتها المفتاحية
+var lower_text = extracted_text.toLowerCase();
+var is_relevant = (lower_text.indexOf(target_univ.name.toLowerCase()) !== -1);
 
-// 6. فحص إعلانات المنافسين واستبدالها (معطل افتراضياً لضمان نشر كافة أخبار المصدر مع صورها)
-var ad_replacement_enabled = Bot.getProperty("ad_replacement_enabled", false);
-var ad_keywords = ["حل واجبات بمقابل", "حل واجبات واختبارات", "حل كويزات", "حل فاينل", "حل اسايمنت", "كتابة بحوث بمقابل", "عمل بحوث ورسائل بمقابل", "إعلان مدفوع للخدمات"];
-var is_ad = false;
-
-if (ad_replacement_enabled && extracted_text) {
-  for (var a = 0; a < ad_keywords.length; a++) {
-    if (extracted_text.indexOf(ad_keywords[a]) !== -1) {
-      is_ad = true;
+if (!is_relevant && target_univ.keywords && Array.isArray(target_univ.keywords)) {
+  for (var k = 0; k < target_univ.keywords.length; k++) {
+    var kw = target_univ.keywords[k].toLowerCase();
+    if (kw.length >= 3 && lower_text.indexOf(kw) !== -1) {
+      is_relevant = true;
       break;
     }
   }
+}
+
+// إذا كان المنشور لا يحتوي على اسم الجامعة أو كليتها، يتم استبعاده فوراً لمنع تداخل القنوات
+if (!is_relevant) {
+  return;
+}
+
+// 6. الفلترة الصارمة لإعلانات الخدمات الطلابية والواجبات والمنافسين
+var spam_keywords = [
+  "حل واجبات", "حل واجب", "حل كويزات", "حل كويز", "حل فاينل", "حل اسايمنت", 
+  "كتابة بحوث بمقابل", "عمل بحوث ورسائل", "قروب بيع", "حل امتحانات", 
+  "مساعدات دراسية مدفوعة", "للتواصل مع الباحث"
+];
+for (var sp = 0; sp < spam_keywords.length; sp++) {
+  if (lower_text.indexOf(spam_keywords[sp]) !== -1) {
+    return; // إهمال الإعلانات التجارية غير الرسمية تماماً
+  }
+}
+
+// فحص تكرار المنشور عبر البصمة النصية
+var post_fingerprint = extracted_text.replace(/[^\u0621-\u064A0-9a-zA-Z]/g, "").substring(0, 70);
+if (post_fingerprint.length > 15) {
+  var fp_key = "seen_crawl_fp_" + target_univ.id + "_" + post_fingerprint.substring(0, 30);
+  if (Bot.getProperty(fp_key)) {
+    return; // منشور مكرر
+  }
+  Bot.setProperty(fp_key, true, "boolean");
 }
 
 function toSafeHtml(txt) {
