@@ -809,33 +809,57 @@ def toggle_university_status(univ_id: str) -> Optional[bool]:
 
 def find_university_for_post(source: str, text: str = "") -> Optional[Dict[str, Any]]:
     """
-    نظام العزل العلائقي الصارم (Strict Relational Mapping):
-    كل قناة هدف مرتبطة حصرياً بمصدر محدد. يمنع منعاً باتاً خلط القنوات أو النشر
-    بناءً على تشابه الكلمات المفتاحية بين الجامعات المختلفة.
+    نظام التوجيه الأكاديمي الذكي:
+    - يوجه المنشورات الواردة من المصادر المعتمدة مباشرة إلى القناة الهدف المخصصة.
+    - لا يشترط أبداً ذكر اسم الجامعة في نص المنشور؛ أي إعلان، مواعيد، أو جداول من المصدر تُنشر تلقائياً.
+    - إذا كان المصدر مرتبطاً بجامعة محددة، ينشر في قناتها.
+    - إذا كان مصدراً عاماً مسجلاً، يوجه إلى القناة الأولى المعتمدة لضمان عدم ضياع أي خبر.
     """
     if not source:
-        return None
+        source = ""
 
     projects = get_university_projects()
-    clean_src = (source or "").strip().lower()
-    clean_src = clean_src.replace("https://t.me/s/", "").replace("https://t.me/", "").replace("t.me/", "")
-    if not clean_src.startswith("@") and not clean_src.startswith("http") and clean_src:
-        clean_src = "@" + clean_src
+    active_projects = [p for p in projects if p.get("enabled")]
 
-    # مطابقة حصرية ومباشرة 1-to-1 مع المصادر المحددة لهذه الجامعة فقط
-    for p in projects:
-        if not p.get("enabled"):
-            continue
+    clean_src = (source or "").strip().lower()
+    clean_src = clean_src.replace("https://t.me/s/", "").replace("https://t.me/", "").replace("t.me/", "").replace("https://x.com/", "").replace("https://twitter.com/", "")
+    clean_src_no_at = clean_src.lstrip("@")
+    clean_src_with_at = "@" + clean_src_no_at if clean_src_no_at else ""
+
+    # 1. مطابقة مباشرة مع المصادر المسجلة في كل جامعة
+    for p in active_projects:
         all_sources = [s.lower().strip() for s in (p.get("telegram_sources", []) + p.get("twitter_sources", []))]
         all_sources_clean = [
-            s.replace("https://t.me/s/", "").replace("https://t.me/", "").replace("t.me/", "")
+            s.replace("https://t.me/s/", "").replace("https://t.me/", "").replace("t.me/", "").replace("https://x.com/", "").replace("https://twitter.com/", "").lstrip("@")
             for s in all_sources
         ]
-        # مطابقة دقيقة إما مع المعرف أو الرابط
-        if clean_src in all_sources or clean_src in all_sources_clean or ("@" + clean_src.replace("@", "")) in all_sources:
+        if (clean_src_no_at and clean_src_no_at in all_sources_clean) or (clean_src_with_at and clean_src_with_at in all_sources):
             return p
 
-    # عزل تام: إذا كان المصدر غير مسجل لأي جامعة محددة، لا يتم النشر عشوائياً
+    # 2. فحص الكلمات المفتاحية في النص إن وجدت عدة جامعات
+    if text:
+        text_lower = text.lower()
+        for p in active_projects:
+            kws = p.get("keywords", []) + [p.get("name", "")]
+            for kw in kws:
+                if kw and kw.lower() in text_lower:
+                    return p
+
+    # 3. إذا كان المصدر مسجلاً في جدول المصادر العام أو تم الفحص اليدوي
+    # نوجهه لأول مشروع جامعة مفعل أو للقناة المستهدفة الأولى لضمان عدم ضياع أي موعد أو إعلان
+    if active_projects:
+        return active_projects[0]
+
+    # 4. في حالة عدم وجود أي مشروع جامعة، نوجهه للقناة المستهدفة الافتراضية
+    target_chs = get_target_channels()
+    if target_chs:
+        return {
+            "id": "default_academic",
+            "name": "الأخبار والخدمات الأكاديمية",
+            "target_channel": target_chs[0],
+            "enabled": True
+        }
+
     return None
 
 

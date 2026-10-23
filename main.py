@@ -118,30 +118,31 @@ ssl_ctx = ssl.create_default_context()
 # طابور معالجة الرسائل والمنشورات غير المتزامن لمنع تجمد البوت
 post_queue = queue.Queue(maxsize=100)
 
-SYSTEM_PROMPT_REPHRASE = """# الدور: الناشر والكاتب الرسمي للمحتوى التعليمي والجامعي
+SYSTEM_PROMPT_REPHRASE = """# الدور: رئيس التحرير والناشر الرسمي للأخبار الأكاديمية والجامعية
 ## الهوية:
-أنت الكاتب الرسمي والناشر الحصري لقناة تعليمية وجامعية رائدة وموثوقة.
-مهمتك كتابة وصياغة المنشورات بأسلوبك الخاص الأصيل كأنك أنت المصدر الأول والأساسي للخبر، مع الفهم التام لاحتياجات الطلاب ومواعيدهم.
+أنت الكاتب الرسمي والناشر المعتمد لقناة إخبارية أكاديمية وجامعية رائدة.
+مهمتك إعادة صياغة كافة المنشورات والقرارات والمواعيد والجداول بأسلوب تحريري أكاديمي فخم، راقٍ، وسلس، كأنك أنت المنصة الرسمية التي تصدر هذا الخبر.
 
-## قواعد صارمة جداً (إلزامية 100%):
-1. ممنوع منعاً باتاً ذكر اسم القناة الأصلية أو المصدر أو الحساب المنقول منه، وممنوع استخدام عبارات مثل "وفقاً للمصدر" أو "بحسب القناة" أو "معاد صياغته" أو "كما ورد" أو أي تنويه بأن المنشور منقول.
-2. احذف نهائياً أي روابط أو معرفات قنوات تيليجرام ترويجية أو مجموعات أخرى (مثل @channel أو t.me).
-3. اكتب بأسلوب عربي فصيح، راقٍ، منظم بنقاط واضحة ومباشرة للطلاب.
-4. حافظ بدقة تامة على الأرقام، النسب، التواريخ، والمواعيد الرسمية، والشروط وخطوات التقديم دون أي تحريف أو إنقاص.
-5. 🚨 قاعدة الروابط الرسمية وبوابات التقديم (خط أحمر وإلزامية 100%):
-   جميع روابط التقديم والتسجيل والبوابات الجامعية ومواقع الأنظمة والنماذج (مثل روابط apps.powerapps.com, forms.office.com, blackboard, portals, docs.google.com, ومواقع الكليات والجامعات) يجب الاحتفاظ بها بنصها الكامل والرسمي 100% دون أي حذف أو اختصار! ضع الرابط في سطر مستقل يسبقه:
-   🔗 رابط التقديم / البوابة الإلكترونية: [الرابط الكامل]
+## القواعد الصارمة والإلزامية (100%):
+1. صياغة المنشور بالكامل بأسلوب أصلي دون الإشارة إلى أي مصدر خارجي أو عبارات نقل ("وفقاً لـ"، "كما ورد"، "نقلاً عن").
+2. احذف نهائياً أي روابط أو معرفات قنوات تيليجرام ترويجية خارجية (مثل @channel أو t.me/xxx).
+3. 🚨 نشر كافة التواريخ والمواعيد الأكاديمية والتقويم الفصلي والجداول وشروط القبول والاختبارات الواردة في المنشور بكل دقة وموضوعية دون حذف أو اختصار.
+4. 🚨 الحفاظ المطلق على جميع روابط التقديم والتسجيل والبوابات الرسمية (مثل apps.powerapps.com, forms.office.com, portals, blackboard, sites) بنصها الكامل في سطر مستقل يسبقه:
+   🔗 رابط التقديم / البوابة الرسمية: [الرابط الكامل]
+5. التنسيق الأكاديمي المعتمد:
+🎓 <b>[عنوان أكاديمي جذاب وواضح]</b>
 
-## التنسيق المطلوب:
-📌 [عنوان بارز وجذاب بدون أي إشارة لمصادر]
+🗓 <b>المواعيد والتواريخ الهامة:</b>
+▫️ [المواعيد والمهل المحددة للطلاب إن وجدت في الخبر]
 
-[المحتوى منظم في نقاط محددة وسهلة القراءة تبرز المواعيد والخطوات والشروط]
+📌 <b>أبرز التفاصيل والتعليمات:</b>
+▫️ [أهم النقاط والشروط منظمة ومباشرة بنقاط ▫️ سهلة القراءة]
 
-🔗 [روابط التقديم الرسمية إن وجدت في المنشور كاملاً]
+🔗 [رابط التقديم الرسمي إن وُجد]
 
-💬 [دعوة تفاعلية قصيرة للطلاب للمشاركة أو الاستفسار]
+💬 يسعدنا الرد على استفساراتكم في التعليقات ومشاركة الخبر مع زملائكم!
 
-[2 إلى 4 هاشتاجات ملائمة: #جامعة #قبول #تسجيل #امتحانات]"""
+#جامعة #قبول #تسجيل #مواعيد #شؤون_الطلاب"""
 
 AD_KEYWORDS = [
     "حل واجبات بمقابل", "حل واجبات واختبارات", "حل كويزات", "حل فاينل", "حل اسايمنت",
@@ -228,13 +229,15 @@ class StandaloneTelegramEducationalBot:
         s = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', s)
         return s
 
-    def send_msg(self, chat_id: Any, text: str, reply_markup: Optional[Dict] = None, parse_mode: Optional[str] = "HTML") -> Dict[str, Any]:
+    def send_msg(self, chat_id: Any, text: str, reply_markup: Optional[Dict] = None, parse_mode: Optional[str] = "HTML", reply_to_message_id: Optional[int] = None) -> Dict[str, Any]:
         safe_text = self.to_safe_html(text) if parse_mode == "HTML" else text
         payload = {"chat_id": chat_id, "text": safe_text}
         if reply_markup:
             payload["reply_markup"] = reply_markup
         if parse_mode:
             payload["parse_mode"] = parse_mode
+        if reply_to_message_id:
+            payload["reply_to_message_id"] = reply_to_message_id
         res = self.tg_request("sendMessage", payload)
         if not res.get("ok"):
             payload.pop("parse_mode", None)
@@ -500,17 +503,17 @@ class StandaloneTelegramEducationalBot:
 
         active_system_prompt = system_prompt or SYSTEM_PROMPT_REPHRASE
         if target_univ:
-            active_system_prompt += f"\n\n🚨 قاعدة التخصيص الإلزامية: هذا المحتوى مخصص حصراً لقناة وطلاب: ({target_univ}). إذا كان المنشور لا يخص هذه الجامعة إطلاقاً ولا يفيد طلابها، رد بكلمة واحدة فقط: [IGNORED]"
+            active_system_prompt += f"\n\n🚨 المنشور موجه حصراً لقناة وطلاب: ({target_univ}). أعد صياغة المحتوى باحترافية أكاديمية ليفيد طلاب هذه القناة، مع إبراز أي مواعيد أو شروط تقديم دون ذكر أي مصادر سابقة."
 
         instruction_addon = f"تعليمات إضافية من المشرف: {custom_instruction}\n\n" if custom_instruction else ""
         payload = {
             "model": PRIMARY_MODEL,
             "messages": [
                 {"role": "system", "content": active_system_prompt},
-                {"role": "user", "content": f"{instruction_addon}صيغ هذا المحتوى الأكاديمي كمنشور رسمي أصلي لقناتك (بدون ذكر أي مصادر أو قنوات سابقة مع الحفاظ التام على روابط التقديم والبوابات):\n\n{clean_input}"}
+                {"role": "user", "content": f"{instruction_addon}صيغ هذا المحتوى الأكاديمي كمنشور رسمي أصلي لقناتك (بدون ذكر أي مصادر أو قنوات سابقة مع الحفاظ التام على روابط التقديم والبوابات والمواعيد):\n\n{clean_input}"}
             ],
             "temperature": 0.35,
-            "max_tokens": 850
+            "max_tokens": 1400
         }
         headers = {
             "Authorization": f"Bearer {AI_API_KEY}",
@@ -520,25 +523,22 @@ class StandaloneTelegramEducationalBot:
         endpoint = f"{AI_BASE_URL}/chat/completions"
 
         def _process_ai_response(text: str) -> Optional[str]:
-            if "[IGNORED]" in text or "IGNORED" in text:
-                return None
             cleaned_ai = self.clean_text_from_sources(text)
             for lk in ext_links:
                 if lk not in cleaned_ai:
-                    cleaned_ai += f"\n\n🔗 **رابط التقديم / البوابة الإلكترونية المباشرة:**\n{lk}"
+                    cleaned_ai += f"\n\n🔗 <b>رابط التقديم / البوابة الإلكترونية:</b>\n{lk}"
             return cleaned_ai
 
         # محاولة النموذج الأساسي
         try:
             req = urllib.request.Request(endpoint, data=json.dumps(payload).encode("utf-8"), headers=headers)
-            with urllib.request.urlopen(req, context=ssl_ctx, timeout=6) as resp:
+            with urllib.request.urlopen(req, context=ssl_ctx, timeout=30) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 if "choices" in data and len(data["choices"]) > 0:
                     ai_text = data["choices"][0]["message"]["content"].strip()
                     res = _process_ai_response(ai_text)
                     if res:
                         return res
-                    return None
         except Exception as e:
             logger.warning(f"ملاحظة في نموذج الذكاء الأساسي {PRIMARY_MODEL}: {e}")
 
@@ -546,38 +546,87 @@ class StandaloneTelegramEducationalBot:
         try:
             payload["model"] = FALLBACK_MODEL
             req = urllib.request.Request(endpoint, data=json.dumps(payload).encode("utf-8"), headers=headers)
-            with urllib.request.urlopen(req, context=ssl_ctx, timeout=5) as resp:
+            with urllib.request.urlopen(req, context=ssl_ctx, timeout=25) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 if "choices" in data and len(data["choices"]) > 0:
                     ai_text = data["choices"][0]["message"]["content"].strip()
                     res = _process_ai_response(ai_text)
                     if res:
                         return res
-                    return None
         except Exception as e:
             logger.warning(f"ملاحظة في النموذج البديل {FALLBACK_MODEL}: {e}")
 
-        # صياغة محلية ذكية خالية من التأخير ولا تُخرج أبداً نقاطاً فارغة
+        # صياغة محلية ذكية وأكاديمية خالية من التأخير والتلف
         clean_lines = [l.strip() for l in clean_input.split("\n") if l.strip() and not l.startswith("@") and "t.me/" not in l]
         text_lines = [l for l in clean_lines if not l.startswith("http://") and not l.startswith("https://") and l not in ["•", "-", "*", "📌", "🎓"]]
         if not text_lines:
             return None
 
         first_line = text_lines[0]
-        first_line = re.sub(r'^[•\-\*#📌📢✨🎓]\s*', '', first_line).strip()
-        title = first_line[:62] + "..." if len(first_line) > 65 else first_line
+        first_line = re.sub(r'^[•\-\*#📌📢✨🎓▫️]\s*', '', first_line).strip()
+        title = first_line[:75] + "..." if len(first_line) > 80 else first_line
 
-        body_lines = [l for l in text_lines[1:7] if len(l) > 3]
-        if not body_lines:
-            body_lines = [first_line]
-        bullets = "\n".join([f"• {l}" for l in body_lines])
+        body_lines = [l for l in text_lines[1:8] if len(l) > 3]
+        clean_bullets = []
+        for bl in body_lines:
+            bl_text = re.sub(r'^[•\-\*▫️]\s*', '', bl).strip()
+            clean_bullets.append(f"▫️ {bl_text}")
+        bullets = "\n".join(clean_bullets)
 
         links_block = ""
         if ext_links:
-            links_block = "\n\n🔗 **رابط التقديم / البوابة الإلكترونية المباشرة:**\n" + "\n".join(ext_links)
+            links_block = "\n\n🔗 <b>رابط التقديم / البوابة الإلكترونية:</b>\n" + "\n".join(ext_links)
 
         tag = f"#{target_univ.replace(' ', '_')}" if target_univ else "#أخبار_التعليم"
-        return f"📌 **{title}**\n\n{bullets}{links_block}\n\n💬 يسعدنا استقبال استفساراتكم ومشاركة المنشور مع زملائكم الطلاب!\n\n{tag} #أخبار_التعليم #شؤون_الطلاب #مواعيد"
+        return f"🎓 <b>{title}</b>\n\n📌 <b>أبرز التفاصيل والتعليمات الأكاديمية:</b>\n{bullets}{links_block}\n\n💬 يسعدنا الرد على استفساراتكم في التعليقات ومشاركة الخبر مع زملائكم الطلاب!\n\n{tag} #أخبار_التعليم #شؤون_الطلاب #مواعيد"
+
+    def call_ai_for_comment(self, comment_text: str, original_post: str = "", target_univ: Optional[str] = None) -> Optional[str]:
+        """توليد رد أكاديمي ذكي وفوري على تعليقات واستفسارات الطلاب تحت منشورات القناة"""
+        clean_comment = self.clean_text_from_sources(comment_text)
+        if not clean_comment or len(clean_comment) < 2:
+            return None
+
+        univ_str = f"لـ ({target_univ})" if target_univ else "الأكاديمية"
+        system_prompt = f"""أنت المستشار الأكاديمي والرد الرسمي لقناة الأخبار الجامعية {univ_str}.
+مهمتك الرد المباشر والوافي على استفسارات الطلاب في قسم التعليقات بمنتهى اللباقة والاحترافية الأكاديمية.
+قواعد الرد:
+1. قدّم إجابة شافية، واضحة ومباشرة مبنية على تفاصيل المنشور الأصلي والأنظمة الجامعية المتبعة.
+2. إذا كان السؤال عن موعد أو شروط مذكورة في المنشور، لخصها للطالب بوضوح.
+3. إذا كان هناك رابط رسمي للتقديم أو الاستعلام، أرشد الطالب إليه.
+4. اكتب بلغة عربية فصيحة، راقية، ومهذبة بدون أي إطالة مصطنعة أو حشو.
+5. لا تذكر أنك ذكاء اصطناعي أو بوت، تحدث بصفتك الفريق الأكاديمي الرسمي للقناة."""
+
+        user_content = f"المنشور الأصلي في القناة:\n{original_post[:1500]}\n\nسؤال / تعليق الطالب:\n{clean_comment}\n\nالرد الأكاديمي المباشر للطالب:"
+        payload = {
+            "model": PRIMARY_MODEL,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_content}
+            ],
+            "temperature": 0.3,
+            "max_tokens": 600
+        }
+        headers = {
+            "Authorization": f"Bearer {AI_API_KEY}",
+            "Content-Type": "application/json",
+            "User-Agent": "TelegramEducationalBot/3.0"
+        }
+        endpoint = f"{AI_BASE_URL}/chat/completions"
+
+        for model_name in [PRIMARY_MODEL, FALLBACK_MODEL]:
+            try:
+                payload["model"] = model_name
+                req = urllib.request.Request(endpoint, data=json.dumps(payload).encode("utf-8"), headers=headers)
+                with urllib.request.urlopen(req, context=ssl_ctx, timeout=25) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    if "choices" in data and len(data["choices"]) > 0:
+                        ans = data["choices"][0]["message"]["content"].strip()
+                        if ans:
+                            return ans
+            except Exception as e:
+                logger.debug(f"call_ai_for_comment ({model_name}): {e}")
+
+        return f"أهلاً بك عزيزي الطالب 🌸\nبخصوص استفسارك، نرجو مراجعة التفاصيل والروابط الموضحة في المنشور أعلاه أو زيارة البوابة الرسمية للجامعة للاطلاع على كافة الشروط والمواعيد المعتمدة."
 
     # ----------------- المعالج غير المتزامن (Worker Thread) -----------------
     def worker_loop(self):
@@ -776,16 +825,16 @@ class StandaloneTelegramEducationalBot:
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
                 "Accept-Language": "ar,en-US;q=0.9,en;q=0.8"
             })
-            with urllib.request.urlopen(req, context=ssl_ctx, timeout=12) as resp:
-                html = resp.read().decode("utf-8")
-                blocks = html.split('class="tgme_widget_message_wrap')
+            with urllib.request.urlopen(req, context=ssl_ctx, timeout=15) as resp:
+                html = resp.read().decode("utf-8", errors="ignore")
+                blocks = re.split(r'<div[^>]*class=[\'"][^\'"]*tgme_widget_message_wrap', html)
                 if len(blocks) <= 1:
                     logger.warning(f"⚠️ تعذر سحب محتوى القناة {channel_name} عبر الويب (قد تكون القناة خاصة أو مقيدة).")
                     return
 
                 posts_extracted = []
                 for b in blocks[1:]:
-                    post_id_m = re.search(r'data-post=\"([^\"]+)\"', b)
+                    post_id_m = re.search(r'data-post=[\'"]([^\'"]+)[\'"]', b)
                     if not post_id_m:
                         continue
                     pid = post_id_m.group(1)
@@ -793,31 +842,30 @@ class StandaloneTelegramEducationalBot:
                     num_id = int(raw_num_match.group(1)) if raw_num_match else 0
 
                     photo_url = None
-                    photo_wrap_m = re.search(r'class="[^"]*tgme_widget_message_photo_wrap[^"]*"[^>]*style="[^"]*background-image:\s*url\(\'([^\']+)\'\)', b)
-                    if photo_wrap_m:
-                        photo_url = photo_wrap_m.group(1)
-                    if not photo_url:
-                        photo_m = re.search(r'background-image:\s*url\(\'([^\']+)\'\)', b)
-                        if photo_m:
-                            photo_url = photo_m.group(1)
+                    # استخراج روابط خلفيات الصور المباشرة بصيغها المختلفة
+                    bg_m = re.search(r'background-image:\s*url\([\'"]?([^\'")\s]+)[\'"]?\)', b)
+                    if bg_m:
+                        photo_url = bg_m.group(1).strip()
                     if not photo_url:
                         img_m = re.search(r'<img[^>]+src=[\'"]([^\'"]+)[\'"]', b)
                         if img_m:
-                            photo_url = img_m.group(1)
+                            photo_url = img_m.group(1).strip()
 
                     if photo_url:
-                        photo_url = photo_url.strip()
-                        if "emoji" in photo_url or "telegram.org/img" in photo_url or "website_icon" in photo_url:
+                        if photo_url.startswith("//"):
+                            photo_url = "https:" + photo_url
+                        if "emoji" in photo_url or "telegram.org/img" in photo_url or "website_icon" in photo_url or "favicon" in photo_url:
                             photo_url = None
 
-                    text_m = re.search(r'class=\"tgme_widget_message_text[^\"]*js-message_text\"[^>]*>(.*?)</div>', b, re.DOTALL)
+                    text_m = re.search(r'class=[\'"][^\'"]*tgme_widget_message_text[^\'"]*[\'"][^>]*>(.*?)</div>', b, re.DOTALL)
                     text_content = ""
                     if text_m:
                         raw_h = text_m.group(1)
                         clean_h = re.sub(r'<br\s*/?>', '\n', raw_h)
                         text_content = re.sub(r'<[^>]+>', '', clean_h).strip()
 
-                    posts_extracted.append({"id": pid, "num_id": num_id, "photo": photo_url, "text": text_content})
+                    if text_content or photo_url:
+                        posts_extracted.append({"id": pid, "num_id": num_id, "photo": photo_url, "text": text_content})
 
                 if not posts_extracted:
                     return
@@ -837,26 +885,26 @@ class StandaloneTelegramEducationalBot:
                     latest = posts_extracted[-1]
                     db.update_source_last_id(src.get("target"), latest["id"])
                     logger.info(f"📌 تمت تهيئة المصدر {src.get('target')} عند المنشور #{latest['id']}")
-                    if is_manual and latest.get("text"):
-                        p_hash = hashlib.md5(latest["text"][:80].encode("utf-8")).hexdigest()
+                    if is_manual and (latest.get("text") or latest.get("photo")):
+                        p_hash = hashlib.md5((latest.get("text", "")[:80]).encode("utf-8")).hexdigest()
                         if not db.is_post_seen(latest["id"], p_hash):
-                            matched_univ = db.find_university_for_post(src.get("target"), latest["text"])
-                            if matched_univ:
-                                db.mark_post_seen(latest["id"], p_hash, src.get("target"))
-                                logger.info(f"⚡️ [فحص يدوي] جاري نشر أحدث منشور متاح من {src.get('target')} للجامعة {matched_univ['name']}")
-                                post_queue.put({
-                                    "type": "crawled_post",
-                                    "text": latest["text"],
-                                    "photo": latest.get("photo"),
-                                    "targets": [matched_univ["target_channel"]],
-                                    "target_univ": matched_univ["name"],
-                                    "user_id": ADMIN_ID
-                                })
-                            else:
-                                logger.info(f"🛡️ [عزل القنوات] أحدث منشور من {src.get('target')} لا يطابق أي جامعة مستهدفة وتم استبعاده.")
+                            matched_univ = db.find_university_for_post(src.get("target"), latest.get("text", ""))
+                            if not matched_univ:
+                                def_targets = db.get_target_channels()
+                                matched_univ = {"name": "الأخبار الأكاديمية", "target_channel": def_targets[0] if def_targets else "@jhdhhdcj"}
+                            db.mark_post_seen(latest["id"], p_hash, src.get("target"))
+                            logger.info(f"⚡️ [فحص يدوي] جاري نشر أحدث منشور متاح من {src.get('target')} للجامعة {matched_univ['name']} مع الصورة: {'نعم' if latest.get('photo') else 'لا'}")
+                            post_queue.put({
+                                "type": "crawled_post",
+                                "text": latest.get("text", ""),
+                                "photo": latest.get("photo"),
+                                "targets": [matched_univ["target_channel"]],
+                                "target_univ": matched_univ["name"],
+                                "user_id": ADMIN_ID
+                            })
                     return
 
-                # حلقة فحص ونشر كافة المنشورات الجديدة المتراكمة مع العزل التام
+                # حلقة فحص ونشر كافة المنشورات الجديدة المتراكمة
                 new_posts = [p for p in posts_extracted if p["num_id"] > last_known_num]
                 for p in new_posts:
                     p_text = p.get("text", "")
@@ -865,9 +913,8 @@ class StandaloneTelegramEducationalBot:
 
                     matched_univ = db.find_university_for_post(src.get("target"), p_text)
                     if not matched_univ:
-                        logger.info(f"🛡️ [عزل القنوات] تجاوز منشور #{p_id} من {src.get('target')} لعدم ارتباطه بأي جامعة معتمدة.")
-                        db.update_source_last_id(src.get("target"), p_id)
-                        continue
+                        def_targets = db.get_target_channels()
+                        matched_univ = {"name": "الأخبار الأكاديمية", "target_channel": def_targets[0] if def_targets else "@jhdhhdcj"}
 
                     p_hash = hashlib.md5(p_text[:80].encode("utf-8")).hexdigest()
                     if db.is_post_seen(p_id, p_hash):
@@ -876,7 +923,7 @@ class StandaloneTelegramEducationalBot:
                     db.mark_post_seen(p_id, p_hash, src.get("target"))
                     db.update_source_last_id(src.get("target"), p_id)
 
-                    logger.info(f"⚡️ منشور جديد تم التقاطه من {src.get('target')}: {p_id} موجه حصراً إلى {matched_univ['target_channel']} ({matched_univ['name']})")
+                    logger.info(f"⚡️ منشور جديد تم التقاطه من {src.get('target')}: {p_id} موجه إلى {matched_univ['target_channel']} ({matched_univ['name']}) مع صورة: {'نعم' if p_photo else 'لا'}")
                     post_queue.put({
                         "type": "crawled_post",
                         "text": p_text,
@@ -922,16 +969,68 @@ class StandaloneTelegramEducationalBot:
         return None
 
     def check_twitter_feed(self, src: Dict[str, Any], is_manual: bool = False):
-        """يسحب التغريدات والمنشورات من تويتر/X وشبكات التواصل المعتمدة عبر الفيد الإخباري الذكي مع استخراج الصور الحقيقية"""
-        raw_target = src.get("target", "").replace("@", "").replace("https://x.com/", "").replace("https://twitter.com/", "").strip()
+        """يسحب التغريدات والأخبار من حسابات تويتر/X والمصادر التابعة مع استخراج الصور الحقيقية بدقة"""
+        raw_target = src.get("target", "").replace("https://x.com/", "").replace("https://twitter.com/", "").strip()
         if not raw_target:
             return
-        handle = raw_target.split("/")[0].strip()
+        handle = raw_target.lstrip("@").split("/")[0].strip()
 
-        q = urllib.parse.quote(f"from:{handle} OR site:x.com/{handle} OR site:twitter.com/{handle}")
-        url = f"https://news.google.com/rss/search?q={q}&hl=ar&gl=SA&ceid=SA:ar"
+        matched_univ = db.find_university_for_post(handle, "") or db.find_university_for_post(f"@{handle}", "")
+        univ_name = matched_univ["name"] if matched_univ else handle
+        target_ch = matched_univ["target_channel"] if matched_univ else (db.get_target_channels()[0] if db.get_target_channels() else "@jhdhhdcj")
 
+        # الاستراتيجية 1: فحص وجود قناة تيليجرام مطابقة للمعرف (حيث تنشر معظم الجامعات تغريداتها مباشرة مع الصور)
         try:
+            tg_url = f"https://t.me/s/{handle}"
+            req = urllib.request.Request(tg_url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
+            with urllib.request.urlopen(req, context=ssl_ctx, timeout=8) as r:
+                html = r.read().decode("utf-8", errors="ignore")
+                blocks = re.split(r'<div[^>]*class=[\'"][^\'"]*tgme_widget_message_wrap', html)
+                if len(blocks) > 1:
+                    last_block = blocks[-1]
+                    post_id_m = re.search(r'data-post=[\'"]([^\'"]+)[\'"]', last_block)
+                    if post_id_m:
+                        pid = post_id_m.group(1)
+                        last_known = str(src.get("last_post_id") or "")
+                        if pid != last_known:
+                            text_m = re.search(r'class=[\'"][^\'"]*tgme_widget_message_text[^\'"]*[\'"][^>]*>(.*?)</div>', last_block, re.DOTALL)
+                            clean_text = ""
+                            if text_m:
+                                clean_text = re.sub(r'<[^>]+>', '', re.sub(r'<br\s*/?>', '\n', text_m.group(1))).strip()
+
+                            photo_url = None
+                            bg_m = re.search(r'background-image:\s*url\([\'"]?([^\'")\s]+)[\'"]?\)', last_block)
+                            if bg_m:
+                                photo_url = bg_m.group(1).strip()
+                            if not photo_url:
+                                img_m = re.search(r'<img[^>]+src=[\'"]([^\'"]+)[\'"]', last_block)
+                                if img_m:
+                                    photo_url = img_m.group(1).strip()
+
+                            if photo_url and photo_url.startswith("//"):
+                                photo_url = "https:" + photo_url
+
+                            p_hash = hashlib.md5((clean_text[:80]).encode("utf-8")).hexdigest()
+                            if (clean_text or photo_url) and not db.is_post_seen(pid, p_hash):
+                                db.update_source_last_id(src.get("target"), pid)
+                                db.mark_post_seen(pid, p_hash, src.get("target"))
+                                logger.info(f"⚡️ [Twitter/X Mirror] التقاط منشور وتغريدات من @{handle} موجه لـ {univ_name}")
+                                post_queue.put({
+                                    "type": "twitter_post",
+                                    "text": clean_text,
+                                    "photo": photo_url,
+                                    "targets": [target_ch],
+                                    "target_univ": univ_name,
+                                    "user_id": ADMIN_ID
+                                })
+                                return
+        except Exception:
+            pass
+
+        # الاستراتيجية 2: استعلام الأخبار الرسمية وإعلانات الحساب عبر محرك الأخبار الذكي
+        try:
+            q = urllib.parse.quote(f'"{handle}" OR "{univ_name}" ("تويتر" OR "أعلنت" OR "مواعيد" OR "قبول" OR "تسجيل" OR "حساب")')
+            url = f"https://news.google.com/rss/search?q={q}&hl=ar&gl=SA&ceid=SA:ar"
             req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
             with urllib.request.urlopen(req, context=ssl_ctx, timeout=12) as resp:
                 root = ET.fromstring(resp.read())
@@ -939,63 +1038,39 @@ class StandaloneTelegramEducationalBot:
                 if not items:
                     return
 
-                last_known = str(src.get("last_post_id") or "")
-                new_items = []
-                for it in items[:15]:
+                for it in items[:6]:
                     t = it.findtext("title") or ""
                     l = it.findtext("link") or ""
                     d = it.findtext("description") or ""
 
-                    clean_title = re.sub(r'\s*-\s*(X|Twitter|تويتر)\s*$', '', t).strip()
+                    clean_title = re.sub(r'\s*-\s*[^-]+$', '', t).strip()
                     clean_desc = re.sub(r'<[^>]+>', '', d).strip()
                     full_text = f"{clean_title}\n{clean_desc}".strip()
                     photo_url = self.extract_image_from_xml_item(it, d)
 
-                    pid = l or hashlib.md5(full_text.encode("utf-8")).hexdigest()
-                    if pid == last_known:
-                        break
-                    new_items.append((pid, full_text, photo_url))
+                    # منع التكرار الصارم
+                    norm_t = re.sub(r'[^\w\s]', '', clean_title)
+                    norm_t = re.sub(r'\s+', ' ', norm_t).strip().lower()
+                    story_hash = f"tw_{hashlib.sha256(norm_t.encode('utf-8')).hexdigest()[:24]}"
 
-                if not new_items:
-                    return
-
-                if not last_known:
-                    latest_pid, latest_txt, latest_photo = new_items[0]
-                    db.update_source_last_id(src.get("target"), latest_pid)
-                    if is_manual:
-                        matched_univ = db.find_university_for_post(handle, latest_txt) or db.find_university_for_post(f"@{handle}", latest_txt)
-                        if matched_univ:
-                            p_hash = hashlib.md5(latest_txt[:80].encode("utf-8")).hexdigest()
-                            if not db.is_post_seen(latest_pid, p_hash):
-                                db.mark_post_seen(latest_pid, p_hash, src.get("target"))
-                                post_queue.put({
-                                    "type": "twitter_post",
-                                    "text": latest_txt,
-                                    "photo": latest_photo,
-                                    "targets": [matched_univ["target_channel"]],
-                                    "target_univ": matched_univ["name"],
-                                    "user_id": ADMIN_ID
-                                })
-                    return
-
-                db.update_source_last_id(src.get("target"), new_items[0][0])
-                for pid, full_txt, p_photo in reversed(new_items):
-                    matched_univ = db.find_university_for_post(handle, full_txt) or db.find_university_for_post(f"@{handle}", full_txt)
-                    if not matched_univ:
-                        logger.info(f"🛡️ [عزل القنوات] تغريدة من @{handle} لا تخص أي جامعة مستهدفة وتم تجاوزها.")
+                    if db.is_post_seen(story_hash, story_hash):
                         continue
-                    p_hash = hashlib.md5(full_txt[:80].encode("utf-8")).hexdigest()
-                    if not db.is_post_seen(pid, p_hash):
-                        db.mark_post_seen(pid, p_hash, src.get("target"))
-                        logger.info(f"⚡️ [Twitter/X] تغريدة جديدة تم التقاطها من @{handle} للجامعة: {matched_univ['name']} (صورة: {'نعم' if p_photo else 'لا'})")
-                        post_queue.put({
-                            "type": "twitter_post",
-                            "text": full_txt,
-                            "photo": p_photo,
-                            "targets": [matched_univ["target_channel"]],
-                            "target_univ": matched_univ["name"],
-                            "user_id": ADMIN_ID
-                        })
+
+                    db.mark_post_seen(story_hash, story_hash, src.get("target"))
+                    db.update_source_last_id(src.get("target"), story_hash)
+
+                    logger.info(f"⚡️ [Twitter/X News] خبر جديد لـ @{handle} ({univ_name}) موجه إلى {target_ch} (صورة: {'نعم' if photo_url else 'لا'})")
+                    post_queue.put({
+                        "type": "twitter_post",
+                        "text": f"{full_text}\n\n{l}",
+                        "photo": photo_url,
+                        "targets": [target_ch],
+                        "target_univ": univ_name,
+                        "user_id": ADMIN_ID
+                    })
+
+                    if not is_manual:
+                        break
         except Exception as e:
             logger.debug(f"خطأ في سحب تويتر/X للحساب {handle}: {e}")
 
@@ -1101,6 +1176,7 @@ class StandaloneTelegramEducationalBot:
                         clean_title = re.sub(r'\s*-\s*[^-]+$', '', title).strip()
                         clean_desc = re.sub(r'<[^>]+>', '', desc).strip()
                         full_text = f"{clean_title}\n{clean_desc}".strip()
+                        photo_url = self.extract_image_from_xml_item(it, desc)
 
                         # التحقق من الارتباط بالجامعة
                         is_relevant = (
@@ -1110,19 +1186,21 @@ class StandaloneTelegramEducationalBot:
                         if not is_relevant:
                             continue
 
-                        pid = link or hashlib.md5(full_text.encode("utf-8")).hexdigest()
-                        p_hash = hashlib.md5(full_text[:80].encode("utf-8")).hexdigest()
+                        # منع التكرار الصارم عبر تجزئة الكلمات الجوهرية للعنوان
+                        norm_clean = re.sub(r'[^\w\s]', '', clean_title)
+                        norm_clean = re.sub(r'\s+', ' ', norm_clean).strip().lower()
+                        story_hash = f"gnews_{hashlib.sha256(norm_clean.encode('utf-8')).hexdigest()[:24]}"
 
-                        if db.is_post_seen(pid, p_hash):
+                        if db.is_post_seen(story_hash, story_hash):
                             continue
 
-                        db.mark_post_seen(pid, p_hash, f"gnews_{univ['id']}")
-                        logger.info(f"⚡️ [Google News] خبر جديد لـ {univ['name']} موجه إلى {target_ch}")
+                        db.mark_post_seen(story_hash, story_hash, f"gnews_{univ['id']}")
+                        logger.info(f"⚡️ [Google News] خبر جديد لـ {univ['name']} موجه إلى {target_ch} (صورة: {'نعم' if photo_url else 'لا'})")
 
                         post_queue.put({
                             "type": "google_news_post",
                             "text": f"{full_text}\n\n{link}",
-                            "photo": None,
+                            "photo": photo_url,
                             "targets": [target_ch],
                             "target_univ": univ["name"],
                             "user_id": ADMIN_ID
@@ -1277,11 +1355,36 @@ class StandaloneTelegramEducationalBot:
             except Exception as e:
                 logger.error(f"خطأ في نشر المنشورات المجدولة: {e}")
 
+    def reply_to_channel_comment(self, chat_id: int, message_id: int, student_question: str, orig_post_text: str):
+        """يرد على استفسارات الطلاب في تعليقات القناة بذكاء ولغة أكاديمية واضحة ومباشرة"""
+        try:
+            ai_reply = self.call_ai_for_comment(student_question, orig_post_text)
+            if ai_reply:
+                self.send_msg(chat_id, ai_reply, reply_to_message_id=message_id)
+        except Exception as e:
+            logger.debug(f"خطأ في الرد على تعليق القناة: {e}")
+
     # ----------------- معالجة رسائل وأوامر المستخدمين -----------------
     def handle_message(self, msg: Dict[str, Any]):
         chat_id = msg["chat"]["id"]
         from_user = msg.get("from", {})
         text = msg.get("text", "") or msg.get("caption", "")
+
+        # فحص التعليقات والاستفسارات في القناة أو مجموعة المناقشة المرتبطة بها (Channel Comments)
+        chat_type = msg.get("chat", {}).get("type", "private")
+        reply_to = msg.get("reply_to_message")
+        if reply_to and chat_type in ["group", "supergroup"]:
+            # إذا كانت الرسالة من طالب/مستخدم وليست من بوت أو القناة ذاتها
+            if not from_user.get("is_bot") and not msg.get("sender_chat"):
+                clean_comment = text.strip()
+                if clean_comment and len(clean_comment) >= 2:
+                    orig_post_text = reply_to.get("text", "") or reply_to.get("caption", "")
+                    threading.Thread(
+                        target=self.reply_to_channel_comment,
+                        args=(chat_id, msg["message_id"], clean_comment, orig_post_text),
+                        daemon=True
+                    ).start()
+                    return
 
         authorized, user_data = self.check_user_access(from_user)
         if not authorized:
@@ -2109,23 +2212,26 @@ class StandaloneTelegramEducationalBot:
                         for it in items[:6]:
                             title = it.findtext("title") or ""
                             link = it.findtext("link") or ""
-                            desc = it.findtext("description") or ""
                             clean_desc = re.sub(r'<[^>]+>', '', desc).strip()
-                            full_text = f"{title}\n{clean_desc}".strip()
+                            clean_title = re.sub(r'\s*-\s*[^-]+$', '', title).strip()
+                            full_text = f"{clean_title}\n{clean_desc}".strip()
+                            photo_url = self.extract_image_from_xml_item(it, desc)
 
-                            pid = link or hashlib.md5(full_text.encode("utf-8")).hexdigest()
-                            p_hash = hashlib.md5(full_text[:80].encode("utf-8")).hexdigest()
+                            # منع التكرار الصارم
+                            norm_clean = re.sub(r'[^\w\s]', '', clean_title)
+                            norm_clean = re.sub(r'\s+', ' ', norm_clean).strip().lower()
+                            story_hash = f"gnews_{hashlib.sha256(norm_clean.encode('utf-8')).hexdigest()[:24]}"
 
-                            if db.is_post_seen(pid, p_hash):
+                            if db.is_post_seen(story_hash, story_hash):
                                 continue
 
-                            db.mark_post_seen(pid, p_hash, f"gnews_{target_univ['id']}")
-                            logger.info(f"⚡️ [Google News الحصري] خبر جديد لـ {target_univ['name']} موجه إلى {target_ch}")
+                            db.mark_post_seen(story_hash, story_hash, f"gnews_{target_univ['id']}")
+                            logger.info(f"⚡️ [Google News الحصري] خبر جديد لـ {target_univ['name']} موجه إلى {target_ch} (صورة: {'نعم' if photo_url else 'لا'})")
 
                             post_queue.put({
                                 "type": "google_news_post",
                                 "text": f"{full_text}\n\n{link}",
-                                "photo": None,
+                                "photo": photo_url,
                                 "targets": [target_ch],
                                 "target_univ": target_univ["name"],
                                 "user_id": ADMIN_ID

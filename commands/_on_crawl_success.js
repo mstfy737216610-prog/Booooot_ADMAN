@@ -162,40 +162,9 @@ if (!target_univ && univ_projects.length > 0) {
 }
 if (!target_univ) return;
 
-// 5. 🚨 فلترة المحتوى الصارمة (Strict University Relevance Check):
-// إذا كان المنشور من مصدر عام أو وزارة التعليم، يجب التحقق من أنه يخص الجامعة أو قرارات القبول العامة
-var lower_text = extracted_text.toLowerCase();
-var is_official_univ_source = false;
-var u_tg = target_univ.telegram_sources || [];
-for (var us = 0; us < u_tg.length; us++) {
-  if (u_tg[us].replace(/^@/, "").toLowerCase() === channel_name) {
-    is_official_univ_source = true;
-    break;
-  }
-}
-
-if (!is_official_univ_source) {
-  // إذا لم يكن من قناة الجامعة الرسمية المباشرة (بل من تويتر أو وزارة عامة):
-  // نتأكد هل يذكر الجامعة أو كلياتها أو التقديم العام
-  var matched_univ = false;
-  if (lower_text.indexOf(target_univ.name.toLowerCase()) !== -1) {
-    matched_univ = true;
-  } else {
-    for (var k = 0; k < (target_univ.keywords || []).length; k++) {
-      var kw = target_univ.keywords[k].toLowerCase();
-      if (kw.length >= 4 && lower_text.indexOf(kw) !== -1) {
-        matched_univ = true;
-        break;
-      }
-    }
-  }
-
-  // إذا كان المنشور غير متعلق بالجامعة (مثل ملتقى جمعيات أو يوم المعلم) يتم إهماله نهائياً!
-  if (!matched_univ) {
-    // نتجاهله صراحة لمنع الخلط
-    return;
-  }
-}
+// 5. التوجيه الأكاديمي المباشر:
+// كافة منشورات المصدر المعتمد (سواء تواريخ، مواعيد اختبارات، أو إعلانات طلابية) تُنشر مباشرة للجامعة المحددة
+// ولا يشترط أبداً وجود اسم الجامعة في نص المنشور لضمان وصول المواعيد والجداول للطلاب كاملة
 
 // 6. فحص إعلانات المنافسين واستبدالها (معطل افتراضياً لضمان نشر كافة أخبار المصدر مع صورها)
 var ad_replacement_enabled = Bot.getProperty("ad_replacement_enabled", false);
