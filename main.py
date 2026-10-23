@@ -25,6 +25,7 @@ import hashlib
 import logging
 import threading
 import asyncio
+import uuid
 import urllib.request
 import urllib.parse
 import urllib.error
@@ -143,8 +144,8 @@ SYSTEM_PROMPT_REPHRASE = """# الدور: الناشر والكاتب الرسم
 [2 إلى 4 هاشتاجات ملائمة: #جامعة #قبول #تسجيل #امتحانات]"""
 
 AD_KEYWORDS = [
-    "إعلان مدفوع", "ترويج لخدمات طلابية", "حل واجبات", "بحوث تخرج",
-    "خدمات طلابية", "مشاريع تخرج", "كتابة أبحاث", "إعلان ممول", "برعاية", "للتواصل تليجرام"
+    "حل واجبات بمقابل", "حل واجبات واختبارات", "حل كويزات", "حل فاينل", "حل اسايمنت",
+    "كتابة بحوث بمقابل", "عمل بحوث ورسائل بمقابل", "إعلان مدفوع للخدمات", "إعلان ممول غير رسمي"
 ]
 
 
@@ -245,25 +246,58 @@ class StandaloneTelegramEducationalBot:
         safe_caption = self.to_safe_html(caption) if parse_mode == "HTML" else caption
         lead_caption = safe_caption[:1020] if len(safe_caption) > 1024 else safe_caption
 
-        # 0. إذا كانت الصورة عبارة عن file_id، نحصل على مسار التحميل المباشر لضمان رفع الـ bytes بنجاح
-        if photo and not (photo.startswith("http://") or photo.startswith("https://")):
+        # 1. إذا كانت الصورة ملفاً محلياً محفوظاً على القرص (مثل تحميلات Telethon أو السكرابر)
+        if photo and os.path.isfile(photo):
             try:
-                gf = self.tg_request("getFile", {"file_id": photo})
-                if gf.get("ok"):
-                    f_path = gf["result"].get("file_path")
-                    if f_path:
-                        photo = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{f_path}"
-            except Exception as e:
-                logger.warning(f"تعذر استخراج مسار الصورة من getFile: {e}")
+                with open(photo, "rb") as f:
+                    img_bytes = f.read()
+                if img_bytes and len(img_bytes) > 50:
+                    boundary = uuid.uuid4().hex
+                    body = bytearray()
+                    def add_field(name: str, val: str):
+                        body.extend(f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n{val}\r\n'.encode('utf-8'))
 
-        # 1. إذا كانت الصورة رابط إنترنت (URL أو مسار Telegram)، نقوم بتحميلها كـ bytes ورفعها عبر multipart
+                    add_field("chat_id", str(chat_id))
+                    if lead_caption:
+                        add_field("caption", lead_caption)
+                        if parse_mode:
+                            add_field("parse_mode", parse_mode)
+                    if reply_markup:
+                        add_field("reply_markup", json.dumps(reply_markup))
+
+                    fname = os.path.basename(photo) or "image.jpg"
+                    body.extend(f'--{boundary}\r\nContent-Disposition: form-data; name="photo"; filename="{fname}"\r\nContent-Type: image/jpeg\r\n\r\n'.encode('utf-8'))
+                    body.extend(img_bytes)
+                    body.extend(f'\r\n--{boundary}--\r\n'.encode('utf-8'))
+
+                    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
+                    upload_req = urllib.request.Request(
+                        url,
+                        data=body,
+                        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"}
+                    )
+                    with urllib.request.urlopen(upload_req, context=ssl_ctx, timeout=30) as u_resp:
+                        res = json.loads(u_resp.read().decode("utf-8"))
+                        if res.get("ok"):
+                            if len(safe_caption) > 1024:
+                                self.send_msg(chat_id, safe_caption[1020:], reply_markup=reply_markup, parse_mode=parse_mode)
+                            return res
+            except Exception as e:
+                logger.warning(f"تعذر رفع ملف الصورة المحلي {photo}: {e}")
+
+        # 2. إذا كانت الصورة رابط إنترنت (URL ويب أو تيليجرام CDN أو تويتر)
         if photo and (photo.startswith("http://") or photo.startswith("https://")):
             try:
-                import uuid
-                img_req = urllib.request.Request(photo, headers={
+                req_headers = {
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
                     "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
-                })
+                }
+                if "telegram" in photo or "telesco.pe" in photo or "t.me" in photo:
+                    req_headers["Referer"] = "https://t.me/"
+                elif "twimg" in photo or "x.com" in photo or "twitter" in photo:
+                    req_headers["Referer"] = "https://x.com/"
+
+                img_req = urllib.request.Request(photo, headers=req_headers)
                 with urllib.request.urlopen(img_req, context=ssl_ctx, timeout=15) as img_resp:
                     img_bytes = img_resp.read()
 
@@ -300,35 +334,36 @@ class StandaloneTelegramEducationalBot:
             except Exception as e:
                 logger.warning(f"تعذر الرفع المباشر لـ bytes الصورة ({photo[:40]}...): {e}")
 
-        # 2. إذا كانت الصورة عبارة عن file_id أو فشل الرفع الثنائي، نرسلها بالطريقة القياسية
-        payload = {"chat_id": chat_id, "photo": photo}
-        if lead_caption:
-            payload["caption"] = lead_caption
-            if parse_mode:
-                payload["parse_mode"] = parse_mode
-        if reply_markup:
-            payload["reply_markup"] = reply_markup
+        # 3. إذا كانت الصورة عبارة عن file_id أصلي في تيليجرام
+        if photo and not os.path.isfile(photo):
+            payload = {"chat_id": chat_id, "photo": photo}
+            if lead_caption:
+                payload["caption"] = lead_caption
+                if parse_mode:
+                    payload["parse_mode"] = parse_mode
+            if reply_markup:
+                payload["reply_markup"] = reply_markup
 
-        res = self.tg_request("sendPhoto", payload)
-        if res.get("ok"):
-            if len(safe_caption) > 1024:
-                self.send_msg(chat_id, safe_caption[1020:], reply_markup=reply_markup, parse_mode=parse_mode)
-            return res
-
-        # محاولة ثانية بدون parse_mode
-        if parse_mode and lead_caption:
-            payload.pop("parse_mode", None)
-            payload["caption"] = caption[:1020]
             res = self.tg_request("sendPhoto", payload)
             if res.get("ok"):
+                if len(safe_caption) > 1024:
+                    self.send_msg(chat_id, safe_caption[1020:], reply_markup=reply_markup, parse_mode=parse_mode)
                 return res
 
-        # محاولة ثالثة بإرسال الصورة وحدها
-        res_photo = self.tg_request("sendPhoto", {"chat_id": chat_id, "photo": photo})
-        if res_photo.get("ok"):
-            if caption:
-                self.send_msg(chat_id, caption, reply_markup=reply_markup, parse_mode=parse_mode)
-            return res_photo
+            # محاولة ثانية بدون parse_mode
+            if parse_mode and lead_caption:
+                payload.pop("parse_mode", None)
+                payload["caption"] = caption[:1020]
+                res = self.tg_request("sendPhoto", payload)
+                if res.get("ok"):
+                    return res
+
+            # محاولة ثالثة بإرسال الصورة وحدها
+            res_photo = self.tg_request("sendPhoto", {"chat_id": chat_id, "photo": photo})
+            if res_photo.get("ok"):
+                if caption:
+                    self.send_msg(chat_id, caption, reply_markup=reply_markup, parse_mode=parse_mode)
+                return res_photo
 
         # حماية قاطعة: إذا تعذر إرسال الصورة تماماً، ننشر النص كاملاً كرسالة حتى لا يضيع الخبر
         if caption:
@@ -336,7 +371,7 @@ class StandaloneTelegramEducationalBot:
             if res_msg.get("ok"):
                 res_msg["note"] = "fallback_text_after_photo_error"
                 return res_msg
-        return res_photo
+        return {"ok": False, "description": "Failed to send photo and text"}
 
     def answer_callback(self, cb_id: str, text: Optional[str] = None, alert: bool = False):
         payload = {"callback_query_id": cb_id}
@@ -560,17 +595,21 @@ class StandaloneTelegramEducationalBot:
                 target_univ_name = task.get("target_univ")
                 user_id = task.get("user_id")
 
-                # 1. كشف إعلانات المنافسين واستبدالها
+                # 1. كشف إعلانات المنافسين واستبدالها (فقط إذا كانت الميزة مفعلة صراحة من المشرف ومع التأكد الصارم)
                 custom_ad = db.get_setting("custom_ad", "")
-                is_ad = any(kw in raw_text for kw in AD_KEYWORDS)
+                ad_replacement_enabled = (db.get_setting("ad_replacement_enabled", "0") == "1")
+                is_ad = False
 
-                if is_ad and custom_ad:
+                if ad_replacement_enabled and custom_ad and raw_text:
+                    is_ad = any(kw in raw_text for kw in AD_KEYWORDS)
+
+                if is_ad:
                     db.increment_setting("ad_replaced_count", 1)
                     for ch in target_channels:
                         res = self.send_photo(ch, photo, custom_ad) if photo else self.send_msg(ch, custom_ad)
                         db.record_channel_publish_result(ch, res.get("ok", False), res.get("description", ""))
                     if user_id:
-                        self.send_msg(user_id, f"🎯 **تم رصد إعلان منافس واستبداله بإعلان خدماتك في ({len(target_channels)}) قنوات!**")
+                        self.send_msg(user_id, f"🎯 **تم رصد إعلان تجاري منافس واستبداله بإعلان خدماتك في ({len(target_channels)}) قنوات!**")
                     post_queue.task_done()
                     continue
 
@@ -850,8 +889,40 @@ class StandaloneTelegramEducationalBot:
         except Exception as e:
             logger.debug(f"فحص القناة عبر Scraper {channel_name}: {e}")
 
+    def extract_image_from_xml_item(self, it: ET.Element, desc: str = "") -> Optional[str]:
+        """استخراج الصورة الحقيقية من عناصر XML وRSS بدقة"""
+        try:
+            # 1. فحص وسوم enclosure
+            enclosure = it.find("enclosure")
+            if enclosure is not None and enclosure.get("url"):
+                url = enclosure.get("url", "").strip()
+                enc_type = (enclosure.get("type") or "").lower()
+                if "image" in enc_type or any(url.lower().endswith(ext) for ext in [".jpg", ".jpeg", ".png", ".webp", ".avif"]):
+                    return url
+
+            # 2. فحص وسوم media:content و media:thumbnail
+            for tag in [".//{http://search.yahoo.com/mrss/}content", ".//content", ".//{http://search.yahoo.com/mrss/}thumbnail", ".//thumbnail"]:
+                m = it.find(tag)
+                if m is not None and m.get("url"):
+                    u = m.get("url", "").strip()
+                    if u and "emoji" not in u and "icon" not in u:
+                        return u
+
+            # 3. فحص وسوم <img> داخل الوصف (description)
+            if desc:
+                img_m = re.search(r'<img[^>]+src=[\'"]([^\'"]+)[\'"]', desc, re.IGNORECASE)
+                if img_m:
+                    iu = img_m.group(1).strip()
+                    if iu and "emoji" not in iu and "icon" not in iu and "transparent" not in iu:
+                        if iu.startswith("//"):
+                            return "https:" + iu
+                        return iu
+        except Exception:
+            pass
+        return None
+
     def check_twitter_feed(self, src: Dict[str, Any], is_manual: bool = False):
-        """يسحب التغريدات والمنشورات من تويتر/X وشبكات التواصل المعتمدة عبر الفيد الإخباري الذكي"""
+        """يسحب التغريدات والمنشورات من تويتر/X وشبكات التواصل المعتمدة عبر الفيد الإخباري الذكي مع استخراج الصور الحقيقية"""
         raw_target = src.get("target", "").replace("@", "").replace("https://x.com/", "").replace("https://twitter.com/", "").strip()
         if not raw_target:
             return
@@ -878,17 +949,18 @@ class StandaloneTelegramEducationalBot:
                     clean_title = re.sub(r'\s*-\s*(X|Twitter|تويتر)\s*$', '', t).strip()
                     clean_desc = re.sub(r'<[^>]+>', '', d).strip()
                     full_text = f"{clean_title}\n{clean_desc}".strip()
+                    photo_url = self.extract_image_from_xml_item(it, d)
 
                     pid = l or hashlib.md5(full_text.encode("utf-8")).hexdigest()
                     if pid == last_known:
                         break
-                    new_items.append((pid, full_text))
+                    new_items.append((pid, full_text, photo_url))
 
                 if not new_items:
                     return
 
                 if not last_known:
-                    latest_pid, latest_txt = new_items[0]
+                    latest_pid, latest_txt, latest_photo = new_items[0]
                     db.update_source_last_id(src.get("target"), latest_pid)
                     if is_manual:
                         matched_univ = db.find_university_for_post(handle, latest_txt) or db.find_university_for_post(f"@{handle}", latest_txt)
@@ -899,7 +971,7 @@ class StandaloneTelegramEducationalBot:
                                 post_queue.put({
                                     "type": "twitter_post",
                                     "text": latest_txt,
-                                    "photo": None,
+                                    "photo": latest_photo,
                                     "targets": [matched_univ["target_channel"]],
                                     "target_univ": matched_univ["name"],
                                     "user_id": ADMIN_ID
@@ -907,7 +979,7 @@ class StandaloneTelegramEducationalBot:
                     return
 
                 db.update_source_last_id(src.get("target"), new_items[0][0])
-                for pid, full_txt in reversed(new_items):
+                for pid, full_txt, p_photo in reversed(new_items):
                     matched_univ = db.find_university_for_post(handle, full_txt) or db.find_university_for_post(f"@{handle}", full_txt)
                     if not matched_univ:
                         logger.info(f"🛡️ [عزل القنوات] تغريدة من @{handle} لا تخص أي جامعة مستهدفة وتم تجاوزها.")
@@ -915,11 +987,11 @@ class StandaloneTelegramEducationalBot:
                     p_hash = hashlib.md5(full_txt[:80].encode("utf-8")).hexdigest()
                     if not db.is_post_seen(pid, p_hash):
                         db.mark_post_seen(pid, p_hash, src.get("target"))
-                        logger.info(f"⚡️ [Twitter/X] تغريدة جديدة تم التقاطها من @{handle} للجامعة: {matched_univ['name']}")
+                        logger.info(f"⚡️ [Twitter/X] تغريدة جديدة تم التقاطها من @{handle} للجامعة: {matched_univ['name']} (صورة: {'نعم' if p_photo else 'لا'})")
                         post_queue.put({
                             "type": "twitter_post",
                             "text": full_txt,
-                            "photo": None,
+                            "photo": p_photo,
                             "targets": [matched_univ["target_channel"]],
                             "target_univ": matched_univ["name"],
                             "user_id": ADMIN_ID
@@ -928,6 +1000,7 @@ class StandaloneTelegramEducationalBot:
             logger.debug(f"خطأ في سحب تويتر/X للحساب {handle}: {e}")
 
     def check_rss_feed(self, src: Dict[str, Any], is_manual: bool = False):
+        """يسحب الأخبار من روابط RSS مع استخراج الصور المرفقة الحقيقية"""
         url = src.get("target", "")
         if not url.startswith("http"):
             return
@@ -946,15 +1019,16 @@ class StandaloneTelegramEducationalBot:
                     t = it.findtext("title") or ""
                     l = it.findtext("link") or ""
                     d = it.findtext("description") or ""
+                    photo_url = self.extract_image_from_xml_item(it, d)
                     pid = l or t
                     if pid == last_known:
                         break
-                    new_items.append((pid, t, d))
+                    new_items.append((pid, t, d, photo_url))
 
                 if new_items:
                     db.update_source_last_id(src.get("target"), new_items[0][0])
                     if not last_known and is_manual:
-                        pid, t, d = new_items[0]
+                        pid, t, d, photo_url = new_items[0]
                         clean_d = re.sub(r'<[^>]+>', '', d).strip()
                         full_txt = f"{t}\n{clean_d}"
                         matched_univ = db.find_university_for_post(url, full_txt)
@@ -965,14 +1039,14 @@ class StandaloneTelegramEducationalBot:
                                 post_queue.put({
                                     "type": "rss_post",
                                     "text": full_txt,
-                                    "photo": None,
+                                    "photo": photo_url,
                                     "targets": [matched_univ["target_channel"]],
                                     "target_univ": matched_univ["name"],
                                     "user_id": ADMIN_ID
                                 })
                         return
 
-                    for pid, t, d in reversed(new_items):
+                    for pid, t, d, photo_url in reversed(new_items):
                         clean_d = re.sub(r'<[^>]+>', '', d).strip()
                         full_txt = f"{t}\n{clean_d}"
                         matched_univ = db.find_university_for_post(url, full_txt)
@@ -984,7 +1058,7 @@ class StandaloneTelegramEducationalBot:
                             post_queue.put({
                                 "type": "rss_post",
                                 "text": full_txt,
-                                "photo": None,
+                                "photo": photo_url,
                                 "targets": [matched_univ["target_channel"]],
                                 "target_univ": matched_univ["name"],
                                 "user_id": ADMIN_ID
@@ -1338,8 +1412,18 @@ class StandaloneTelegramEducationalBot:
                 })
                 self.send_msg(chat_id, f"⚡ **تم استلام المنشور المخصص لـ {target_name or 'الجامعة'}!** جاري الصياغة بالذكاء والنشر حصراً في `{target_ch[0]}`...")
                 return
+            elif state == "waiting_for_custom_ad":
+                self.user_waiting_state.pop(chat_id, None)
+                db.set_setting("custom_ad", clean_text)
+                self.send_msg(chat_id, "✅ **تم تحديث وحفظ نص إعلانك البديل بنجاح!**")
+                self.show_ad_panel(chat_id)
+                return
 
         # ----------------- الأوامر المباشرة -----------------
+        if clean_text in ["🎯 إعلان خدماتي البديل", "/ad", "الإعلان", "/advertisement"]:
+            self.show_ad_panel(chat_id)
+            return
+
         if clean_text in ["/start", "/help", "🎛 لوحة التحكم الرئيسية", "🔙 إلغاء والعودة للرئيسية"]:
             self.show_welcome_panel(chat_id, user_data)
             return
@@ -1563,6 +1647,19 @@ class StandaloneTelegramEducationalBot:
         elif data == "panel_gnews":
             self.trigger_google_news_search(chat_id)
 
+        elif data in ["panel_ad", "panel_advertisement"]:
+            self.show_ad_panel(chat_id)
+
+        elif data == "toggle_ad_replacement":
+            cur = db.get_setting("ad_replacement_enabled", "0")
+            new_val = "0" if cur == "1" else "1"
+            db.set_setting("ad_replacement_enabled", new_val)
+            self.show_ad_panel(chat_id)
+
+        elif data == "panel_edit_ad":
+            self.user_waiting_state[chat_id] = "waiting_for_custom_ad"
+            self.send_msg(chat_id, "📝 أرسل الآن نص إعلانك البديل الجديد ليتم حفظه واستخدامه:")
+
         elif data == "panel_start":
             self.show_welcome_panel(chat_id, user_data)
 
@@ -1683,6 +1780,33 @@ class StandaloneTelegramEducationalBot:
             ph = u["phone_number"] or "بلا هاتف"
             text += f"• `{u['user_id']}` (@{u.get('username') or 'بلا_يوزر'}) | {u['role']} | {banned}\n  📱 {ph}\n"
         self.send_msg(chat_id, text)
+
+    def show_ad_panel(self, chat_id: int):
+        custom_ad = db.get_setting("custom_ad", "")
+        ad_enabled = (db.get_setting("ad_replacement_enabled", "0") == "1")
+        status_text = "🟢 مفعل (يستبدل الإعلانات التجارية الصريحة فقط)" if ad_enabled else "🔴 معطل (موصى به لضمان نشر أخبار الجامعات الأصلية كاملة مع صورها)"
+
+        msg = f"""🎯 **إدارة إعلان خدمات الطلاب وحماية المنشورات الأصلية:**
+━━━━━━━━━━━━━━━━━━━━━━━━
+• **الحالة**: {status_text}
+
+🛡️ **سياسة الحماية والأمان:**
+1. عند التعطيل (الوضع الافتراضي والموصى به): ينشر البوت منشورات الجامعات ومصادر الأخبار كاملة مع صورها الحقيقية دون أي استبدال.
+2. عند التفعيل: يستبدل البوت حصراً إعلانات حل الواجبات التجارية بمقابل، ولا يمس منشورات شؤون الطلاب أو مشاريع التخرج الرسمية.
+
+📝 **نص إعلانك الترويجي البديل:**
+───────────────────
+{custom_ad or '(لم يتم تعيين إعلان بعد)'}
+───────────────────"""
+
+        kb = {
+            "inline_keyboard": [
+                [{"text": "🔴 إيقاف الاستبدال (نشر الأخبار الأصلية)" if ad_enabled else "🟢 تفعيل استبدال الإعلانات التجارية", "callback_data": "toggle_ad_replacement"}],
+                [{"text": "✏️ تعديل نص الإعلان", "callback_data": "panel_edit_ad"}],
+                [{"text": "🔙 اللوحة الرئيسية", "callback_data": "panel_start"}]
+            ]
+        }
+        self.send_msg(chat_id, msg, kb)
 
     def show_stats_panel(self, chat_id: int):
         proc = db.get_setting("processed_count", "0")

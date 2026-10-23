@@ -197,13 +197,17 @@ if (!is_official_univ_source) {
   }
 }
 
-// 6. فحص إعلانات المنافسين واستبدالها
-var ad_keywords = ["إعلان مدفوع", "حل واجبات", "بحوث تخرج", "خدمات طلابية", "مشاريع تخرج", "كتابة أبحاث", "إعلان ممول", "برعاية"];
+// 6. فحص إعلانات المنافسين واستبدالها (معطل افتراضياً لضمان نشر كافة أخبار المصدر مع صورها)
+var ad_replacement_enabled = Bot.getProperty("ad_replacement_enabled", false);
+var ad_keywords = ["حل واجبات بمقابل", "حل واجبات واختبارات", "حل كويزات", "حل فاينل", "حل اسايمنت", "كتابة بحوث بمقابل", "عمل بحوث ورسائل بمقابل", "إعلان مدفوع للخدمات"];
 var is_ad = false;
-for (var a = 0; a < ad_keywords.length; a++) {
-  if (extracted_text.indexOf(ad_keywords[a]) !== -1) {
-    is_ad = true;
-    break;
+
+if (ad_replacement_enabled && extracted_text) {
+  for (var a = 0; a < ad_keywords.length; a++) {
+    if (extracted_text.indexOf(ad_keywords[a]) !== -1) {
+      is_ad = true;
+      break;
+    }
   }
 }
 

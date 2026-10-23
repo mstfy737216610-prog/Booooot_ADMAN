@@ -235,7 +235,8 @@ def migrate_from_json(conn: sqlite3.Connection):
         "custom_instructions": "كن مثل مشرفين القروبات الذي يبحث عن الأخبار الجديدة ويعطيها للطلاب بوضوح دون أي إشارة للمصادر",
         "processed_count": "18",
         "forwarded_count": "15",
-        "ad_replaced_count": "3"
+        "ad_replaced_count": "3",
+        "ad_replacement_enabled": "0"
     }
 
     for k, v in defaults.items():

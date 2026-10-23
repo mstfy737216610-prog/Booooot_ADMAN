@@ -69,6 +69,7 @@
     { "name": "/on_chat_success" },
     { "name": "/on_chat_error" },
     { "name": "/publish_chat_post" },
-    { "name": "/help" }
+    { "name": "/help" },
+    { "name": "/toggle_ad_replacement" }
   ]
 }

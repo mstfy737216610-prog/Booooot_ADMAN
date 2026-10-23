@@ -319,12 +319,17 @@ if (is_private_chat) {
 }
 
 // 9. كشف إعلانات المنافسين واستبدالها بإعلان خدمات المشرف
-var ad_keywords = ["إعلان مدفوع", "حل واجبات", "بحوث تخرج", "خدمات طلابية", "مشاريع تخرج", "كتابة أبحاث", "إعلان ممول", "برعاية", "للتواصل تليجرام"];
+// (معطل افتراضياً لحماية كافة أخبار ومنشورات الجامعات الرسمية ونشرها مع صورها الأصلية)
+var ad_replacement_enabled = Bot.getProperty("ad_replacement_enabled", false);
+var ad_keywords = ["حل واجبات بمقابل", "حل واجبات واختبارات", "حل كويزات", "حل فاينل", "حل اسايمنت", "كتابة بحوث بمقابل", "عمل بحوث ورسائل بمقابل", "إعلان مدفوع للخدمات"];
 var is_ad = false;
-for (var i = 0; i < ad_keywords.length; i++) {
-  if (cleaned_raw_text.indexOf(ad_keywords[i]) !== -1) {
-    is_ad = true;
-    break;
+
+if (ad_replacement_enabled && cleaned_raw_text) {
+  for (var i = 0; i < ad_keywords.length; i++) {
+    if (cleaned_raw_text.indexOf(ad_keywords[i]) !== -1) {
+      is_ad = true;
+      break;
+    }
   }
 }
 
