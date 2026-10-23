@@ -39,7 +39,7 @@ const STORAGE_KEY_CONFIG = 'tg_educational_config_v2';
 const STORAGE_KEY_SOURCES = 'tg_educational_sources_v2';
 
 const DEFAULT_CONFIG: BotConfig = {
-  botToken: '8901693218:AAEOQmHMZLy-xaPbTUMq1KGhDwp1l0wFWP4',
+  botToken: '8901693218:AAFUiQ62KQlfl6rtoarimpSpeoeCgA422Qg',
   adminId: '7607633343',
   adminUsername: '@M_S_F_G',
   additionalAdminIds: [],

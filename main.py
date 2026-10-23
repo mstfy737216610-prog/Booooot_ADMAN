@@ -69,7 +69,16 @@ def safe_int(val: Any, default: int = 0) -> int:
         return default
 
 # ----------------- الإعدادات والاعتمادات والتحقق الذاتي -----------------
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8901693218:AAEOQmHMZLy-xaPbTUMq1KGhDwp1l0wFWP4").strip()
+_db_tok = db.get_setting("bot_token")
+_env_tok = os.getenv("BOT_TOKEN", "").strip()
+_revoked = ["8901693218:AAEOQmHMZLy-xaPbTUMq1KGhDwp1l0wFWP4"]
+
+if _db_tok and _db_tok not in _revoked:
+    BOT_TOKEN = _db_tok
+elif _env_tok and _env_tok not in _revoked:
+    BOT_TOKEN = _env_tok
+else:
+    BOT_TOKEN = "8901693218:AAFUiQ62KQlfl6rtoarimpSpeoeCgA422Qg"
 ADMIN_ID = safe_int(os.getenv("ADMIN_ID", "7607633343"), 7607633343)
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "M_S_F_G").replace("@", "").strip()
 
@@ -212,7 +221,11 @@ class StandaloneTelegramEducationalBot:
                 return json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
             err_body = e.read().decode("utf-8", errors="ignore")
-            logger.warning(f"تيليجرام HTTP ({method}) [{e.code}]: {err_body}")
+            # لا نسجل خطأ 409 أو 401 كـ warning في getUpdates لتجنب التشويش عند تحديث التوكن أو عمل Bots.Business
+            if e.code in [401, 409] and "getUpdates" in method:
+                logger.debug(f"تيليجرام HTTP ({method}) [{e.code}]: {err_body}")
+            else:
+                logger.warning(f"تيليجرام HTTP ({method}) [{e.code}]: {err_body}")
             try:
                 res_json = json.loads(err_body)
                 res_json["http_code"] = e.code
@@ -2348,12 +2361,12 @@ class StandaloneTelegramEducationalBot:
             logger.info(f"🔗 تم رصد Webhook نشط على: {webhook_info['result']['url']}")
             logger.info("⚡️ البوت يعمل بنمط التناغم الكامل: الأوامر التفاعلية عبر Webhook + الساحب الآلي المتقدم والمراقب في الخلفية 24/7")
 
+        conflict_logged = False
         while self.running:
             try:
                 # إذا كان الويب هوك نشطاً، نترك استقبال الرسائل للويب هوك ونبقي خيوط السحب والنشر نشطة
                 if has_active_webhook:
                     time.sleep(25)
-                    # فحص دوري كل دقيقة إذا تغيرت حالة الويب هوك
                     chk = self.tg_request("getWebhookInfo", timeout=10)
                     if chk.get("ok") and not chk.get("result", {}).get("url"):
                         has_active_webhook = False
@@ -2362,26 +2375,24 @@ class StandaloneTelegramEducationalBot:
 
                 res = self.tg_request(f"getUpdates?offset={offset}&timeout=25", timeout=35)
                 
-                # فحص خطأ 409 Conflict (نسخة أخرى تعمل أو ويب هوك مفعل)
+                # فحص خطأ 409 Conflict (Bots.Business أو منصة أخرى تتولى استلام التحديثات)
                 if not res.get("ok"):
                     http_code = res.get("http_code") or res.get("error_code")
                     if http_code == 409:
-                        chk = self.tg_request("getWebhookInfo", timeout=10)
-                        if chk.get("ok") and chk.get("result", {}).get("url"):
-                            has_active_webhook = True
-                            logger.info(f"🔗 تم تفعيل الويب هوك على {chk['result']['url']} - الانتقال لنمط مراقبة السحب الخلفي.")
-                            continue
-                        time.sleep(backoff_delay)
-                        backoff_delay = min(backoff_delay * 2, 60)
+                        if not conflict_logged:
+                            logger.info("ℹ️ منصة Bots.Business تتولى استلام التحديثات والتفاعل مع المستخدمين. سيعمل محرك بايثون بنمط المراقبة والزحف والنشر التلقائي في الخلفية 24/7 دون أي تعارض.")
+                            conflict_logged = True
+                        time.sleep(45)
                         continue
                     elif http_code == 429:
                         retry_after = res.get("parameters", {}).get("retry_after", 10)
-                        logger.warning(f"⚠️ خطأ 429 Too Many Requests. الانتظار لمدة {retry_after} ثانية...")
                         time.sleep(retry_after)
                         continue
                     else:
-                        time.sleep(2)
+                        time.sleep(3)
                         continue
+
+                conflict_logged = False
 
                 # إذا نجح الطلب، نعيد ضبط الـ Backoff
                 backoff_delay = 1

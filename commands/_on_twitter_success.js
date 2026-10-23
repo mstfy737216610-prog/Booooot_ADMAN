@@ -123,31 +123,10 @@ var seen_key = "seen_tw_" + clean_handle + "_" + encodeURIComponent(snippet);
 if (Bot.getProperty(seen_key)) return;
 Bot.setProperty(seen_key, true, "boolean");
 
-// 4. 🛡️ الفحص الأكاديمي الصارم لاسم الجامعة (Strict University Gatekeeper)
-// التغريدة لا تُنشر إلا إذا كانت تخص الجامعة صراحةً بذكر اسمها أو كلماتها المفتاحية
+// 4. توجيه تغريدة المصدر المعتمد:
+// حساب تويتر مربوط بهذه الجامعة، لذا يتم اعتماد ونشر كافة التغريدات والتنبيهات
+// سواء ذُكر اسم الجامعة أو لم يُذكر، لضمان وصول المواعيد والجداول للطلاب كاملة.
 var lower_text = tweet_text.toLowerCase();
-var is_relevant = (lower_text.indexOf(target_univ.name.toLowerCase()) !== -1);
-
-if (!is_relevant && target_univ.keywords && Array.isArray(target_univ.keywords)) {
-  for (var k = 0; k < target_univ.keywords.length; k++) {
-    var kw = target_univ.keywords[k].toLowerCase();
-    if (kw.length >= 3 && lower_text.indexOf(kw) !== -1) {
-      is_relevant = true;
-      break;
-    }
-  }
-}
-
-// إذا كان الحساب هو الحساب الرسمي الحصري للجامعة، نقبل المنشور إذا كان أكاديمياً
-var official_tw = (target_univ.twitter_sources || []).map(function(s) { return s.replace(/^@/, "").toLowerCase(); });
-if (!is_relevant && official_tw.indexOf(clean_handle) !== -1) {
-  // الحساب رسمي 100% للجامعة
-  is_relevant = true;
-}
-
-if (!is_relevant) {
-  return; // استبعاد المنشور بهدوء لمنع تلوث القناة
-}
 
 // 5. فحص إعلانات المنافسين واستبعادها
 var spam_keywords = ["حل واجبات", "حل واجب", "حل كويزات", "كتابة بحوث", "خدمات طلابية بمقابل", "قروب تليجرام للتسريب"];

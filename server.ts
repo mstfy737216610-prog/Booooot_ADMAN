@@ -142,7 +142,7 @@ app.post('/api/state', (req: Request, res: Response) => {
 
 // 5. Test Telegram Bot Token
 app.post('/api/telegram/test-bot', async (req: Request, res: Response) => {
-  const token = req.body.token || "8901693218:AAEOQmHMZLy-xaPbTUMq1KGhDwp1l0wFWP4";
+  const token = req.body.token || process.env.TELEGRAM_BOT_TOKEN || "8901693218:AAFUiQ62KQlfl6rtoarimpSpeoeCgA422Qg";
   try {
     const tgRes = await fetch(`https://api.telegram.org/bot${token}/getMe`);
     const data = await tgRes.json();
@@ -346,7 +346,7 @@ app.post('/api/university/post', async (req: Request, res: Response) => {
       res.status(400).json({ error: "قناة النشر ومحتوى الرسالة مطلوبان" });
       return;
     }
-    const token = process.env.TELEGRAM_BOT_TOKEN || "8901693218:AAEOQmHMZLy-xaPbTUMq1KGhDwp1l0wFWP4";
+    const token = process.env.TELEGRAM_BOT_TOKEN || "8901693218:AAFUiQ62KQlfl6rtoarimpSpeoeCgA422Qg";
     const tgRes = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -393,10 +393,13 @@ function startPythonWorker() {
     const rawAdminId = (process.env.ADMIN_ID || '7607633343').trim();
     const sanitizedAdminId = /^\d+$/.test(rawAdminId) ? rawAdminId : '7607633343';
 
+    const activeBotToken = '8901693218:AAFUiQ62KQlfl6rtoarimpSpeoeCgA422Qg';
     pythonProcess = spawn('python3', ['main.py'], {
       cwd: __dirname,
       env: {
         ...process.env,
+        BOT_TOKEN: activeBotToken,
+        TELEGRAM_BOT_TOKEN: activeBotToken,
         TELEGRAM_API_ID: sanitizedApiId,
         STRING_SESSION: sanitizedSession,
         ADMIN_ID: sanitizedAdminId,

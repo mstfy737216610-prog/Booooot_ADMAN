@@ -8,7 +8,7 @@ services:
     ports:
       - "8088:8088"
     environment:
-      - BOT_TOKEN=8901693218:AAEOQmHMZLy-xaPbTUMq1KGhDwp1l0wFWP4
+      - BOT_TOKEN=8901693218:AAFUiQ62KQlfl6rtoarimpSpeoeCgA422Qg
       - ADMIN_ID=7607633343
       - ADMIN_USERNAME=M_S_F_G
       - TARGET_CHANNEL=@jhdhhdcj

@@ -845,7 +845,10 @@ def find_university_for_post(source: str, text: str = "") -> Optional[Dict[str, 
                 if kw and kw.lower() in text_lower:
                     return p
 
-    # 3. إذا لم يتطابق المصدر ولم يُذكر اسم الجامعة أو كلماتها المفتاحية، نُرجع None لمنع التداخل العشوائي بين القنوات
+    # 3. توجيه المنشور للجامعة النشطة الأولى لضمان نشر كافة التنبيهات والمواعيد دون ضياع
+    if active_projects:
+        return active_projects[0]
+
     return None
 
 
