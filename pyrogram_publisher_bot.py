@@ -839,37 +839,43 @@ def register_userbot_handlers(ub_client: Client):
             final_text = ""
             
         # نشر الوسائط والنص إلى كافة قنوات النشر المستهدفة
+        lead_cap = final_text[:1000] if len(final_text) > 1024 else final_text
+        remainder = final_text[1000:] if len(final_text) > 1024 else ""
+
         for target in targets:
             try:
                 if message.photo:
                     await client.send_photo(
                         chat_id=target,
                         photo=message.photo.file_id,
-                        caption=final_text
+                        caption=lead_cap
                     )
                 elif message.video:
                     await client.send_video(
                         chat_id=target,
                         video=message.video.file_id,
-                        caption=final_text
+                        caption=lead_cap
                     )
                 elif message.document:
                     await client.send_document(
                         chat_id=target,
                         document=message.document.file_id,
-                        caption=final_text
+                        caption=lead_cap
                     )
                 elif message.audio:
                     await client.send_audio(
                         chat_id=target,
                         audio=message.audio.file_id,
-                        caption=final_text
+                        caption=lead_cap
                     )
                 elif final_text:
                     await client.send_message(
                         chat_id=target,
                         text=final_text
                     )
+
+                if remainder and (message.photo or message.video or message.document or message.audio):
+                    await client.send_message(chat_id=target, text=remainder)
                 logger.info(f"📤 تم النشر بنجاح في القناة المستهدفة: {target}")
             except Exception as e:
                 logger.error(f"❌ تعذر النشر في {target}: {e}")

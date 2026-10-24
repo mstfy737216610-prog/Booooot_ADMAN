@@ -1031,7 +1031,9 @@ def find_university_for_post(source: str, text: str = "") -> Optional[Dict[str, 
     if active_projects:
         return active_projects[0]
 
-    return None
+    target_chs = get_target_channels()
+    default_ch = target_chs[0] if target_chs else "@jhdhhdcj"
+    return {"name": "أخبار الجامعة", "target_channel": default_ch, "enabled": True}
 
 
 # ----------------- المزامنة مع ملفات JSON لدعم Bots.Business -----------------

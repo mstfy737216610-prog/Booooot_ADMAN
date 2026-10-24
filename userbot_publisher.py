@@ -325,7 +325,10 @@ async def main():
                 try:
                     if media:
                         # تحميل ونشر الوسائط الأصلية (صور، فيديو، مستند، صوت) مع النص المعالج
-                        await client.send_file(dest, media, caption=final_caption)
+                        lead_cap = final_caption[:1000] if len(final_caption) > 1024 else final_caption
+                        await client.send_file(dest, media, caption=lead_cap)
+                        if len(final_caption) > 1024:
+                            await client.send_message(dest, final_caption[1000:])
                     else:
                         await client.send_message(dest, final_caption)
                     logging.info(f"✅ تم النشر بنجاح في القناة المخصصة: {dest}")

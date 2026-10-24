@@ -30,6 +30,7 @@ import urllib.request
 import urllib.parse
 import urllib.error
 import xml.etree.ElementTree as ET
+import html
 from datetime import datetime, timedelta
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from typing import Dict, Any, Optional, List, Tuple
@@ -328,12 +329,120 @@ class StandaloneTelegramEducationalBot:
         except Exception as e:
             return {"ok": False, "description": str(e)}
 
+    def strip_html(self, text: str) -> str:
+        """إزالة وسوم HTML وتحويل الكيانات لنص عادي نظيف لمنع أي أخطاء في تيليجرام"""
+        if not text:
+            return ""
+        clean = re.sub(r'<br\s*/?>', '\n', text, flags=re.IGNORECASE)
+        clean = re.sub(r'</?(?:b|strong|i|em|u|ins|s|strike|del|code|pre|a)[^>]*>', '', clean, flags=re.IGNORECASE)
+        clean = re.sub(r'<[^>]+>', '', clean)
+        clean = html.unescape(clean)
+        clean = clean.replace("&quot;", '"').replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+        return clean.strip()
+
+    def balance_html_tags(self, html_str: str) -> str:
+        """إغلاق أي وسم مفتوح تلقائياً لمنع خطأ Can't parse entities من تيليجرام"""
+        if not html_str:
+            return ""
+        tags = ['b', 'strong', 'i', 'em', 'u', 'ins', 's', 'strike', 'del', 'code', 'pre', 'a']
+        # إزالة أي وسم مبتور في نهاية السلسلة مثل '<b' أو '<a hr'
+        html_str = re.sub(r'<[a-zA-Z/][^>]*$', '', html_str)
+        open_stack = []
+        for match in re.finditer(r'<(/)?([a-zA-Z]+)(?:\s+[^>]*)?>', html_str):
+            is_closing = bool(match.group(1))
+            tag_name = match.group(2).lower()
+            if tag_name not in tags:
+                continue
+            if is_closing:
+                if open_stack and open_stack[-1] == tag_name:
+                    open_stack.pop()
+            else:
+                open_stack.append(tag_name)
+        for t in reversed(open_stack):
+            html_str += f"</{t}>"
+        return html_str
+
+    def split_safe_caption(self, text: str, max_lead: int = 1000) -> Tuple[str, str]:
+        """
+        تقسيم الكابشن بأمان مطلق دون كسر وسوم HTML أو تجاوز حدود تيليجرام (1024 حرف)
+        مع إغلاق الوسوم المفتوحة تلقائياً وضمان عدم حدوث Bad Request: can't parse entities
+        """
+        if not text:
+            return "", ""
+        if len(text) <= max_lead:
+            return self.balance_html_tags(text), ""
+
+        cut_idx = max_lead
+        newline_pos = text.rfind("\n", max_lead // 2, max_lead)
+        if newline_pos != -1:
+            cut_idx = newline_pos
+        else:
+            space_pos = text.rfind(" ", max_lead // 2, max_lead)
+            if space_pos != -1:
+                cut_idx = space_pos
+
+        lead = text[:cut_idx].strip()
+        remainder = text[cut_idx:].strip()
+        lead_balanced = self.balance_html_tags(lead)
+        return lead_balanced, remainder
+
+    def clean_media_url(self, raw_url: Optional[str]) -> Optional[str]:
+        """تنظيف وفك تشفير روابط الوسائط واستبعاد الرموز التعبيرية والأيقونات"""
+        if not raw_url:
+            return None
+        url = str(raw_url).strip()
+        url = html.unescape(url)
+        url = url.replace("&quot;", "").replace('"', '').replace("'", "").strip()
+        if url.startswith("//"):
+            url = "https:" + url
+        if not (url.startswith("http://") or url.startswith("https://") or os.path.isfile(url)):
+            return url
+        if "emoji" in url or "telegram.org/img" in url or "website_icon" in url or "favicon" in url:
+            return None
+        return url
+
+    def download_remote_media_to_temp(self, url: str, ext_hint: str = "") -> Optional[str]:
+        """تحميل وسائط الروابط الخارجية إلى مجلد مؤقت محلي لضمان رفعها في حال تعذر سحب الرابط مباشرة من تيليجرام"""
+        try:
+            os.makedirs("/temp_media", exist_ok=True)
+            req_headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                "Accept": "*/*"
+            }
+            if "telegram" in url or "telesco.pe" in url or "t.me" in url:
+                req_headers["Referer"] = "https://t.me/"
+            elif "twimg" in url or "x.com" in url or "twitter" in url:
+                req_headers["Referer"] = "https://x.com/"
+
+            ext = ext_hint
+            if not ext:
+                if any(x in url.lower() for x in [".png", "png"]):
+                    ext = ".png"
+                elif any(x in url.lower() for x in [".mp4", "mp4", "video"]):
+                    ext = ".mp4"
+                elif any(x in url.lower() for x in [".webp", "webp"]):
+                    ext = ".webp"
+                else:
+                    ext = ".jpg"
+
+            temp_path = f"/temp_media/{uuid.uuid4().hex[:12]}{ext}"
+            req = urllib.request.Request(url, headers=req_headers)
+            with urllib.request.urlopen(req, context=ssl_ctx, timeout=20) as resp:
+                data = resp.read()
+                if len(data) > 50:
+                    with open(temp_path, "wb") as f:
+                        f.write(data)
+                    return temp_path
+        except Exception as e:
+            logger.debug(f"تعذر تنزيل الوسائط مؤقتاً من {url[:45]}: {e}")
+        return None
+
     def to_safe_html(self, text: str) -> str:
         if not text:
             return ""
         s = text
         s = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', s)
-        return s
+        return self.balance_html_tags(s)
 
     def send_msg(self, chat_id: Any, text: str, reply_markup: Optional[Dict] = None, parse_mode: Optional[str] = "HTML", reply_to_message_id: Optional[int] = None) -> Dict[str, Any]:
         safe_text = self.to_safe_html(text) if parse_mode == "HTML" else text
@@ -347,105 +456,94 @@ class StandaloneTelegramEducationalBot:
         res = self.tg_request("sendMessage", payload)
         if not res.get("ok"):
             payload.pop("parse_mode", None)
-            payload["text"] = text
+            payload["text"] = self.strip_html(text)
             res = self.tg_request("sendMessage", payload)
         return res
 
     def send_photo(self, chat_id: Any, photo: str, caption: str = "", reply_markup: Optional[Dict] = None, parse_mode: Optional[str] = "HTML") -> Dict[str, Any]:
+        """
+        إرسال صورة بنظام الحماية الفولاذي:
+        - فحص وتنظيف الرابط / المسار
+        - قص الكابشن وموازنته بدقة تامة لمنع أخطاء 1024 حرف وأخطاء الوسوم المفتوحة
+        - محاولات متعددة تدريجية (HTML -> نص عادي -> إرسال الصورة وحدها ثم النص)
+        - ضمان مستحيل ضياع الصورة إطلاقاً
+        """
+        clean_p = self.clean_media_url(photo)
+        if not clean_p:
+            if caption:
+                return self.send_msg(chat_id, caption, reply_markup=reply_markup, parse_mode=parse_mode)
+            return {"ok": False, "description": "Empty photo path"}
+
         safe_caption = self.to_safe_html(caption) if parse_mode == "HTML" else caption
-        lead_caption = safe_caption[:1020] if len(safe_caption) > 1024 else safe_caption
+        lead_caption, remainder = self.split_safe_caption(safe_caption, max_lead=1000)
+        plain_caption = self.strip_html(lead_caption)
 
-        # 1. إذا كانت الصورة ملفاً محلياً محفوظاً على القرص (مثل تحميلات Telethon أو السكرابر)
-        if photo and os.path.isfile(photo):
-            try:
-                with open(photo, "rb") as f:
+        # 1. إذا كانت الصورة ملفاً محلياً على القرص
+        if os.path.isfile(clean_p):
+            def upload_local_photo(cap: str, pm: Optional[str]) -> Dict[str, Any]:
+                with open(clean_p, "rb") as f:
                     img_bytes = f.read()
-                if img_bytes and len(img_bytes) > 50:
-                    boundary = uuid.uuid4().hex
-                    body = bytearray()
-                    def add_field(name: str, val: str):
-                        body.extend(f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n{val}\r\n'.encode('utf-8'))
+                if not img_bytes or len(img_bytes) < 30:
+                    return {"ok": False, "description": "Local file is empty"}
+                boundary = uuid.uuid4().hex
+                body = bytearray()
+                def add_f(name: str, val: str):
+                    body.extend(f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n{val}\r\n'.encode('utf-8'))
 
-                    add_field("chat_id", str(chat_id))
-                    if lead_caption:
-                        add_field("caption", lead_caption)
-                        if parse_mode:
-                            add_field("parse_mode", parse_mode)
-                    if reply_markup:
-                        add_field("reply_markup", json.dumps(reply_markup))
+                add_f("chat_id", str(chat_id))
+                if cap:
+                    add_f("caption", cap)
+                    if pm:
+                        add_f("parse_mode", pm)
+                if reply_markup:
+                    add_f("reply_markup", json.dumps(reply_markup))
 
-                    fname = os.path.basename(photo) or "image.jpg"
-                    body.extend(f'--{boundary}\r\nContent-Disposition: form-data; name="photo"; filename="{fname}"\r\nContent-Type: image/jpeg\r\n\r\n'.encode('utf-8'))
-                    body.extend(img_bytes)
-                    body.extend(f'\r\n--{boundary}--\r\n'.encode('utf-8'))
+                fname = os.path.basename(clean_p) or "photo.jpg"
+                body.extend(f'--{boundary}\r\nContent-Disposition: form-data; name="photo"; filename="{fname}"\r\nContent-Type: image/jpeg\r\n\r\n'.encode('utf-8'))
+                body.extend(img_bytes)
+                body.extend(f'\r\n--{boundary}--\r\n'.encode('utf-8'))
 
-                    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
-                    upload_req = urllib.request.Request(
-                        url,
-                        data=body,
-                        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"}
-                    )
-                    with urllib.request.urlopen(upload_req, context=ssl_ctx, timeout=30) as u_resp:
-                        res = json.loads(u_resp.read().decode("utf-8"))
-                        if res.get("ok"):
-                            if len(safe_caption) > 1024:
-                                self.send_msg(chat_id, safe_caption[1020:], reply_markup=reply_markup, parse_mode=parse_mode)
-                            return res
-            except Exception as e:
-                logger.warning(f"تعذر رفع ملف الصورة المحلي {photo}: {e}")
+                u_req = urllib.request.Request(
+                    f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto",
+                    data=body,
+                    headers={"Content-Type": f"multipart/form-data; boundary={boundary}"}
+                )
+                with urllib.request.urlopen(u_req, context=ssl_ctx, timeout=35) as u_resp:
+                    return json.loads(u_resp.read().decode("utf-8"))
 
-        # 2. إذا كانت الصورة رابط إنترنت (URL ويب أو تيليجرام CDN أو تويتر)
-        if photo and (photo.startswith("http://") or photo.startswith("https://")):
             try:
-                req_headers = {
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-                    "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
-                }
-                if "telegram" in photo or "telesco.pe" in photo or "t.me" in photo:
-                    req_headers["Referer"] = "https://t.me/"
-                elif "twimg" in photo or "x.com" in photo or "twitter" in photo:
-                    req_headers["Referer"] = "https://x.com/"
-
-                img_req = urllib.request.Request(photo, headers=req_headers)
-                with urllib.request.urlopen(img_req, context=ssl_ctx, timeout=15) as img_resp:
-                    img_bytes = img_resp.read()
-
-                if img_bytes and len(img_bytes) > 50:
-                    boundary = uuid.uuid4().hex
-                    body = bytearray()
-                    def add_field(name: str, val: str):
-                        body.extend(f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n{val}\r\n'.encode('utf-8'))
-
-                    add_field("chat_id", str(chat_id))
-                    if lead_caption:
-                        add_field("caption", lead_caption)
-                        if parse_mode:
-                            add_field("parse_mode", parse_mode)
-                    if reply_markup:
-                        add_field("reply_markup", json.dumps(reply_markup))
-
-                    body.extend(f'--{boundary}\r\nContent-Disposition: form-data; name="photo"; filename="image.jpg"\r\nContent-Type: image/jpeg\r\n\r\n'.encode('utf-8'))
-                    body.extend(img_bytes)
-                    body.extend(f'\r\n--{boundary}--\r\n'.encode('utf-8'))
-
-                    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
-                    upload_req = urllib.request.Request(
-                        url,
-                        data=body,
-                        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"}
-                    )
-                    with urllib.request.urlopen(upload_req, context=ssl_ctx, timeout=30) as u_resp:
-                        res = json.loads(u_resp.read().decode("utf-8"))
-                        if res.get("ok"):
-                            if len(safe_caption) > 1024:
-                                self.send_msg(chat_id, safe_caption[1020:], reply_markup=reply_markup, parse_mode=parse_mode)
-                            return res
+                res = upload_local_photo(lead_caption, parse_mode)
+                if res.get("ok"):
+                    if remainder:
+                        self.send_msg(chat_id, remainder, reply_markup=reply_markup, parse_mode=parse_mode)
+                    return res
             except Exception as e:
-                logger.warning(f"تعذر الرفع المباشر لـ bytes الصورة ({photo[:40]}...): {e}")
+                logger.debug(f"محاولة رفع صورة محلية بـ HTML تعذرت: {e}")
 
-        # 3. إذا كانت الصورة عبارة عن file_id أصلي في تيليجرام
-        if photo and not os.path.isfile(photo):
-            payload = {"chat_id": chat_id, "photo": photo}
+            # محاولة بنص عادي
+            try:
+                res = upload_local_photo(plain_caption, None)
+                if res.get("ok"):
+                    if remainder:
+                        self.send_msg(chat_id, remainder, reply_markup=reply_markup, parse_mode=parse_mode)
+                    return res
+            except Exception as e:
+                logger.debug(f"محاولة رفع صورة محلية بنص عادي تعذرت: {e}")
+
+            # محاولة إرسال الصورة فارغة ثم النص كرسالة
+            try:
+                res = upload_local_photo("", None)
+                if res.get("ok"):
+                    if caption:
+                        self.send_msg(chat_id, caption, reply_markup=reply_markup, parse_mode=parse_mode)
+                    return res
+            except Exception as e:
+                logger.warning(f"تعذر رفع ملف الصورة المحلي بالكامل {clean_p}: {e}")
+
+        # 2. إذا كانت الصورة رابط إنترنت مباشر (URL)
+        if clean_p.startswith("http://") or clean_p.startswith("https://"):
+            # محاولة 1: إرسال الرابط مباشرة عبر Telegram API
+            payload = {"chat_id": chat_id, "photo": clean_p}
             if lead_caption:
                 payload["caption"] = lead_caption
                 if parse_mode:
@@ -455,26 +553,72 @@ class StandaloneTelegramEducationalBot:
 
             res = self.tg_request("sendPhoto", payload)
             if res.get("ok"):
-                if len(safe_caption) > 1024:
-                    self.send_msg(chat_id, safe_caption[1020:], reply_markup=reply_markup, parse_mode=parse_mode)
+                if remainder:
+                    self.send_msg(chat_id, remainder, reply_markup=reply_markup, parse_mode=parse_mode)
                 return res
 
-            # محاولة ثانية بدون parse_mode
-            if parse_mode and lead_caption:
+            # محاولة 2: بدون parse_mode بنص عادي
+            if lead_caption and parse_mode:
                 payload.pop("parse_mode", None)
-                payload["caption"] = caption[:1020]
+                payload["caption"] = plain_caption
                 res = self.tg_request("sendPhoto", payload)
                 if res.get("ok"):
+                    if remainder:
+                        self.send_msg(chat_id, remainder, reply_markup=reply_markup, parse_mode=parse_mode)
                     return res
 
-            # محاولة ثالثة بإرسال الصورة وحدها
-            res_photo = self.tg_request("sendPhoto", {"chat_id": chat_id, "photo": photo})
-            if res_photo.get("ok"):
+            # محاولة 3: تحميل الصورة محلياً ورفعها كـ Multipart لضمان تجاوز قيود CDN
+            temp_file = self.download_remote_media_to_temp(clean_p, ".jpg")
+            if temp_file and os.path.isfile(temp_file):
+                local_res = self.send_photo(chat_id, temp_file, caption=caption, reply_markup=reply_markup, parse_mode=parse_mode)
+                try:
+                    os.remove(temp_file)
+                except Exception:
+                    pass
+                if local_res.get("ok"):
+                    return local_res
+
+            # محاولة 4: إرسال الصورة برابطها فارغة ثم إرسال النص
+            res_pure = self.tg_request("sendPhoto", {"chat_id": chat_id, "photo": clean_p})
+            if res_pure.get("ok"):
                 if caption:
                     self.send_msg(chat_id, caption, reply_markup=reply_markup, parse_mode=parse_mode)
-                return res_photo
+                return res_pure
 
-        # حماية قاطعة: إذا تعذر إرسال الصورة تماماً، ننشر النص كاملاً كرسالة حتى لا يضيع الخبر
+        # 3. إذا كانت الصورة عبارة عن file_id في تيليجرام
+        if clean_p and not os.path.isfile(clean_p) and not clean_p.startswith("http"):
+            payload = {"chat_id": chat_id, "photo": clean_p}
+            if lead_caption:
+                payload["caption"] = lead_caption
+                if parse_mode:
+                    payload["parse_mode"] = parse_mode
+            if reply_markup:
+                payload["reply_markup"] = reply_markup
+
+            res = self.tg_request("sendPhoto", payload)
+            if res.get("ok"):
+                if remainder:
+                    self.send_msg(chat_id, remainder, reply_markup=reply_markup, parse_mode=parse_mode)
+                return res
+
+            # محاولة بنص عادي
+            if lead_caption:
+                payload.pop("parse_mode", None)
+                payload["caption"] = plain_caption
+                res = self.tg_request("sendPhoto", payload)
+                if res.get("ok"):
+                    if remainder:
+                        self.send_msg(chat_id, remainder, reply_markup=reply_markup, parse_mode=parse_mode)
+                    return res
+
+            # محاولة بالصورة وحدها
+            res_id = self.tg_request("sendPhoto", {"chat_id": chat_id, "photo": clean_p})
+            if res_id.get("ok"):
+                if caption:
+                    self.send_msg(chat_id, caption, reply_markup=reply_markup, parse_mode=parse_mode)
+                return res_id
+
+        # خط الدفاع الأخير: إذا كانت الصورة تالفة تماماً أو محذوفة من المصدر، يتم نشر النص كاملاً حتى لا يضيع الخبر
         if caption:
             res_msg = self.send_msg(chat_id, caption, reply_markup=reply_markup, parse_mode=parse_mode)
             if res_msg.get("ok"):
@@ -483,116 +627,88 @@ class StandaloneTelegramEducationalBot:
         return {"ok": False, "description": "Failed to send photo and text"}
 
     def send_video(self, chat_id: Any, video: str, caption: str = "", reply_markup: Optional[Dict] = None, parse_mode: Optional[str] = "HTML", supports_streaming: bool = True) -> Dict[str, Any]:
-        """إرسال مقطع فيديو (فيديوهات الشروحات، طريقة الدخول، خطوات تسجيل الطلاب) إلى القناة أو الشات"""
+        """
+        إرسال مقطع فيديو بنظام الحماية الفولاذي:
+        - فحص وتنظيف الرابط / الملف
+        - تقسيم الكابشن بدقة تامة لمنع أخطاء 1024 حرف
+        - إمكانية الإرسال كـ Video أو كـ Animation أو Document عند اختلاف الترميز
+        """
+        clean_v = self.clean_media_url(video)
+        if not clean_v:
+            if caption:
+                return self.send_msg(chat_id, caption, reply_markup=reply_markup, parse_mode=parse_mode)
+            return {"ok": False, "description": "Empty video path"}
+
         safe_caption = self.to_safe_html(caption) if parse_mode == "HTML" else caption
-        lead_caption = safe_caption[:1020] if len(safe_caption) > 1024 else safe_caption
+        lead_caption, remainder = self.split_safe_caption(safe_caption, max_lead=1000)
+        plain_caption = self.strip_html(lead_caption)
 
         # 1. إذا كان الفيديو ملفاً محلياً على القرص
-        if video and os.path.isfile(video):
-            try:
-                with open(video, "rb") as f:
+        if os.path.isfile(clean_v):
+            def upload_local_video(cap: str, pm: Optional[str]) -> Dict[str, Any]:
+                with open(clean_v, "rb") as f:
                     vid_bytes = f.read()
-                if vid_bytes and len(vid_bytes) > 100:
-                    boundary = uuid.uuid4().hex
-                    body = bytearray()
-                    def add_field(name: str, val: str):
-                        body.extend(f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n{val}\r\n'.encode('utf-8'))
+                if not vid_bytes or len(vid_bytes) < 50:
+                    return {"ok": False, "description": "Local video is empty"}
+                boundary = uuid.uuid4().hex
+                body = bytearray()
+                def add_f(name: str, val: str):
+                    body.extend(f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n{val}\r\n'.encode('utf-8'))
 
-                    add_field("chat_id", str(chat_id))
-                    if lead_caption:
-                        add_field("caption", lead_caption)
-                        if parse_mode:
-                            add_field("parse_mode", parse_mode)
-                    if reply_markup:
-                        add_field("reply_markup", json.dumps(reply_markup))
-                    add_field("supports_streaming", "true")
+                add_f("chat_id", str(chat_id))
+                if cap:
+                    add_f("caption", cap)
+                    if pm:
+                        add_f("parse_mode", pm)
+                if reply_markup:
+                    add_f("reply_markup", json.dumps(reply_markup))
+                add_f("supports_streaming", "true")
 
-                    fname = os.path.basename(video) or "video.mp4"
-                    body.extend(f'--{boundary}\r\nContent-Disposition: form-data; name="video"; filename="{fname}"\r\nContent-Type: video/mp4\r\n\r\n'.encode('utf-8'))
-                    body.extend(vid_bytes)
-                    body.extend(f'\r\n--{boundary}--\r\n'.encode('utf-8'))
+                fname = os.path.basename(clean_v) or "video.mp4"
+                body.extend(f'--{boundary}\r\nContent-Disposition: form-data; name="video"; filename="{fname}"\r\nContent-Type: video/mp4\r\n\r\n'.encode('utf-8'))
+                body.extend(vid_bytes)
+                body.extend(f'\r\n--{boundary}--\r\n'.encode('utf-8'))
 
-                    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendVideo"
-                    upload_req = urllib.request.Request(
-                        url,
-                        data=body,
-                        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"}
-                    )
-                    with urllib.request.urlopen(upload_req, context=ssl_ctx, timeout=60) as u_resp:
-                        res = json.loads(u_resp.read().decode("utf-8"))
-                        if res.get("ok"):
-                            if len(safe_caption) > 1024:
-                                self.send_msg(chat_id, safe_caption[1020:], reply_markup=reply_markup, parse_mode=parse_mode)
-                            return res
-            except Exception as e:
-                logger.warning(f"تعذر رفع ملف الفيديو المحلي {video}: {e}")
+                u_req = urllib.request.Request(
+                    f"https://api.telegram.org/bot{BOT_TOKEN}/sendVideo",
+                    data=body,
+                    headers={"Content-Type": f"multipart/form-data; boundary={boundary}"}
+                )
+                with urllib.request.urlopen(u_req, context=ssl_ctx, timeout=60) as u_resp:
+                    return json.loads(u_resp.read().decode("utf-8"))
 
-        # 2. إذا كان الفيديو رابط مباشر على الإنترنت
-        if video and (video.startswith("http://") or video.startswith("https://")):
-            payload = {"chat_id": chat_id, "video": video, "supports_streaming": supports_streaming}
-            if lead_caption:
-                payload["caption"] = lead_caption
-                if parse_mode:
-                    payload["parse_mode"] = parse_mode
-            if reply_markup:
-                payload["reply_markup"] = reply_markup
-
-            res = self.tg_request("sendVideo", payload)
-            if res.get("ok"):
-                if len(safe_caption) > 1024:
-                    self.send_msg(chat_id, safe_caption[1020:], reply_markup=reply_markup, parse_mode=parse_mode)
-                return res
-
-            # محاولة تحميله ورفعه كـ bytes
             try:
-                req_headers = {
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-                    "Accept": "*/*"
-                }
-                if "telesco.pe" in video or "telegram" in video or "t.me" in video:
-                    req_headers["Referer"] = "https://t.me/"
-
-                vid_req = urllib.request.Request(video, headers=req_headers)
-                with urllib.request.urlopen(vid_req, context=ssl_ctx, timeout=30) as vid_resp:
-                    vid_bytes = vid_resp.read()
-
-                if vid_bytes and len(vid_bytes) > 200:
-                    boundary = uuid.uuid4().hex
-                    body = bytearray()
-                    def add_field(name: str, val: str):
-                        body.extend(f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n{val}\r\n'.encode('utf-8'))
-
-                    add_field("chat_id", str(chat_id))
-                    if lead_caption:
-                        add_field("caption", lead_caption)
-                        if parse_mode:
-                            add_field("parse_mode", parse_mode)
-                    if reply_markup:
-                        add_field("reply_markup", json.dumps(reply_markup))
-                    add_field("supports_streaming", "true")
-
-                    body.extend(f'--{boundary}\r\nContent-Disposition: form-data; name="video"; filename="tutorial.mp4"\r\nContent-Type: video/mp4\r\n\r\n'.encode('utf-8'))
-                    body.extend(vid_bytes)
-                    body.extend(f'\r\n--{boundary}--\r\n'.encode('utf-8'))
-
-                    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendVideo"
-                    upload_req = urllib.request.Request(
-                        url,
-                        data=body,
-                        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"}
-                    )
-                    with urllib.request.urlopen(upload_req, context=ssl_ctx, timeout=60) as u_resp:
-                        res = json.loads(u_resp.read().decode("utf-8"))
-                        if res.get("ok"):
-                            if len(safe_caption) > 1024:
-                                self.send_msg(chat_id, safe_caption[1020:], reply_markup=reply_markup, parse_mode=parse_mode)
-                            return res
+                res = upload_local_video(lead_caption, parse_mode)
+                if res.get("ok"):
+                    if remainder:
+                        self.send_msg(chat_id, remainder, reply_markup=reply_markup, parse_mode=parse_mode)
+                    return res
             except Exception as e:
-                logger.warning(f"تعذر تحميل ورفع مقطع الفيديو من الرابط {video[:50]}: {e}")
+                logger.debug(f"محاولة رفع فيديو محلي بـ HTML تعذرت: {e}")
 
-        # 3. إذا كان الفيديو عبارة عن file_id أصلي في تيليجرام
-        if video and not os.path.isfile(video):
-            payload = {"chat_id": chat_id, "video": video, "supports_streaming": supports_streaming}
+            # محاولة بنص عادي
+            try:
+                res = upload_local_video(plain_caption, None)
+                if res.get("ok"):
+                    if remainder:
+                        self.send_msg(chat_id, remainder, reply_markup=reply_markup, parse_mode=parse_mode)
+                    return res
+            except Exception as e:
+                logger.debug(f"محاولة رفع فيديو محلي بنص عادي تعذرت: {e}")
+
+            # محاولة إرسال الفيديو فارغاً ثم النص
+            try:
+                res = upload_local_video("", None)
+                if res.get("ok"):
+                    if caption:
+                        self.send_msg(chat_id, caption, reply_markup=reply_markup, parse_mode=parse_mode)
+                    return res
+            except Exception as e:
+                logger.warning(f"تعذر رفع ملف الفيديو المحلي {clean_v}: {e}")
+
+        # 2. إذا كان الفيديو رابطاً مباشراً (URL)
+        if clean_v.startswith("http://") or clean_v.startswith("https://"):
+            payload = {"chat_id": chat_id, "video": clean_v, "supports_streaming": supports_streaming}
             if lead_caption:
                 payload["caption"] = lead_caption
                 if parse_mode:
@@ -602,20 +718,68 @@ class StandaloneTelegramEducationalBot:
 
             res = self.tg_request("sendVideo", payload)
             if res.get("ok"):
-                if len(safe_caption) > 1024:
-                    self.send_msg(chat_id, safe_caption[1020:], reply_markup=reply_markup, parse_mode=parse_mode)
+                if remainder:
+                    self.send_msg(chat_id, remainder, reply_markup=reply_markup, parse_mode=parse_mode)
                 return res
 
-            # محاولة ثانية بدون parse_mode
-            if parse_mode and lead_caption:
+            # محاولة ثانية بنص عادي
+            if lead_caption and parse_mode:
                 payload.pop("parse_mode", None)
-                payload["caption"] = caption[:1020]
+                payload["caption"] = plain_caption
                 res = self.tg_request("sendVideo", payload)
                 if res.get("ok"):
+                    if remainder:
+                        self.send_msg(chat_id, remainder, reply_markup=reply_markup, parse_mode=parse_mode)
                     return res
 
-            # محاولة ثالثة بإرسال الفيديو وحده ثم النص
-            res_vid = self.tg_request("sendVideo", {"chat_id": chat_id, "video": video, "supports_streaming": supports_streaming})
+            # محاولة تنزيله مؤقتاً ورفعه
+            temp_vid = self.download_remote_media_to_temp(clean_v, ".mp4")
+            if temp_vid and os.path.isfile(temp_vid):
+                loc_res = self.send_video(chat_id, temp_vid, caption=caption, reply_markup=reply_markup, parse_mode=parse_mode)
+                try:
+                    os.remove(temp_vid)
+                except Exception:
+                    pass
+                if loc_res.get("ok"):
+                    return loc_res
+
+            # محاولة إرساله كـ Animation أو Document
+            res_anim = self.tg_request("sendAnimation", {"chat_id": chat_id, "animation": clean_v, "caption": plain_caption})
+            if res_anim.get("ok"):
+                return res_anim
+
+            res_pure = self.tg_request("sendVideo", {"chat_id": chat_id, "video": clean_v, "supports_streaming": True})
+            if res_pure.get("ok"):
+                if caption:
+                    self.send_msg(chat_id, caption, reply_markup=reply_markup, parse_mode=parse_mode)
+                return res_pure
+
+        # 3. إذا كان الفيديو عبارة عن file_id
+        if clean_v and not os.path.isfile(clean_v) and not clean_v.startswith("http"):
+            payload = {"chat_id": chat_id, "video": clean_v, "supports_streaming": supports_streaming}
+            if lead_caption:
+                payload["caption"] = lead_caption
+                if parse_mode:
+                    payload["parse_mode"] = parse_mode
+            if reply_markup:
+                payload["reply_markup"] = reply_markup
+
+            res = self.tg_request("sendVideo", payload)
+            if res.get("ok"):
+                if remainder:
+                    self.send_msg(chat_id, remainder, reply_markup=reply_markup, parse_mode=parse_mode)
+                return res
+
+            if lead_caption:
+                payload.pop("parse_mode", None)
+                payload["caption"] = plain_caption
+                res = self.tg_request("sendVideo", payload)
+                if res.get("ok"):
+                    if remainder:
+                        self.send_msg(chat_id, remainder, reply_markup=reply_markup, parse_mode=parse_mode)
+                    return res
+
+            res_vid = self.tg_request("sendVideo", {"chat_id": chat_id, "video": clean_v, "supports_streaming": True})
             if res_vid.get("ok"):
                 if caption:
                     self.send_msg(chat_id, caption, reply_markup=reply_markup, parse_mode=parse_mode)
@@ -628,12 +792,60 @@ class StandaloneTelegramEducationalBot:
                 return res_msg
         return {"ok": False, "description": "Failed to send video and text"}
 
+    def send_media_group(self, chat_id: Any, media_items: List[Dict[str, Any]], caption: str = "", reply_markup: Optional[Dict] = None, parse_mode: Optional[str] = "HTML") -> Dict[str, Any]:
+        """إرسال ألبوم صور أو وسائط مجمعة (Media Group) إلى القناة مع الكابشن المعتمد"""
+        if not media_items:
+            if caption:
+                return self.send_msg(chat_id, caption, reply_markup=reply_markup, parse_mode=parse_mode)
+            return {"ok": False, "description": "Empty media group"}
+
+        safe_caption = self.to_safe_html(caption) if parse_mode == "HTML" else caption
+        lead_caption, remainder = self.split_safe_caption(safe_caption, max_lead=1000)
+
+        formatted_media = []
+        for idx, item in enumerate(media_items[:10]):
+            m_type = item.get("type", "photo")
+            m_url = self.clean_media_url(item.get("media"))
+            if not m_url:
+                continue
+            entry = {"type": m_type, "media": m_url}
+            if idx == 0 and lead_caption:
+                entry["caption"] = lead_caption
+                if parse_mode:
+                    entry["parse_mode"] = parse_mode
+            formatted_media.append(entry)
+
+        if not formatted_media:
+            if caption:
+                return self.send_msg(chat_id, caption, reply_markup=reply_markup, parse_mode=parse_mode)
+            return {"ok": False, "description": "No valid media in group"}
+
+        res = self.tg_request("sendMediaGroup", {"chat_id": chat_id, "media": formatted_media})
+        if res.get("ok"):
+            if remainder:
+                self.send_msg(chat_id, remainder, reply_markup=reply_markup, parse_mode=parse_mode)
+            return res
+
+        # إذا تعذر إرسال الألبوم مجمعاً: إرسال العنصر الأول كصورة/فيديو والبقية تباعاً
+        first = formatted_media[0]
+        if first["type"] == "video":
+            return self.send_video(chat_id, first["media"], caption=caption, reply_markup=reply_markup, parse_mode=parse_mode)
+        else:
+            return self.send_photo(chat_id, first["media"], caption=caption, reply_markup=reply_markup, parse_mode=parse_mode)
+
     def send_document(self, chat_id: Any, document: str, caption: str = "", reply_markup: Optional[Dict] = None, parse_mode: Optional[str] = "HTML") -> Dict[str, Any]:
         """إرسال ملف/مستند (أدلة القبول، نماذج التسجيل، ملفات PDF الأكاديمية)"""
-        safe_caption = self.to_safe_html(caption) if parse_mode == "HTML" else caption
-        lead_caption = safe_caption[:1020] if len(safe_caption) > 1024 else safe_caption
+        clean_d = self.clean_media_url(document)
+        if not clean_d:
+            if caption:
+                return self.send_msg(chat_id, caption, reply_markup=reply_markup, parse_mode=parse_mode)
+            return {"ok": False, "description": "Empty document"}
 
-        payload = {"chat_id": chat_id, "document": document}
+        safe_caption = self.to_safe_html(caption) if parse_mode == "HTML" else caption
+        lead_caption, remainder = self.split_safe_caption(safe_caption, max_lead=1000)
+        plain_caption = self.strip_html(lead_caption)
+
+        payload = {"chat_id": chat_id, "document": clean_d}
         if lead_caption:
             payload["caption"] = lead_caption
             if parse_mode:
@@ -643,18 +855,20 @@ class StandaloneTelegramEducationalBot:
 
         res = self.tg_request("sendDocument", payload)
         if res.get("ok"):
-            if len(safe_caption) > 1024:
-                self.send_msg(chat_id, safe_caption[1020:], reply_markup=reply_markup, parse_mode=parse_mode)
+            if remainder:
+                self.send_msg(chat_id, remainder, reply_markup=reply_markup, parse_mode=parse_mode)
             return res
 
-        if parse_mode and lead_caption:
+        if lead_caption:
             payload.pop("parse_mode", None)
-            payload["caption"] = caption[:1020]
+            payload["caption"] = plain_caption
             res = self.tg_request("sendDocument", payload)
             if res.get("ok"):
+                if remainder:
+                    self.send_msg(chat_id, remainder, reply_markup=reply_markup, parse_mode=parse_mode)
                 return res
 
-        res_doc = self.tg_request("sendDocument", {"chat_id": chat_id, "document": document})
+        res_doc = self.tg_request("sendDocument", {"chat_id": chat_id, "document": clean_d})
         if res_doc.get("ok"):
             if caption:
                 self.send_msg(chat_id, caption, reply_markup=reply_markup, parse_mode=parse_mode)
@@ -666,10 +880,17 @@ class StandaloneTelegramEducationalBot:
 
     def send_animation(self, chat_id: Any, animation: str, caption: str = "", reply_markup: Optional[Dict] = None, parse_mode: Optional[str] = "HTML") -> Dict[str, Any]:
         """إرسال صورة متحركة GIF أو مقطع إرشادي متحرك"""
-        safe_caption = self.to_safe_html(caption) if parse_mode == "HTML" else caption
-        lead_caption = safe_caption[:1020] if len(safe_caption) > 1024 else safe_caption
+        clean_a = self.clean_media_url(animation)
+        if not clean_a:
+            if caption:
+                return self.send_msg(chat_id, caption, reply_markup=reply_markup, parse_mode=parse_mode)
+            return {"ok": False, "description": "Empty animation"}
 
-        payload = {"chat_id": chat_id, "animation": animation}
+        safe_caption = self.to_safe_html(caption) if parse_mode == "HTML" else caption
+        lead_caption, remainder = self.split_safe_caption(safe_caption, max_lead=1000)
+        plain_caption = self.strip_html(lead_caption)
+
+        payload = {"chat_id": chat_id, "animation": clean_a}
         if lead_caption:
             payload["caption"] = lead_caption
             if parse_mode:
@@ -679,9 +900,24 @@ class StandaloneTelegramEducationalBot:
 
         res = self.tg_request("sendAnimation", payload)
         if res.get("ok"):
-            if len(safe_caption) > 1024:
-                self.send_msg(chat_id, safe_caption[1020:], reply_markup=reply_markup, parse_mode=parse_mode)
+            if remainder:
+                self.send_msg(chat_id, remainder, reply_markup=reply_markup, parse_mode=parse_mode)
             return res
+
+        if lead_caption:
+            payload.pop("parse_mode", None)
+            payload["caption"] = plain_caption
+            res = self.tg_request("sendAnimation", payload)
+            if res.get("ok"):
+                if remainder:
+                    self.send_msg(chat_id, remainder, reply_markup=reply_markup, parse_mode=parse_mode)
+                return res
+
+        res_a = self.tg_request("sendAnimation", {"chat_id": chat_id, "animation": clean_a})
+        if res_a.get("ok"):
+            if caption:
+                self.send_msg(chat_id, caption, reply_markup=reply_markup, parse_mode=parse_mode)
+            return res_a
 
         if caption:
             return self.send_msg(chat_id, caption, reply_markup=reply_markup, parse_mode=parse_mode)
@@ -1024,6 +1260,7 @@ class StandaloneTelegramEducationalBot:
                 raw_text = task.get("text", "")
                 photo = task.get("photo")
                 video = task.get("video")
+                media_group = task.get("media_group")
                 animation = task.get("animation")
                 document = task.get("document")
                 media_type = task.get("media_type")
@@ -1042,7 +1279,9 @@ class StandaloneTelegramEducationalBot:
                 if is_ad:
                     db.increment_setting("ad_replaced_count", 1)
                     for ch in target_channels:
-                        if video or media_type == "video":
+                        if media_group:
+                            res = self.send_media_group(ch, media_group, custom_ad)
+                        elif video or media_type == "video":
                             res = self.send_video(ch, video, custom_ad)
                         elif photo or media_type == "photo":
                             res = self.send_photo(ch, photo, custom_ad)
@@ -1072,10 +1311,21 @@ class StandaloneTelegramEducationalBot:
                 else:
                     rephrased = self.call_ai(raw_text, custom_instructions, target_univ=target_univ_name)
 
+                has_media_item = bool(photo or video or media_group or animation or document or media_type in ["photo", "video", "animation", "document"])
+
+                # إذا تعذر الـ AI أو كان النص قصيراً أو عبارة عن صورة/فيديو/جدول مواعيد، نصيغ كابشن أكاديمي أصيل ولا نسقط الوسائط إطلاقاً
                 if not rephrased:
-                    logger.info(f"🛡️ [عزل القنوات] تم استبعاد المنشور تلقائياً لعدم ارتباطه بـ {target_univ_name or 'الجامعة'} أو لكونه فارغاً.")
-                    post_queue.task_done()
-                    continue
+                    if has_media_item or (raw_text and len(raw_text.strip()) > 3):
+                        clean_t = self.clean_text_from_sources(raw_text).strip()
+                        univ_tag = f"#{target_univ_name.replace(' ', '_')}" if target_univ_name else "#أخبار_الجامعة"
+                        if clean_t:
+                            rephrased = f"🎓 <b>إعلان وتحديث أكاديمي رسمي</b>\n\n📌 <b>أبرز التفاصيل والمواعيد:</b>\n{clean_t}\n\n💬 يسعدنا الرد على استفساراتكم في التعليقات ومشاركة الخبر مع زملائكم الطلاب!\n\n{univ_tag} #شؤون_الطلاب #أخبار_التعليم #مواعيد"
+                        else:
+                            rephrased = f"🎓 <b>إعلان وتحديث أكاديمي رسمي</b>\n\n📌 يرجى الاطلاع على التفاصيل والمواعيد الموضحة في المرفق أعلاه.\n\n💬 يسعدنا الرد على كافة استفساراتكم في التعليقات!\n\n{univ_tag} #شؤون_الطلاب #أخبار_التعليم"
+                    else:
+                        logger.info(f"🛡️ تم تخطي منشور فارغ بدون أي نص أو وسائط.")
+                        post_queue.task_done()
+                        continue
 
                 # 4. النشر في القنوات المستهدفة المخصصة واستخراج الروابط الرسمية النظيفة
                 post_links = self.extract_external_links(rephrased, target_univ_name) or self.extract_external_links(raw_text, target_univ_name)
@@ -1090,7 +1340,9 @@ class StandaloneTelegramEducationalBot:
                 success_targets = []
                 failed_targets = []
                 for ch in target_channels:
-                    if video or media_type == "video":
+                    if media_group and len(media_group) > 1:
+                        res = self.send_media_group(ch, media_group, rephrased, reply_markup=post_kb)
+                    elif video or media_type == "video":
                         res = self.send_video(ch, video, rephrased, reply_markup=post_kb)
                     elif animation or media_type == "animation":
                         res = self.send_animation(ch, animation, rephrased, reply_markup=post_kb)
@@ -1262,35 +1514,40 @@ class StandaloneTelegramEducationalBot:
 
                     photo_url = None
                     video_url = None
+                    photos_found = []
 
-                    # استخراج الفيديو المباشر إن وجد في منشور القناة (مثل مقاطع الشرح أو خطوات التسجيل)
-                    vid_m = re.search(r'<video[^>]+src=[\'"]([^\'"]+)[\'"]', b)
+                    # 1. استخراج الفيديو المباشر إن وجد في منشور القناة (مثل مقاطع الشرح أو خطوات التسجيل)
+                    vid_m = re.search(r'<video[^>]+src=[\'"]?([^\'")\s]+)', b)
                     if vid_m:
                         v_src = vid_m.group(1).strip()
                         if not v_src.startswith("blob:"):
-                            video_url = v_src
+                            video_url = self.clean_media_url(v_src)
                     if not video_url:
-                        vid_src_m = re.search(r'class=[\'"][^\'"]*tgme_widget_message_video[^\'"]*[\'"][^>]*src=[\'"]([^\'"]+)[\'"]', b)
+                        vid_src_m = re.search(r'class=[\'"][^\'"]*tgme_widget_message_video[^\'"]*[\'"][^>]*src=[\'"]?([^\'")\s]+)', b)
                         if vid_src_m:
-                            video_url = vid_src_m.group(1).strip()
+                            video_url = self.clean_media_url(vid_src_m.group(1))
 
-                    # استخراج روابط خلفيات الصور المباشرة بصيغها المختلفة
-                    bg_m = re.search(r'background-image:\s*url\([\'"]?([^\'")\s]+)[\'"]?\)', b)
-                    if bg_m:
-                        photo_url = bg_m.group(1).strip()
-                    if not photo_url:
-                        img_m = re.search(r'<img[^>]+src=[\'"]([^\'"]+)[\'"]', b)
-                        if img_m:
-                            photo_url = img_m.group(1).strip()
+                    # 2. استخراج كافة روابط خلفيات الصور المباشرة (بما في ذلك الألبومات والمجموعات)
+                    all_bgs = re.findall(r'background-image:\s*url\([\'"]?([^\'")\s]+)', b)
+                    for bg_raw in all_bgs:
+                        clean_u = self.clean_media_url(bg_raw)
+                        if clean_u and clean_u not in photos_found:
+                            photos_found.append(clean_u)
 
-                    if video_url and video_url.startswith("//"):
-                        video_url = "https:" + video_url
+                    # وسوم الصور <img>
+                    if not photos_found:
+                        img_matches = re.findall(r'<img[^>]+src=[\'"]?([^\'")\s]+)', b)
+                        for im in img_matches:
+                            clean_u = self.clean_media_url(im)
+                            if clean_u and clean_u not in photos_found:
+                                photos_found.append(clean_u)
 
-                    if photo_url:
-                        if photo_url.startswith("//"):
-                            photo_url = "https:" + photo_url
-                        if "emoji" in photo_url or "telegram.org/img" in photo_url or "website_icon" in photo_url or "favicon" in photo_url:
-                            photo_url = None
+                    if photos_found:
+                        photo_url = photos_found[0]
+
+                    media_group = None
+                    if len(photos_found) > 1:
+                        media_group = [{"type": "photo", "media": u} for u in photos_found]
 
                     text_m = re.search(r'class=[\'"][^\'"]*tgme_widget_message_text[^\'"]*[\'"][^>]*>(.*?)</div>', b, re.DOTALL)
                     text_content = ""
@@ -1299,8 +1556,15 @@ class StandaloneTelegramEducationalBot:
                         clean_h = re.sub(r'<br\s*/?>', '\n', raw_h)
                         text_content = re.sub(r'<[^>]+>', '', clean_h).strip()
 
-                    if text_content or photo_url or video_url:
-                        posts_extracted.append({"id": pid, "num_id": num_id, "photo": photo_url, "video": video_url, "text": text_content})
+                    if text_content or photo_url or video_url or media_group:
+                        posts_extracted.append({
+                            "id": pid,
+                            "num_id": num_id,
+                            "photo": photo_url,
+                            "video": video_url,
+                            "media_group": media_group,
+                            "text": text_content
+                        })
 
                 if not posts_extracted:
                     return
@@ -1315,28 +1579,34 @@ class StandaloneTelegramEducationalBot:
                     if num_match:
                         last_known_num = int(num_match.group(1))
 
+                # جلب الجامعة المعتمدة الافتراضية لضمان عدم ضياع أي خبر من المصدر
+                all_univs = db.get_university_projects()
+                active_univs = [u for u in all_univs if u.get("enabled", True)]
+                default_target_ch = db.get_target_channels()[0] if db.get_target_channels() else "@jhdhhdcj"
+                fallback_univ = active_univs[0] if active_univs else {"name": "أخبار الجامعة", "target_channel": default_target_ch}
+
                 # إذا كانت أول مرة نسجل هذا المصدر: ننشر أحدث منشور متاح فوراً لتبدأ قناة الجامعة بالعمل مباشرة
                 if not last_known or last_known_num == 0:
                     latest = posts_extracted[-1]
                     db.update_source_last_id(src.get("target"), latest["id"])
                     logger.info(f"📌 تمت تهيئة المصدر {src.get('target')} عند المنشور #{latest['id']}")
-                    if latest.get("text") or latest.get("photo") or latest.get("video"):
+                    if latest.get("text") or latest.get("photo") or latest.get("video") or latest.get("media_group"):
                         p_hash = hashlib.md5((latest.get("text", "")[:80]).encode("utf-8")).hexdigest()
                         if not db.is_post_seen(latest["id"], p_hash):
-                            matched_univ = bound_univ or db.find_university_for_post(src.get("target"), latest.get("text", ""))
-                            if matched_univ:
-                                db.mark_post_seen(latest["id"], p_hash, src.get("target"))
-                                logger.info(f"⚡️ [تهيئة فورية] نشر أحدث منشور من {src.get('target')} في قناة {matched_univ['target_channel']} ({matched_univ['name']})")
-                                post_queue.put({
-                                    "type": "crawled_post",
-                                    "text": latest.get("text", ""),
-                                    "photo": latest.get("photo"),
-                                    "video": latest.get("video"),
-                                    "media_type": "video" if latest.get("video") else ("photo" if latest.get("photo") else "text"),
-                                    "targets": [matched_univ["target_channel"]],
-                                    "target_univ": matched_univ["name"],
-                                    "user_id": None
-                                })
+                            matched_univ = bound_univ or db.find_university_for_post(src.get("target"), latest.get("text", "")) or fallback_univ
+                            db.mark_post_seen(latest["id"], p_hash, src.get("target"))
+                            logger.info(f"⚡️ [تهيئة فورية] نشر أحدث منشور من {src.get('target')} في قناة {matched_univ['target_channel']} ({matched_univ['name']})")
+                            post_queue.put({
+                                "type": "crawled_post",
+                                "text": latest.get("text", ""),
+                                "photo": latest.get("photo"),
+                                "video": latest.get("video"),
+                                "media_group": latest.get("media_group"),
+                                "media_type": "video" if latest.get("video") else ("photo" if latest.get("photo") else "text"),
+                                "targets": [matched_univ["target_channel"]],
+                                "target_univ": matched_univ["name"],
+                                "user_id": None
+                            })
                     return
 
                 # حلقة فحص ونشر كافة المنشورات الجديدة المتراكمة
@@ -1345,26 +1615,34 @@ class StandaloneTelegramEducationalBot:
                     p_text = p.get("text", "")
                     p_photo = p.get("photo")
                     p_video = p.get("video")
+                    p_media_group = p.get("media_group")
                     p_id = p["id"]
 
-                    matched_univ = bound_univ or db.find_university_for_post(src.get("target"), p_text)
-                    if not matched_univ:
-                        logger.debug(f"🛡️ تخطي منشور غير متطابق مع الجامعة: {p_id}")
+                    # استبعاد الإعلانات التجارية المنافسة والخدمات الطلابية فقط
+                    is_ad = any(kw in p_text for kw in AD_KEYWORDS)
+                    if is_ad:
+                        logger.info(f"🛡️ استبعاد إعلان منافس/خدمات طلابية تجارية: {p_id}")
+                        db.update_source_last_id(src.get("target"), p_id)
                         continue
 
-                    p_hash = hashlib.md5(p_text[:80].encode("utf-8")).hexdigest()
+                    # توجيه المنشور لقناة الجامعة دون اشتراط ذكر اسم الجامعة في النص
+                    matched_univ = bound_univ or db.find_university_for_post(src.get("target"), p_text) or fallback_univ
+
+                    p_hash = hashlib.md5((p_text[:80] + str(p_id)).encode("utf-8")).hexdigest()
                     if db.is_post_seen(p_id, p_hash):
                         continue
 
                     db.mark_post_seen(p_id, p_hash, src.get("target"))
                     db.update_source_last_id(src.get("target"), p_id)
 
-                    logger.info(f"⚡️ منشور جديد تم التقاطه من {src.get('target')}: {p_id} موجه إلى {matched_univ['target_channel']} ({matched_univ['name']}) مع وسائط: {'فيديو' if p_video else ('صورة' if p_photo else 'نص')}")
+                    media_label = 'ألبوم' if p_media_group else ('فيديو' if p_video else ('صورة' if p_photo else 'نص'))
+                    logger.info(f"⚡️ منشور جديد تم التقاطه من {src.get('target')}: {p_id} موجه إلى {matched_univ['target_channel']} ({matched_univ['name']}) مع وسائط: {media_label}")
                     post_queue.put({
                         "type": "crawled_post",
                         "text": p_text,
                         "photo": p_photo,
                         "video": p_video,
+                        "media_group": p_media_group,
                         "media_type": "video" if p_video else ("photo" if p_photo else "text"),
                         "targets": [matched_univ["target_channel"]],
                         "target_univ": matched_univ["name"],
@@ -1486,14 +1764,10 @@ class StandaloneTelegramEducationalBot:
                     full_text = f"{clean_title}\n{clean_desc}".strip()
                     photo_url = self.extract_image_from_xml_item(it, d)
 
-                    # التحقق الصارم من ذكر اسم الجامعة أو كلماتها المعتمدة حصراً
-                    if matched_univ and univ_name:
-                        keywords = [univ_name.lower()]
-                        if matched_univ.get("keywords"):
-                            keywords.extend([kw.lower() for kw in matched_univ.get("keywords", []) if len(kw) >= 3])
-                        full_lower = full_text.lower()
-                        if not any(kw in full_lower for kw in keywords):
-                            continue
+                    # استبعاد الإعلانات التجارية والممولة والخدمات المدفوعة فقط
+                    if any(kw in full_text for kw in AD_KEYWORDS):
+                        logger.info(f"🛡️ استبعاد إعلان منافس/خدمات طلابية من أخبار تويتر: {clean_title[:40]}")
+                        continue
 
                     # منع التكرار الصارم
                     norm_t = re.sub(r'[^\w\s]', '', clean_title)
@@ -1738,26 +2012,54 @@ class StandaloneTelegramEducationalBot:
                         # هل الرسالة من قناة مخصصة للمراقبة؟
                         if chat_username in sources or any(s in str(event.chat_id) for s in sources):
                             text = event.text or event.message.message or ""
-                            if len(text) < 10 and not event.photo:
+                            has_media_evt = bool(event.photo or event.video or event.document or event.gif)
+
+                            if len(text.strip()) < 3 and not has_media_evt:
                                 return
 
-                            photo_path = None
-                            if event.photo:
-                                photo_path = await event.download_media()
+                            # استبعاد الإعلانات التجارية والخدمات الطلابية
+                            if any(kw in text for kw in AD_KEYWORDS):
+                                logger.info(f"🛡️ [عزل MTProto] استبعاد إعلان منافس/خدمات طلابية من {chat_username}")
+                                return
 
-                            logger.info(f"📥 [MTProto] تم سحب منشور جديد من {chat_username}")
-                            matched_univ = db.find_university_for_post(chat_username, text)
-                            if matched_univ:
-                                post_queue.put({
-                                    "type": "mtproto_post",
-                                    "text": text,
-                                    "photo": photo_path,
-                                    "targets": [matched_univ["target_channel"]],
-                                    "target_univ": matched_univ["name"],
-                                    "user_id": ADMIN_ID
-                                })
-                            else:
-                                logger.info(f"🛡️ [عزل MTProto] منشور من {chat_username} لا يطابق أي جامعة مستهدفة وتم استبعاده.")
+                            media_path = None
+                            media_type = "text"
+                            os.makedirs("/temp_media", exist_ok=True)
+
+                            if event.video:
+                                media_type = "video"
+                                media_path = await event.download_media(file=f"/temp_media/vid_{event.id}.mp4")
+                            elif event.photo:
+                                media_type = "photo"
+                                media_path = await event.download_media(file=f"/temp_media/img_{event.id}.jpg")
+                            elif event.gif:
+                                media_type = "animation"
+                                media_path = await event.download_media(file=f"/temp_media/anim_{event.id}.mp4")
+                            elif event.document:
+                                media_type = "document"
+                                media_path = await event.download_media(file="/temp_media/")
+
+                            # توجيه الخبر دون اشتراط ذكر اسم الجامعة في النص
+                            all_univs = db.get_university_projects()
+                            active_univs = [u for u in all_univs if u.get("enabled", True)]
+                            default_target = db.get_target_channels()[0] if db.get_target_channels() else "@jhdhhdcj"
+                            fallback_univ = active_univs[0] if active_univs else {"name": "أخبار الجامعة", "target_channel": default_target}
+
+                            matched_univ = db.find_university_for_post(chat_username, text) or fallback_univ
+
+                            logger.info(f"📥 [MTProto] تم سحب منشور جديد من {chat_username} موجه إلى {matched_univ['target_channel']} ({matched_univ['name']}) مع وسائط: {media_type}")
+                            post_queue.put({
+                                "type": "mtproto_post",
+                                "text": text,
+                                "photo": media_path if media_type == "photo" else None,
+                                "video": media_path if media_type == "video" else None,
+                                "animation": media_path if media_type == "animation" else None,
+                                "document": media_path if media_type == "document" else None,
+                                "media_type": media_type,
+                                "targets": [matched_univ["target_channel"]],
+                                "target_univ": matched_univ["name"],
+                                "user_id": ADMIN_ID
+                            })
                     except Exception as err:
                         logger.error(f"خطأ معالجة حدث MTProto: {err}")
 
@@ -1827,8 +2129,9 @@ class StandaloneTelegramEducationalBot:
         """يرد على استفسارات الطلاب في تعليقات القناة بذكاء ولغة أكاديمية واضحة ومباشرة"""
         try:
             ai_reply = self.call_ai_for_comment(student_question, orig_post_text)
-            if ai_reply:
-                self.send_msg(chat_id, ai_reply, reply_to_message_id=message_id)
+            if not ai_reply:
+                ai_reply = "أهلاً بك عزيزي الطالب 🎓\nنشكر تواصلك، بخصوص استفسارك يرجى مراجعة التفاصيل والمواعيد الموضحة في المنشور أعلاه أو زيارة البوابة الرسمية للجامعة للاطلاع على الدليل الأكاديمي المحدث."
+            self.send_msg(chat_id, ai_reply, reply_to_message_id=message_id)
         except Exception as e:
             logger.debug(f"خطأ في الرد على تعليق القناة: {e}")
 
@@ -1841,18 +2144,26 @@ class StandaloneTelegramEducationalBot:
         # فحص التعليقات والاستفسارات في القناة أو مجموعة المناقشة المرتبطة بها (Channel Comments)
         chat_type = msg.get("chat", {}).get("type", "private")
         reply_to = msg.get("reply_to_message")
-        if reply_to and chat_type in ["group", "supergroup"]:
+        if chat_type in ["group", "supergroup"]:
             # إذا كانت الرسالة من طالب/مستخدم وليست من بوت أو القناة ذاتها
             if not from_user.get("is_bot") and not msg.get("sender_chat"):
                 clean_comment = text.strip()
                 if clean_comment and len(clean_comment) >= 2:
-                    orig_post_text = reply_to.get("text", "") or reply_to.get("caption", "")
-                    threading.Thread(
-                        target=self.reply_to_channel_comment,
-                        args=(chat_id, msg["message_id"], clean_comment, orig_post_text),
-                        daemon=True
-                    ).start()
-                    return
+                    if reply_to:
+                        orig_post_text = reply_to.get("text", "") or reply_to.get("caption", "")
+                        threading.Thread(
+                            target=self.reply_to_channel_comment,
+                            args=(chat_id, msg["message_id"], clean_comment, orig_post_text),
+                            daemon=True
+                        ).start()
+                        return
+                    elif any(q_word in clean_comment for q_word in ["متى", "كيف", "أين", "هل", "شروط", "رابط", "تقديم", "تسجيل", "قبول", "اختبار", "جامعة", "موعد", "مواعيد", "استفسار"]):
+                        threading.Thread(
+                            target=self.reply_to_channel_comment,
+                            args=(chat_id, msg["message_id"], clean_comment, ""),
+                            daemon=True
+                        ).start()
+                        return
 
         authorized, user_data = self.check_user_access(from_user)
         if not authorized:
