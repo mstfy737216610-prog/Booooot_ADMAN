@@ -792,16 +792,16 @@ async def on_user_message(client: Client, message: Message):
         )
         return
 
-    # في حال إرسال أي نص عادي من المشرف، يتم اعتباره خبراً لصياغته ونشره تجريبياً
+    # النشر الصامت التام في قنوات النشر المستهدفة دون إظهار أي رسائل في البوت إطلاقاً
+    targets = APP_STATE.get("target_channels", ["@jhdhhdcj"])
     rephrased, used_model = await rephrase_with_ai(text)
-    kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📤 نشر في قنوات النشر الآن", callback_data="btn_publish_preview")],
-        [InlineKeyboardButton("🔙 رجوع", callback_data="btn_back_main")]
-    ])
-    await message.reply_text(
-        f"✨ **معاينة الصياغة الذكية بنموذج ({used_model}):**\n\n{rephrased}",
-        reply_markup=kb
-    )
+
+    for ch in targets:
+        try:
+            await client.send_message(ch, rephrased)
+            logger.info(f"✅ تم النشر المباشر الصامت في القناة: {ch}")
+        except Exception as e:
+            logger.error(f"خطأ أثناء النشر المباشر في {ch}: {e}")
 
 # ----------------- محرك اليوزربوت لسحب المنشورات ونشر الوسائط -----------------
 def register_userbot_handlers(ub_client: Client):

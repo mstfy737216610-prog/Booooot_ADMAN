@@ -36,14 +36,14 @@ try {
     text: safe_txt,
     parse_mode: "HTML"
   });
-  Bot.sendMessage("✅ **تم بنجاح نشر المنشور في قناتك الرسمية (" + target_channel + ")!**\n\n👁️ **معاينة المنشور:**\n" + text_to_publish);
+  // تم النشر المباشر في القناة بصمت تام
 } catch (err) {
   try {
     Api.sendMessage({
       chat_id: target_channel,
       text: text_to_publish
     });
-    Bot.sendMessage("✅ **تم بنجاح نشر المنشور في قناتك الرسمية (" + target_channel + ")!**");
+    // تم النشر المباشر في القناة بصمت تام
   } catch (err2) {
     Bot.sendMessage("⚠️ تعذر النشر في القناة `" + target_channel + "`. تأكد من إضافة البوت كمشرف (Admin) مع صلاحية نشر الرسائل.");
   }

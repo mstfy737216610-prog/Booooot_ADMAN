@@ -73,6 +73,8 @@
     { "name": "/toggle_ad_replacement" },
     { "name": "/crawl_twitter" },
     { "name": "/on_twitter_success" },
+    { "name": "/social" },
+    { "name": "/support" },
     { "name": "/on_ai_post_error" }
   ]
 }

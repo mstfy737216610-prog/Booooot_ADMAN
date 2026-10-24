@@ -11,8 +11,10 @@ import json
 import sqlite3
 import threading
 import logging
+import re
+import difflib
 from datetime import datetime, timedelta
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional, Tuple, Set
 
 logger = logging.getLogger("Database")
 
@@ -117,6 +119,23 @@ def init_db():
                 created_at TEXT
             )
             """)
+
+            # 6.1 جدول سجل الأخبار المنشورة لمنع التكرار الذكي والمقارنة خلال 24 ساعة
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS published_news_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                post_id TEXT,
+                title TEXT,
+                clean_text TEXT,
+                normalized_title TEXT,
+                tokens TEXT,
+                target_channel TEXT,
+                target_univ TEXT,
+                published_at TEXT
+            )
+            """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_published_news_time ON published_news_log (published_at)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_published_news_univ ON published_news_log (target_univ)")
 
             # 7. سجل صحة القنوات والصلاحيات
             cursor.execute("""
@@ -600,6 +619,149 @@ def mark_post_seen(post_id: str, post_hash: str, channel: str = ""):
             conn.close()
 
 
+# ----------------- خوارزمية منع التكرار الذكي والمقارنة خلال 24 ساعة -----------------
+
+STOP_WORDS_ARABIC = {
+    'في', 'من', 'على', 'إلى', 'عن', 'مع', 'هذا', 'هذه', 'ذلك', 'تلك', 'التي', 'الذي', 'الذين',
+    'أن', 'إن', 'قد', 'تم', 'كان', 'كانت', 'يكون', 'تكون', 'أو', 'أم', 'لا', 'ما', 'لم', 'لن',
+    'كل', 'بعد', 'قبل', 'خلال', 'حول', 'بين', 'أجل', 'عند', 'حيث', 'نحو', 'عبر', 'أنه', 'إنها',
+    'وقال', 'وقالت', 'أعلن', 'أعلنت', 'ذكر', 'ذكرت', 'يسر', 'يسرنا', 'نعلن', 'أعزاءنا', 'الطلاب',
+    'الطالبات', 'طلاب', 'طالبات', 'جامعة', 'كلية', 'عمادة', 'للعام', 'الدراسي', 'الجديد', 'عبر',
+    'بشأن', 'حول', 'الرسمي', 'الرسمية', 'بوابة', 'رابط', 'اليوم', 'أمس', 'غداً', 'تعلن'
+}
+
+
+def normalize_arabic_text(text: str) -> str:
+    """تجريد النص وتوحيد الحروف للتحقق الدقيق من التكرار الدلالي واللفظي"""
+    if not text:
+        return ""
+    # إزالة الروابط والـ URLs
+    s = re.sub(r'https?://\S+|www\.\S+', '', text)
+    # إزالة علامات الترقيم والأقواس والرموز التعبيرية
+    s = re.sub(r'[^\w\s]', ' ', s)
+    # إزالة التشكيل
+    s = re.sub(r'[\u064B-\u065F\u0670]', '', s)
+    # توحيد الألف
+    s = re.sub(r'[إأآا]', 'ا', s)
+    # توحيد الياء والتاء المربوطة
+    s = re.sub(r'ى', 'ي', s)
+    s = re.sub(r'ة', 'ه', s)
+    # إزالة الأسطر والمسافات المتكررة
+    s = re.sub(r'\s+', ' ', s)
+    return s.strip().lower()
+
+
+def extract_key_tokens(text: str) -> List[str]:
+    """استخراج الكلمات المفتاحية والجوهرية للخبر بعد إزالة كلمات الربط الشائعة"""
+    norm = normalize_arabic_text(text)
+    words = norm.split()
+    tokens = [w for w in words if len(w) > 2 and w not in STOP_WORDS_ARABIC]
+    return tokens
+
+
+def check_smart_duplicate(title: str, text: str, target_univ: Optional[str] = None, hours: int = 24) -> Tuple[bool, Optional[Dict[str, Any]], float, str]:
+    """
+    مقارنة الخبر الجديد بالأخبار المنشورة خلال الـ 24 ساعة الماضية:
+    إذا كان الخبر متطابقاً أو يتحدث عن نفس الموضوع والفعالية (حتى لو اختلف مصدره)، يُعاد:
+    (True, past_story, similarity_score, reason)
+    reason:
+      - 'identical': تطابق تام أو شبه تام (تخطي تلقائي لعدم التكرار)
+      - 'similar_topic': نفس الفعالية/الحدث ولكن بتفاصيل جديدة من مصدر آخر (مرشح للدمج الذكي)
+    """
+    norm_title = normalize_arabic_text(title)
+    if not norm_title:
+        first_line = (text.split("\n")[0] if text else "")[:80]
+        norm_title = normalize_arabic_text(first_line)
+
+    new_tokens = set(extract_key_tokens(title + " " + text[:300]))
+    if not norm_title and not new_tokens:
+        return False, None, 0.0, "empty"
+
+    since_time = (datetime.utcnow() - timedelta(hours=hours)).isoformat()
+
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            if target_univ:
+                cursor.execute("""
+                    SELECT id, post_id, title, clean_text, normalized_title, tokens, target_channel, target_univ, published_at
+                    FROM published_news_log
+                    WHERE published_at >= ? AND (target_univ = ? OR target_univ IS NULL)
+                    ORDER BY id DESC
+                """, (since_time, target_univ))
+            else:
+                cursor.execute("""
+                    SELECT id, post_id, title, clean_text, normalized_title, tokens, target_channel, target_univ, published_at
+                    FROM published_news_log
+                    WHERE published_at >= ?
+                    ORDER BY id DESC
+                """, (since_time,))
+
+            rows = cursor.fetchall()
+            for row in rows:
+                past = dict(row)
+                past_norm_title = past.get("normalized_title") or ""
+                past_tokens = set(json.loads(past.get("tokens") or "[]"))
+
+                # 1. قياس نسبة تشابه العناوين بواسطة SequenceMatcher
+                title_ratio = difflib.SequenceMatcher(None, norm_title, past_norm_title).ratio()
+
+                # 2. قياس تشابه الكلمات المفتاحية الأساسية (Jaccard Index)
+                jaccard = 0.0
+                if new_tokens and past_tokens:
+                    intersection = new_tokens & past_tokens
+                    union = new_tokens | past_tokens
+                    jaccard = len(intersection) / len(union) if union else 0.0
+
+                combined_score = max(title_ratio, jaccard)
+
+                # إذا كانت النسبة أعلى من 82%: تطابق تام أو شبه تام من مصدر آخر
+                if combined_score >= 0.82:
+                    return True, past, combined_score, "identical"
+
+                # إذا كانت النسبة بين 50% و 82%: نفس الفعالية/الموضوع الأكاديمي مع صياغة مختلفة
+                if combined_score >= 0.50:
+                    return True, past, combined_score, "similar_topic"
+
+                # التحقق إذا كانت 4 كلمات محورية مشتركة (مثل: قبول + هندسة + مواعيد + تسجيل)
+                if len(new_tokens & past_tokens) >= 4:
+                    return True, past, 0.75, "similar_topic"
+
+            return False, None, 0.0, "unique"
+        finally:
+            conn.close()
+
+
+def log_published_story(post_id: str, title: str, clean_text: str, target_channel: str, target_univ: Optional[str] = None):
+    """تسجيل الخبر المنشور في سجل الـ 24 ساعة للمقارنة ومنع التكرار والدمج"""
+    norm_title = normalize_arabic_text(title)
+    tokens = extract_key_tokens(title + " " + clean_text[:300])
+    now_str = datetime.utcnow().isoformat()
+
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO published_news_log 
+                (post_id, title, clean_text, normalized_title, tokens, target_channel, target_univ, published_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                str(post_id),
+                title[:200],
+                clean_text[:1500],
+                norm_title,
+                json.dumps(tokens, ensure_ascii=False),
+                target_channel,
+                target_univ,
+                now_str
+            ))
+            conn.commit()
+        finally:
+            conn.close()
+
+
 # ----------------- النشر المجدول (Scheduled Posts) -----------------
 
 def add_scheduled_post(user_id: int, target_channel: str, raw_text: str, photo_url: Optional[str], publish_at: str) -> int:
@@ -695,6 +857,26 @@ def add_university_project(
                 INSERT OR IGNORE INTO target_channels (channel_id, title, status, created_at)
                 VALUES (?, ?, 'active', ?)
             """, (target_ch, f"قناة {name.strip()}", now_str))
+
+            # 3. إدراج وتفعيل كافة مصادر تيليجرام التابعة للجامعة في جدول sources تلقائياً
+            for tg_s in telegram_sources:
+                tg_clean = tg_s.strip()
+                if tg_clean:
+                    cursor.execute("""
+                        INSERT INTO sources (id, type, target, title, priority, rule, enabled, last_post_id, added_by, created_at)
+                        VALUES (?, 'telegram', ?, ?, 'high', 'official', 1, '0', 7607633343, ?)
+                        ON CONFLICT(target) DO UPDATE SET enabled = 1, title = excluded.title
+                    """, (f"src_{clean_tag}_{abs(hash(tg_clean)) % 100000}", tg_clean, f"مصدر {name.strip()}", now_str))
+
+            # 4. إدراج وتفعيل مصادر تويتر/X التابعة للجامعة في جدول sources تلقائياً
+            for tw_s in twitter_sources:
+                tw_clean = tw_s.strip()
+                if tw_clean:
+                    cursor.execute("""
+                        INSERT INTO sources (id, type, target, title, priority, rule, enabled, last_post_id, added_by, created_at)
+                        VALUES (?, 'twitter', ?, ?, 'high', 'official', 1, '0', 7607633343, ?)
+                        ON CONFLICT(target) DO UPDATE SET enabled = 1, title = excluded.title
+                    """, (f"src_tw_{clean_tag}_{abs(hash(tw_clean)) % 100000}", tw_clean, f"تويتر {name.strip()}", now_str))
 
             conn.commit()
             sync_to_json_files()

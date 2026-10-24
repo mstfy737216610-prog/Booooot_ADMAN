@@ -152,15 +152,27 @@ export const GitHubHostingGuide: React.FC<Props> = ({ adminUsername }) => {
           </p>
         </div>
 
-        {/* Download Zip Package button */}
-        <a
-          href="/Telegram_Educational_Bot_GitHub_Package.zip"
-          download="Telegram_Educational_Bot_GitHub_Package.zip"
-          className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-purple-600/20 transition-all cursor-pointer"
-        >
-          <Download className="w-4 h-4" />
-          <span>تنزيل حزمة بوت بزنس المكتملة (ZIP)</span>
-        </a>
+        {/* Download Packages Buttons */}
+        <div className="flex flex-wrap items-center gap-2">
+          <a
+            href="/Telegram_Bots_Business_Package.zip"
+            download="Telegram_Bots_Business_Package.zip"
+            className="flex items-center gap-2 px-3.5 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-purple-600/20 transition-all cursor-pointer"
+            title="حزمة بوت بزنس لتطبيق الأندرويد (bot.json + commands)"
+          >
+            <Download className="w-4 h-4" />
+            <span>حزمة Bots.Business (أندرويد/BMB)</span>
+          </a>
+          <a
+            href="/Telegram_Educational_Bot_GitHub_Package.zip"
+            download="Telegram_Educational_Bot_GitHub_Package.zip"
+            className="flex items-center gap-2 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer"
+            title="حزمة بايثون الكاملة للاستضافة على GitHub / Docker / VPS"
+          >
+            <Download className="w-4 h-4 text-emerald-400" />
+            <span>حزمة بايثون & سيرفر (Python/Docker)</span>
+          </a>
+        </div>
       </div>
 
       {/* Telegram Live Interactive Bots.Business Simulator */}

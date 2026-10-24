@@ -153,7 +153,29 @@ for (var i = 0; i < valid_targets.length; i++) {
   var ch = valid_targets[i];
   var sent_success = false;
 
-  if ((media_type === "photo" || media_type === "photo_doc") && media_file_id) {
+  if (media_type === "video" && media_file_id) {
+    var clean_cap = rephrased_text.length > 1024 ? rephrased_text.substring(0, 1020) + "..." : rephrased_text;
+    try {
+      Api.sendVideo({ chat_id: ch, video: media_file_id, caption: safe_caption, parse_mode: "HTML", supports_streaming: true });
+      sent_success = true;
+    } catch (ev1) {
+      try {
+        Api.sendVideo({ chat_id: ch, video: media_file_id, caption: clean_cap, supports_streaming: true });
+        sent_success = true;
+      } catch (ev2) {
+        try {
+          Api.sendVideo({ chat_id: ch, video: media_file_id, supports_streaming: true });
+          Api.sendMessage({ chat_id: ch, text: safe_caption, parse_mode: "HTML" });
+          sent_success = true;
+        } catch (ev3) {
+          try {
+            Api.sendMessage({ chat_id: ch, text: clean_cap });
+            sent_success = true;
+          } catch (ev4) {}
+        }
+      }
+    }
+  } else if ((media_type === "photo" || media_type === "photo_doc") && media_file_id) {
     var clean_cap = rephrased_text.length > 1024 ? rephrased_text.substring(0, 1020) + "..." : rephrased_text;
     try {
       if (media_type === "photo_doc") {
@@ -175,6 +197,38 @@ for (var i = 0; i < valid_targets.length; i++) {
           Api.sendMessage({ chat_id: ch, text: clean_cap });
           sent_success = true;
         } catch (e3) {}
+      }
+    }
+  } else if (media_type === "document" && media_file_id) {
+    var clean_cap = rephrased_text.length > 1024 ? rephrased_text.substring(0, 1020) + "..." : rephrased_text;
+    try {
+      Api.sendDocument({ chat_id: ch, document: media_file_id, caption: safe_caption, parse_mode: "HTML" });
+      sent_success = true;
+    } catch (ed1) {
+      try {
+        Api.sendDocument({ chat_id: ch, document: media_file_id, caption: clean_cap });
+        sent_success = true;
+      } catch (ed2) {
+        try {
+          Api.sendMessage({ chat_id: ch, text: clean_cap });
+          sent_success = true;
+        } catch (ed3) {}
+      }
+    }
+  } else if (media_type === "animation" && media_file_id) {
+    var clean_cap = rephrased_text.length > 1024 ? rephrased_text.substring(0, 1020) + "..." : rephrased_text;
+    try {
+      Api.sendAnimation({ chat_id: ch, animation: media_file_id, caption: safe_caption, parse_mode: "HTML" });
+      sent_success = true;
+    } catch (ea1) {
+      try {
+        Api.sendAnimation({ chat_id: ch, animation: media_file_id, caption: clean_cap });
+        sent_success = true;
+      } catch (ea2) {
+        try {
+          Api.sendMessage({ chat_id: ch, text: clean_cap });
+          sent_success = true;
+        } catch (ea3) {}
       }
     }
   } else {
@@ -202,28 +256,4 @@ Bot.setProperty("total_processed", total, "integer");
 Bot.setProperty("last_post_title", rephrased_text.split("\n")[0] || "تحديث أكاديمي جديد", "string");
 Bot.setProperty("last_post_time", new Date().toLocaleTimeString(), "string");
 
-var confirm_text = "✅ **تمت صياغة ونشر الخبر في قناة (" + target_univ_name + ") بنجاح!**\n\n" +
-  "• **قناة النشر**: `" + target_names.join("`، `") + "`\n" +
-  "• **النموذج الذكي**: `" + current_model + "`\n" +
-  "• **تنقية الويب**: تم إزالة مخلفات HTML و &nbsp; و X ونقاط الفراغ تماماً.\n\n";
-
-if (failed_targets.length > 0) {
-  confirm_text += "⚠️ **تعذر الإرسال إلى (" + failed_targets.join("، ") + ")**: يرجى التأكد من رفع البوت كمشرف في القناة.\n\n";
-}
-
-confirm_text += "👁️ **معاينة المنشور المنشور للطلاب:**\n" +
-  "───────────────────\n" +
-  rephrased_text;
-
-var inline_keyboard = [
-  [
-    { title: "🔄 فحص أخبار الجامعات مجدداً", command: "/crawl_sources" },
-    { title: "🏛️ إدارة الجامعات وقنواتها", command: "/universities" }
-  ],
-  [
-    { title: "📊 حالة النظام والتقارير", command: "/status" },
-    { title: "🎛 اللوحة الرئيسية", command: "/start" }
-  ]
-];
-
-Bot.sendInlineKeyboard(inline_keyboard, confirm_text);
+// النشر الصامت التام: لا تظهر أي رسالة في البوت نهائياً تلبية لطلب المشرف الصارم

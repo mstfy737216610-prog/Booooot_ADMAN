@@ -309,14 +309,7 @@ Bot.setProperty("pending_targets", target_channels, "json");
 // تنقية النص الأصلي من شوائب الويب
 var cleaned_raw_text = cleanWebAndTwitterGarbage(raw_text);
 
-// 8. إشعار المشرف
-if (is_private_chat) {
-  var src_display = source_origin ? ("من المصدر: `" + source_origin + "`") : "المباشر";
-  Bot.sendMessage("📥 **تم استلام المنشور " + src_display + " بنجاح!**\n" +
-    "🏛️ **الجامعة المستهدفة**: `" + matched_univ.name + "`\n" +
-    "📢 **قناة النشر الحصرية**: `" + matched_univ.target_channel + "`\n" +
-    "⚡ جاري المعالجة بالذكاء الاصطناعي بنظام العزل الصارم...");
-}
+// 8. النشر الصامت التام دون إرسال أي رسائل في البوت
 
 // 9. كشف إعلانات المنافسين وحظرها أو استبدالها بإعلان خدمات المشرف
 var ad_replacement_enabled = Bot.getProperty("ad_replacement_enabled", false);
@@ -370,7 +363,7 @@ if (is_ad) {
     try { Api.sendMessage({ chat_id: ch_target, text: custom_ad }); } catch (err2) {}
   }
 
-  Bot.sendMessage("🎯 **تم كشف إعلان منافس واستبداله تلقائياً!**\nتم نشر إعلان خدماتك في قناة (" + matched_univ.name + "): `" + ch_target + "`");
+  // تم النشر المباشر في القناة بصمت تام
   return;
 }
 
@@ -394,7 +387,7 @@ if (!ai_enabled || !cleaned_raw_text) {
       Api.sendMessage({ chat_id: dest, text: safe_raw, parse_mode: "HTML" });
     }
   } catch (err) {}
-  Bot.sendMessage("⚡ **تم النشر المباشر في قناة (" + matched_univ.name + ")**: `" + dest + "`");
+  // تم النشر المباشر في القناة بصمت تام
   return;
 }
 
