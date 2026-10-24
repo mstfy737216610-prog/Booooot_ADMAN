@@ -5,7 +5,7 @@
 🤖 بوت النشر الأكاديمي الذكي المتقدم (Pyrogram V2 + FSM Control + UserBot)
 ================================================================================
 المشرف المعتمد: @M_S_F_G (معرف: 7607633343)
-توكن البوت: 8901693218:AAFUiQ62KQlfl6rtoarimpSpeoeCgA422Qg
+توكن البوت: 8901693218:AAH0Ri7lpY2R6d1DQSrKZclRa7kuo1Jw-Gs
 المحرك: Pyrogram v2.0+ (Dual Bot + UserBot Client)
 نظام الحالات: Finite State Machine (FSM) مدمج داخل الشات
 الذكاء الاصطناعي: DeepSeek-V4-Flash / Qwen3.8-27B / DeepSeek-V4.1-Flash
@@ -85,7 +85,7 @@ def safe_int(val: Any, default: int = 0) -> int:
     except Exception:
         return default
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8901693218:AAFUiQ62KQlfl6rtoarimpSpeoeCgA422Qg").strip()
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8901693218:AAH0Ri7lpY2R6d1DQSrKZclRa7kuo1Jw-Gs").strip()
 ADMIN_ID = safe_int(os.getenv("ADMIN_ID", "7607633343"), 7607633343)
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "M_S_F_G").replace("@", "").strip()
 

@@ -39,7 +39,7 @@ const STORAGE_KEY_CONFIG = 'tg_educational_config_v2';
 const STORAGE_KEY_SOURCES = 'tg_educational_sources_v2';
 
 const DEFAULT_CONFIG: BotConfig = {
-  botToken: '8901693218:AAFUiQ62KQlfl6rtoarimpSpeoeCgA422Qg',
+  botToken: '8901693218:AAH0Ri7lpY2R6d1DQSrKZclRa7kuo1Jw-Gs',
   adminId: '7607633343',
   adminUsername: '@M_S_F_G',
   additionalAdminIds: [],
@@ -177,10 +177,14 @@ export default function App() {
       const saved = localStorage.getItem(STORAGE_KEY_CONFIG);
       if (saved) {
         const parsed = JSON.parse(saved);
+        const oldRevoked = ['8901693218:AAFUiQ62KQlfl6rtoarimpSpeoeCgA422Qg', '8901693218:AAEOQmHMZLy-xaPbTUMq1KGhDwp1l0wFWP4'];
+        const currentToken = (!parsed.botToken || oldRevoked.includes(parsed.botToken))
+          ? DEFAULT_CONFIG.botToken
+          : parsed.botToken;
         return {
           ...DEFAULT_CONFIG,
           ...parsed,
-          botToken: parsed.botToken || DEFAULT_CONFIG.botToken,
+          botToken: currentToken,
           adminId: parsed.adminId || DEFAULT_CONFIG.adminId,
           adminUsername: parsed.adminUsername || DEFAULT_CONFIG.adminUsername,
           ai: {

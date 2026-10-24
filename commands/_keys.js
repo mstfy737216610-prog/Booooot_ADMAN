@@ -10,7 +10,7 @@
 CMD*/
 
 var text = "🔑 **بيانات الاعتمادات والمفاتيح المعتمدة:**\n\n" +
-  "• توكن البوت: `8901693218:AAFUiQ62KQlfl6rtoarimpSpeoeCgA422Qg`\n" +
+  "• توكن البوت: `8901693218:AAH0Ri7lpY2R6d1DQSrKZclRa7kuo1Jw-Gs`\n" +
   "• اسم البوت: @admiuin_bot\n" +
   "• معرف المشرف: `7607633343` (@M_S_F_G)\n" +
   "• عنوان الذكاء الاصطناعي: `https://api.hcnsec.cn/v1`\n" +

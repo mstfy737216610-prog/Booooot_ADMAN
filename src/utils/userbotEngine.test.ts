@@ -11,7 +11,7 @@ import {
 import type { BotConfig, SourceItem } from '../types/index.ts';
 
 const mockConfig: BotConfig = {
-  botToken: '8901693218:AAFUiQ62KQlfl6rtoarimpSpeoeCgA422Qg',
+  botToken: '8901693218:AAH0Ri7lpY2R6d1DQSrKZclRa7kuo1Jw-Gs',
   adminId: '7607633343',
   adminUsername: 'M_S_F_G',
   additionalAdminIds: [],

@@ -71,14 +71,14 @@ def safe_int(val: Any, default: int = 0) -> int:
 # ----------------- الإعدادات والاعتمادات والتحقق الذاتي -----------------
 _db_tok = db.get_setting("bot_token")
 _env_tok = os.getenv("BOT_TOKEN", "").strip()
-_revoked = ["8901693218:AAEOQmHMZLy-xaPbTUMq1KGhDwp1l0wFWP4"]
+_revoked = ["8901693218:AAEOQmHMZLy-xaPbTUMq1KGhDwp1l0wFWP4", "8901693218:AAFUiQ62KQlfl6rtoarimpSpeoeCgA422Qg"]
 
 if _db_tok and _db_tok not in _revoked:
     BOT_TOKEN = _db_tok
 elif _env_tok and _env_tok not in _revoked:
     BOT_TOKEN = _env_tok
 else:
-    BOT_TOKEN = "8901693218:AAFUiQ62KQlfl6rtoarimpSpeoeCgA422Qg"
+    BOT_TOKEN = "8901693218:AAH0Ri7lpY2R6d1DQSrKZclRa7kuo1Jw-Gs"
 ADMIN_ID = safe_int(os.getenv("ADMIN_ID", "7607633343"), 7607633343)
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "M_S_F_G").replace("@", "").strip()
 
