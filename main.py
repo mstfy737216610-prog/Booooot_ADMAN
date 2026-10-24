@@ -111,6 +111,17 @@ AI_BASE_URL = os.getenv("AI_BASE_URL", "https://api.hcnsec.cn/v1").rstrip("/")
 AI_API_KEY = os.getenv("AI_API_KEY", "sk-J2ky44F6VTDMkL8Q1GHL5sfmbeIpARVDayNuwMfxKI5zCdii").strip()
 PRIMARY_MODEL = os.getenv("PRIMARY_MODEL", "DeepSeek-V4.1-Flash").strip()
 FALLBACK_MODEL = os.getenv("FALLBACK_MODEL", "DeepSeek-V4-Flash").strip()
+
+# كوكبة النماذج الذكية المتتالية للعمل بأقصى طاقة استيعابية وتخطي أي أخطاء 503 تلقائياً
+AI_MODELS_CASCADE = [
+    PRIMARY_MODEL,
+    "auto",
+    "DeepSeek-V4-Pro",
+    "glm-5.3-flash",
+    "Qwen3.8-Flash-Next",
+    FALLBACK_MODEL,
+    "MiniMax-M3.1-Flash"
+]
 _raw_port = safe_int(os.getenv("PORT", os.getenv("KEEPALIVE_PORT", "8088")), 8088)
 PORT = 8088 if _raw_port == 3000 else _raw_port
 
@@ -516,17 +527,17 @@ class StandaloneTelegramEducationalBot:
 
         active_system_prompt = system_prompt or SYSTEM_PROMPT_REPHRASE
         if target_univ:
-            active_system_prompt += f"\n\n🚨 المنشور موجه حصراً لقناة وطلاب: ({target_univ}). أعد صياغة المحتوى باحترافية أكاديمية ليفيد طلاب هذه القناة، مع إبراز أي مواعيد أو شروط تقديم دون ذكر أي مصادر سابقة."
+            active_system_prompt += f"\n\n🚨 المنشور موجه حصراً لقناة وطلاب: ({target_univ}). أعد صياغة المحتوى بأعلى مستوى من البلاغة والبيان الأكاديمي ليفيد طلاب هذه القناة، مع إبراز أي مواعيد أو شروط تقديم بتفصيل دقيق دون ذكر أي مصادر سابقة."
 
         instruction_addon = f"تعليمات إضافية من المشرف: {custom_instruction}\n\n" if custom_instruction else ""
         payload = {
             "model": PRIMARY_MODEL,
             "messages": [
                 {"role": "system", "content": active_system_prompt},
-                {"role": "user", "content": f"{instruction_addon}صيغ هذا المحتوى الأكاديمي كمنشور رسمي أصلي لقناتك (بدون ذكر أي مصادر أو قنوات سابقة مع الحفاظ التام على روابط التقديم والبوابات والمواعيد):\n\n{clean_input}"}
+                {"role": "user", "content": f"{instruction_addon}صيغ هذا المحتوى الأكاديمي كمنشور رسمي أصلي لقناتك بأقصى درجات الإتقان والبيان الأكاديمي المفصل (مع الحفاظ التام والكامل على كافة المواعيد والتواريخ وشروط القبول وروابط البوابات دون أي اختصار):\n\n{clean_input}"}
             ],
             "temperature": 0.35,
-            "max_tokens": 1400
+            "max_tokens": 3500
         }
         headers = {
             "Authorization": f"Bearer {AI_API_KEY}",
@@ -542,34 +553,32 @@ class StandaloneTelegramEducationalBot:
                     cleaned_ai += f"\n\n🔗 <b>رابط التقديم / البوابة الإلكترونية:</b>\n{lk}"
             return cleaned_ai
 
-        # محاولة النموذج الأساسي
-        try:
-            req = urllib.request.Request(endpoint, data=json.dumps(payload).encode("utf-8"), headers=headers)
-            with urllib.request.urlopen(req, context=ssl_ctx, timeout=30) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                if "choices" in data and len(data["choices"]) > 0:
-                    ai_text = data["choices"][0]["message"]["content"].strip()
-                    res = _process_ai_response(ai_text)
-                    if res:
-                        return res
-        except Exception as e:
-            logger.warning(f"ملاحظة في نموذج الذكاء الأساسي {PRIMARY_MODEL}: {e}")
+        # محاولة كوكبة النماذج الذكية المتتالية (Failover Cluster) مع تجاوز أخطاء 503 تلقائياً
+        for model_name in AI_MODELS_CASCADE:
+            payload["model"] = model_name
+            for attempt in range(2):
+                try:
+                    req = urllib.request.Request(endpoint, data=json.dumps(payload).encode("utf-8"), headers=headers)
+                    with urllib.request.urlopen(req, context=ssl_ctx, timeout=30) as resp:
+                        data = json.loads(resp.read().decode("utf-8"))
+                        if "choices" in data and len(data["choices"]) > 0:
+                            ai_text = data["choices"][0]["message"]["content"].strip()
+                            res = _process_ai_response(ai_text)
+                            if res:
+                                return res
+                except urllib.error.HTTPError as e:
+                    if e.code in [502, 503, 504, 429]:
+                        logger.warning(f"ملاحظة في نموذج الذكاء {model_name} (خطأ {e.code})، الانتقال الفوري للنموذج البديل...")
+                        time.sleep(1.0)
+                        continue
+                    else:
+                        logger.debug(f"خطأ HTTP {e.code} في النموذج {model_name}: {e}")
+                        break
+                except Exception as e:
+                    logger.debug(f"استثناء في نموذج الذكاء {model_name} (محاولة {attempt+1}): {e}")
+                    time.sleep(0.5)
 
-        # محاولة النموذج البديل
-        try:
-            payload["model"] = FALLBACK_MODEL
-            req = urllib.request.Request(endpoint, data=json.dumps(payload).encode("utf-8"), headers=headers)
-            with urllib.request.urlopen(req, context=ssl_ctx, timeout=25) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                if "choices" in data and len(data["choices"]) > 0:
-                    ai_text = data["choices"][0]["message"]["content"].strip()
-                    res = _process_ai_response(ai_text)
-                    if res:
-                        return res
-        except Exception as e:
-            logger.warning(f"ملاحظة في النموذج البديل {FALLBACK_MODEL}: {e}")
-
-        # صياغة محلية ذكية وأكاديمية خالية من التأخير والتلف
+        # صياغة محلية ذكية وأكاديمية فائقة التنظيم في حال تعذر الاتصال بكامل كوكبة النماذج
         clean_lines = [l.strip() for l in clean_input.split("\n") if l.strip() and not l.startswith("@") and "t.me/" not in l]
         text_lines = [l for l in clean_lines if not l.startswith("http://") and not l.startswith("https://") and l not in ["•", "-", "*", "📌", "🎓"]]
         if not text_lines:
@@ -579,7 +588,7 @@ class StandaloneTelegramEducationalBot:
         first_line = re.sub(r'^[•\-\*#📌📢✨🎓▫️]\s*', '', first_line).strip()
         title = first_line[:75] + "..." if len(first_line) > 80 else first_line
 
-        body_lines = [l for l in text_lines[1:8] if len(l) > 3]
+        body_lines = [l for l in text_lines[1:10] if len(l) > 3]
         clean_bullets = []
         for bl in body_lines:
             bl_text = re.sub(r'^[•\-\*▫️]\s*', '', bl).strip()
@@ -594,14 +603,14 @@ class StandaloneTelegramEducationalBot:
         return f"🎓 <b>{title}</b>\n\n📌 <b>أبرز التفاصيل والتعليمات الأكاديمية:</b>\n{bullets}{links_block}\n\n💬 يسعدنا الرد على استفساراتكم في التعليقات ومشاركة الخبر مع زملائكم الطلاب!\n\n{tag} #أخبار_التعليم #شؤون_الطلاب #مواعيد"
 
     def call_ai_for_comment(self, comment_text: str, original_post: str = "", target_univ: Optional[str] = None) -> Optional[str]:
-        """توليد رد أكاديمي ذكي وفوري على تعليقات واستفسارات الطلاب تحت منشورات القناة"""
+        """توليد رد أكاديمي ذكي وفوري على تعليقات واستفسارات الطلاب تحت منشورات القناة بأقصى طاقة استيعابية"""
         clean_comment = self.clean_text_from_sources(comment_text)
         if not clean_comment or len(clean_comment) < 2:
             return None
 
         univ_str = f"لـ ({target_univ})" if target_univ else "الأكاديمية"
         system_prompt = f"""أنت المستشار الأكاديمي والرد الرسمي لقناة الأخبار الجامعية {univ_str}.
-مهمتك الرد المباشر والوافي على استفسارات الطلاب في قسم التعليقات بمنتهى اللباقة والاحترافية الأكاديمية.
+مهمتك الرد المباشر والشامل والوافي على استفسارات الطلاب في قسم التعليقات بمنتهى اللباقة والاحترافية الأكاديمية العالية.
 قواعد الرد:
 1. قدّم إجابة شافية، واضحة ومباشرة مبنية على تفاصيل المنشور الأصلي والأنظمة الجامعية المتبعة.
 2. إذا كان السؤال عن موعد أو شروط مذكورة في المنشور، لخصها للطالب بوضوح.
@@ -609,15 +618,15 @@ class StandaloneTelegramEducationalBot:
 4. اكتب بلغة عربية فصيحة، راقية، ومهذبة بدون أي إطالة مصطنعة أو حشو.
 5. لا تذكر أنك ذكاء اصطناعي أو بوت، تحدث بصفتك الفريق الأكاديمي الرسمي للقناة."""
 
-        user_content = f"المنشور الأصلي في القناة:\n{original_post[:1500]}\n\nسؤال / تعليق الطالب:\n{clean_comment}\n\nالرد الأكاديمي المباشر للطالب:"
+        user_content = f"المنشور الأصلي في القناة:\n{original_post[:2000]}\n\nسؤال / تعليق الطالب:\n{clean_comment}\n\nالرد الأكاديمي المباشر والشامل للطالب:"
         payload = {
             "model": PRIMARY_MODEL,
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_content}
             ],
-            "temperature": 0.3,
-            "max_tokens": 600
+            "temperature": 0.35,
+            "max_tokens": 1500
         }
         headers = {
             "Authorization": f"Bearer {AI_API_KEY}",
@@ -626,18 +635,25 @@ class StandaloneTelegramEducationalBot:
         }
         endpoint = f"{AI_BASE_URL}/chat/completions"
 
-        for model_name in [PRIMARY_MODEL, FALLBACK_MODEL]:
-            try:
-                payload["model"] = model_name
-                req = urllib.request.Request(endpoint, data=json.dumps(payload).encode("utf-8"), headers=headers)
-                with urllib.request.urlopen(req, context=ssl_ctx, timeout=25) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
-                    if "choices" in data and len(data["choices"]) > 0:
-                        ans = data["choices"][0]["message"]["content"].strip()
-                        if ans:
-                            return ans
-            except Exception as e:
-                logger.debug(f"call_ai_for_comment ({model_name}): {e}")
+        for model_name in AI_MODELS_CASCADE:
+            payload["model"] = model_name
+            for attempt in range(2):
+                try:
+                    req = urllib.request.Request(endpoint, data=json.dumps(payload).encode("utf-8"), headers=headers)
+                    with urllib.request.urlopen(req, context=ssl_ctx, timeout=25) as resp:
+                        data = json.loads(resp.read().decode("utf-8"))
+                        if "choices" in data and len(data["choices"]) > 0:
+                            ans = data["choices"][0]["message"]["content"].strip()
+                            if ans:
+                                return ans
+                except urllib.error.HTTPError as e:
+                    if e.code in [502, 503, 504, 429]:
+                        time.sleep(0.8)
+                        continue
+                    else:
+                        break
+                except Exception:
+                    time.sleep(0.4)
 
         return f"أهلاً بك عزيزي الطالب 🌸\nبخصوص استفسارك، نرجو مراجعة التفاصيل والروابط الموضحة في المنشور أعلاه أو زيارة البوابة الرسمية للجامعة للاطلاع على كافة الشروط والمواعيد المعتمدة."
 

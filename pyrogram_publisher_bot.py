@@ -191,46 +191,50 @@ SYSTEM_PROMPT = """# الدور: محرر وكاتب محتوى تعليمي و�
 💬 [دعوة تفاعلية قصيرة للطلاب]
 #جامعة #قبول #تسجيل #شؤون_الطلاب"""
 
+AI_MODELS_CASCADE = ["DeepSeek-V4.1-Flash", "auto", "DeepSeek-V4-Pro", "glm-5.3-flash", "Qwen3.8-Flash-Next", "DeepSeek-V4-Flash"]
+
 async def rephrase_with_ai(text: str, model_name: str = None) -> Tuple[str, str]:
-    """إعادة صياغة المنشور عبر نموذج الذكاء الاصطناعي مع حماية كاملة من الـ Timeout"""
-    model = model_name or APP_STATE.get("ai_model", "DeepSeek-V4-Flash")
+    """إعادة صياغة المنشور عبر نموذج الذكاء الاصطناعي مع حماية كاملة من الـ Timeout و503"""
     target_url = f"{AI_BASE_URL}/chat/completions"
-    
-    payload = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": f"أعد صياغة هذا الخبر الجامعي باحترافية:\n\n{text}"}
-        ],
-        "temperature": 0.35,
-        "max_tokens": 800
-    }
-    
     headers = {
         "Authorization": f"Bearer {AI_API_KEY}",
         "Content-Type": "application/json"
     }
     
-    # مهلة قصيرة 18 ثانية لمنع تجمد البوت ومشاكل الـ URL timeout
-    timeout = aiohttp.ClientTimeout(total=18)
+    timeout = aiohttp.ClientTimeout(total=25)
+    models_to_try = [model_name] if model_name else AI_MODELS_CASCADE
     
-    try:
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(target_url, json=payload, headers=headers) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    choices = data.get("choices", [])
-                    if choices and "message" in choices[0]:
-                        content = choices[0]["message"]["content"].strip()
-                        return content, model
-                logger.warning(f"AI API returned status {resp.status}")
-    except asyncio.TimeoutError:
-        logger.warning(f"⏱️ انتهت مهلة نموذج {model} (Timeout). يتم تطبيق الصياغة الأكاديمية السريعة فوراً.")
-    except Exception as e:
-        logger.warning(f"⚠️ خطأ في بوابة الذكاء الاصطناعي ({e}). يتم تطبيق المنسق الأكاديمي المدمج.")
+    for m in models_to_try:
+        if not m:
+            continue
+        payload = {
+            "model": m,
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": f"أعد صياغة هذا الخبر الجامعي باحترافية كاملة وتفصيل أكاديمي شامل:\n\n{text}"}
+            ],
+            "temperature": 0.35,
+            "max_tokens": 3000
+        }
+        try:
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(target_url, json=payload, headers=headers) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        choices = data.get("choices", [])
+                        if choices and "message" in choices[0]:
+                            content = choices[0]["message"]["content"].strip()
+                            return content, m
+                    elif resp.status in [502, 503, 504, 429]:
+                        logger.warning(f"ملاحظة في نموذج {m} (حالة {resp.status})، الانتقال للنموذج البديل...")
+                        await asyncio.sleep(0.5)
+                        continue
+        except Exception as e:
+            logger.debug(f"تجاوز نموذج {m}: {e}")
+            await asyncio.sleep(0.3)
 
     # المعالج الأكاديمي المحلي الفوري (Zero-Timeout Guarantee)
-    return fallback_rephrase(text), "محرك التنسيق الأكاديمي الفوري"
+    return fallback_rephrase(text), "محرك التنسيق الأكاديمي المدمج"
 
 def fallback_rephrase(raw_text: str) -> str:
     cleaned = re.sub(r'@[a-zA-Z0-9_]+', '', raw_text)

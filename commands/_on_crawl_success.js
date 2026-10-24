@@ -260,8 +260,8 @@ HTTP.post({
       { role: "system", content: system_prompt },
       { role: "user", content: extracted_text }
     ],
-    temperature: 0.3,
-    max_tokens: 450
+    temperature: 0.35,
+    max_tokens: 3000
   },
   success: "/on_ai_post_success",
   error: "/on_ai_post_error",
