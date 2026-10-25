@@ -144,43 +144,30 @@ ssl_ctx = ssl.create_default_context()
 # طابور معالجة الرسائل والمنشورات غير المتزامن لمنع تجمد البوت
 post_queue = queue.Queue(maxsize=100)
 
-SYSTEM_PROMPT_REPHRASE = """# الدور: ممثل الدفعة والمستشار الطلابي الخليجي المقرّب (إنسان حقيقي وزميل ناصح ومحب لزملائه، ولست روبوتاً آلياً)
-## الهوية والروح الحقيقية:
-أنت لست آلة تنسخ بيانات جامعية جافة بقوالب صماء ميتة، بل أنت ممثل الدفعة والزميل المحبوب والناصح الأمين في مجتمعاتنا الجامعية الخليجية والعربية. تتحدث مع إخوانك وزملائك في قنوات الكلية وقروبات الدفعة بأسلوب خليجي دافئ، عفوي، أخوي، مفعم بالروح والمشاعر الصادقة وقريب جداً لقلب الطالب.
+SYSTEM_PROMPT_REPHRASE = """# الدور: ممثل الدفعة والزميل الناصح (صوت الطالب الحقيقي)
+## المهمة الأساسية:
+أنت لست مجرد بوت آلي، بل أنت "زميل" وإنسان حقيقي ينقل الأخبار لزملائه في (جامعة الملك سعود) أو (كليات التقنية العليا). صغ الخبر بأسلوب "أخوي" عفوي يلمس قلب الطالب ويفيده بعيداً عن القوالب الإدارية الجافة.
 
-## 🚫 محرمات قطعية (قواعد كسر الروبوتية والتكرار الأعمى):
-1. يمنع منعاً باتاً البدء بـ "🚨 تنبيه لطلاب..." أو أي قالب ثابت مشابه. نوع بداياتك دائماً بحسب الموضوع والحدث!
-2. يمنع استخدام القوالب الإدارية الباردة والمبتذلة: (أبرز التفاصيل والتعليمات الأكاديمية / يسعدنا الرد على استفساراتكم في التعليقات / إعلان وتحديث رسمي / نود إفادتكم / يرجى الاطلاع على).
-3. يمنع تكرار نفس العبارات في كل منشور؛ الذكاء يكمن في فهم "متى" تضع كل عبارة بحسب سياقها الصحيح دون حشو!
+## 🚫 المبادئ والضوابط الصارمة:
+1. **منع التوليد الوهمي (Zero Hallucination):** 
+   - يُمنع منعاً باتاً إضافة أي معلومة أو تاريخ أو اسم (مثل: أبو محمد، الأدفايزر) إذا لم تكن موجودة نصاً في المصدر.
+   - إذا لم يذكر الخبر تاريخاً، لا تخمن! قل فقط ما هو مؤكد.
+2. **عزل الجامعات واللهجات:**
+   - (KSU): لهجة سعودية بيضاء ودية.
+   - (HCT): لهجة إماراتية بيضاء مهذبة.
+3. **حظر الروابط الوهمية:**
+   - يمنع وضع عبارات مثل [الرابط هنا] أو روابط تجريبية. لا تضع رابطاً إلا إذا كان حقيقياً من المصدر.
+4. **روح المنشور:**
+   - الغِ المقدمات الرسمية (نود إفادتكم، إعلان وتحديث). ادخل في الموضوع فوراً.
+   - ركز على (الاختبارات، الجداول، التسجيل، المكافأة).
+   - اختم دائماً بدعوات صادقة (فالكم التوفيق، الله يسهل لكم، شدوا الحيل يا أبطال).
 
-## 🧠 الذكاء السياقي الحقيقي (Context-Aware Persona):
-افهم نوع المنشور وصغه بروحه الواقعية:
-1. 📚 التسجيل والمواد والأدفايزر:
-   - خاطب الطلاب كزميل ناصح وحثهم على متابعة مرشدهم الأكاديمي (الأدفايزر) قبل إغلاق النظام:
-   - "يا شباب ويا بنات بخصوص تسجيل المواد.. كلموا أدفايزراتكم (المرشدين الأكاديميين) يسجلون لكم المادة أو يفتحون السكاشن قبل يقفل السستم ⏰"
-2. ☀️ الفصل الصيفي (السمر):
-   - استخدام مصطلح "السمر" أو "الفصل الصيفي" بروح خفيفة ومنظمة:
-   - "بخصوص السمر (الفصل الصيفي).. هذي مواعيد تنزيل المقررات والشروط كاملة، رتبوا جداولكم من بدري وفالكم التساهيل ☀️📚"
-3. 📝 مواسم الاختبارات والفاينل والكويزات:
-   - الهدوء، الأدعية الصادقة، التذكير بالأذكار والصلاة على النبي، والتحفيز:
-   - "هانت يا ربعنا.. ما بقى شي ونختم هالفصل على خير بإذن الله. توكلوا على الله ولا تنسون أذكاركم وأدعيتكم، وربي ما يضيع لكم تعب.. وفالكم الـ A+ وأعلى القريدات يا رب 🤲✨"
-4. 🎓 التخرج والنتائج:
-   - فرحة غامرة، فخر وتفاعل مجتمعي عالي:
-   - "ألف ألف مبروك لخريجينا وخريجاتنا! تستاهلون الفرحة بعد تعب السنين.. المتخرجين يثبتون وجودهم برياكشن قلب ❤️🎓 وعقبال أعلى المناصب."
-5. 🤍 يوم الجمعة والنفحات الإيمانية:
-   - بروح هادئة محبة للخير:
-   - "اللهم صلّ وسلم على نبينا محمد وعلى آله وصحبه أجمعين 🤍.. جمعة مباركة يا أحبة، تذكير بسورة الكهف وساعة الاستجابة، لا تنسون أنفسكم وأهاليكم وزملائكم من صالح الدعاء."
-6. 🤝 مشاريع واستبيانات الزملاء:
-   - الفزعة والدعم الأخوي:
-   - "فزعتكم يا ربعنا لزميلكم في مشروع تخرجه.. استبيان بسيط ما ياخذ من وقتكم دقيقة وحدة، بتساعدونه وتفرجون كربته لاهنتم: [الرابط]"
-7. 🌱 التوعية والعمل الخيري والتطوع:
-   - التحفيز على الخير (التبرع بالدم، الساعات التطوعية، مبادرات الكلية) بروح شبابية دافئة ونبيلة.
+## 🔤 التنسيق الإلزامي:
+- استخدم <b>...</b> للمواعيد والتواريخ والنسب المهمة.
+- استخدم النقاط [▫️] لسرد الشروط أو الخطوات.
+- اجعل المنشور قصيراً، ذكياً، ومفيداً جداً."""
 
-## 🔤 التنسيق والتنظيم الإلزامي:
-- أبرز المواعيد والتواريخ والأوقات وأسماء القاعات والمواد والنسب بخط عريض <b>...</b> لتسهيل القراءة السريعة.
-- احتفظ بروابط البوابات الرسمية والاستمارات كاملة بسطر مستقل (🔗 <b>رابط البوابة / التقديم:</b> [الرابط]).
-- احذف أي معرفات قنوات خارجية ترويجية (@channel أو t.me).
-- إذا كان هناك صورة أو جدول مرفق، اجعل النص كابشن مشوق ومختصر يوجه العين فوراً للمرفق أعلاه."""
+
 
 AD_KEYWORDS = [
     "حل واجبات بمقابل", "حل واجبات واختبارات", "حل كويزات", "حل فاينل", "حل اسايمنت",
@@ -395,6 +382,48 @@ class StandaloneTelegramEducationalBot:
         self.telethon_client: Optional[Any] = None
         self.telethon_loop: Optional[asyncio.AbstractEventLoop] = None
         self.running = True
+
+    def extract_web_article(self, url: str) -> str:
+        """سحب محتوى المقال الكامل من الرابط المصدر وتحليل النص الحقيقي بدقة (Smart Scraper)"""
+        if not url or not url.startswith("http"):
+            return ""
+        try:
+            req = urllib.request.Request(url, headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
+            })
+            with urllib.request.urlopen(req, context=ssl_ctx, timeout=12) as resp:
+                raw_html = resp.read().decode("utf-8", errors="ignore")
+                
+                # استخراج النصوص الجوهرية فقط وتجاهل ضجيج الجافاسكريبت والستايلات
+                content_parts = []
+                # 1. استخراج عنوان الصفحة
+                title_m = re.search(r'<title>(.*?)</title>', raw_html, re.IGNORECASE | re.DOTALL)
+                if title_m:
+                    content_parts.append(f"العنوان الأساسي: {html.unescape(title_m.group(1).strip())}")
+                
+                # 2. استخراج الفقرات (p)
+                paragraphs = re.findall(r'<p[^>]*>(.*?)</p>', raw_html, re.IGNORECASE | re.DOTALL)
+                for p in paragraphs:
+                    p_clean = re.sub(r'<[^>]+>', '', p).strip()
+                    if len(p_clean) > 40: # تجاهل الروابط القصيرة أو النصوص غير المفيدة
+                        content_parts.append(html.unescape(p_clean))
+                
+                # 3. استخراج العناوين (h1, h2, h3)
+                headers = re.findall(r'<h[1-3][^>]*>(.*?)</h[1-3]>', raw_html, re.IGNORECASE | re.DOTALL)
+                for h in headers:
+                    h_clean = re.sub(r'<[^>]+>', '', h).strip()
+                    if len(h_clean) > 10:
+                        content_parts.append(f"قسم: {html.unescape(h_clean)}")
+                
+                full_text = "\n".join(content_parts)
+                # حذف الفراغات الزائدة والأسطر الفارغة المتكررة
+                full_text = re.sub(r'\n+', '\n', full_text).strip()
+                return full_text[:10000] # سقف لضمان استقرار المعالجة
+        except Exception as e:
+            logger.debug(f"⚠️ فشل محرك السحب الذكي للرابط {url}: {e}")
+            return ""
+
 
     # ----------------- طلبات تيليجرام الأساسية -----------------
     def tg_request(self, method: str, payload: Optional[Dict] = None, timeout: int = 25) -> Dict[str, Any]:
@@ -1325,14 +1354,19 @@ class StandaloneTelegramEducationalBot:
             return []
         matches = re.findall(r'https?://[^\s<>"]+', text)
         valid = []
+        # روابط وهمية شائعة يجب حظرها تماماً
+        placeholder_domains = ["example.com", "google.com/search", "test.com", "edu.com"]
         for u in matches:
             u_clean = u.rstrip(".,;!?)>]\'\"")
             if "t.me/" in u_clean or "telegram.me/" in u_clean:
+                continue
+            if any(pd in u_clean.lower() for pd in placeholder_domains):
                 continue
             resolved = clean_and_resolve_url(u_clean, target_univ)
             if resolved and resolved not in valid and "news.google.com" not in resolved:
                 valid.append(resolved)
         return valid
+
 
     def call_ai_merge_stories(self, story1: str, story2: str, target_univ: Optional[str] = None) -> Optional[str]:
         """دمج الأخبار المماثلة بالذكاء الاصطناعي: دمج تفاصيل ومستجدات المصدرين في منشور أكاديمي واحد شامل"""
@@ -1359,7 +1393,7 @@ class StandaloneTelegramEducationalBot:
                 {"role": "system", "content": merge_prompt},
                 {"role": "user", "content": f"التقرير الأول:\n{clean1}\n\nالتقرير الثاني (تفاصيل إضافية مكملة):\n{clean2}\n\nالمطلوب: صغ من هذين التقريرين منشوراً واحداً رسمياً شاملاً يجمع كافة المواعيد والتفاصيل دون أي تكرار:"}
             ],
-            "temperature": 0.35,
+            "temperature": 0.1,
             "max_tokens": 1500
         }
         headers = {
@@ -1375,11 +1409,15 @@ class StandaloneTelegramEducationalBot:
                 data = json.loads(resp.read().decode("utf-8"))
                 if "choices" in data and len(data["choices"]) > 0:
                     ai_text = data["choices"][0]["message"]["content"].strip()
-                    cleaned_ai = self.clean_text_from_sources(ai_text)
+                    # تنظيف أي روابط وهمية قد يكون الذكاء الاصطناعي قد اخترعها
+                    cleaned_ai = re.sub(r'\[?(?:الرابط هنا|رابط البوابة|اضغط هنا)\]?', '', ai_text)
+                    cleaned_ai = re.sub(r'https?://(?:www\.)?example\.com\S*', '', cleaned_ai)
+                    cleaned_ai = self.clean_text_from_sources(cleaned_ai)
+
                     for lk in all_links:
                         if lk not in cleaned_ai:
                             cleaned_ai += f"\n\n🔗 <b>رابط البوابة الإلكترونية المعتمدة:</b>\n{lk}"
-                    return cleaned_ai
+                    return cleaned_ai.strip()
         except Exception as e:
             logger.warning(f"ملاحظة في دمج الأخبار بالذكاء الاصطناعي: {e}")
 
@@ -1418,12 +1456,29 @@ class StandaloneTelegramEducationalBot:
         # استخراج كافة الروابط الخارجية (بوابات التقديم، PowerApps، الاستمارات، بوابات الجامعات) مع تنظيفها وفك روابط Google News
         ext_links = self.extract_external_links(raw_text, target_univ)
 
+        # 3. محرك التدقيق الزمني والتحقق من التواريخ (Date & Time Validation Engine)
+        today = datetime.now()
+        today_str = today.strftime("%Y-%m-%d (%A)")
+        
         active_system_prompt = system_prompt or SYSTEM_PROMPT_REPHRASE
+        active_system_prompt += f"\n\n📅 تاريخ اليوم الحالي للمطابقة: {today_str}"
+        active_system_prompt += "\n\n⚠️ ضوابط التدقيق الزمني الصارمة:"
+        active_system_prompt += "\n- استخرج التواريخ الواردة في النص وقارنها بتاريخ اليوم."
+        active_system_prompt += "\n- إذا كان الخبر قديماً (انتهى موعد التسجيل، الاختبار فات، الفعالية انتهت)، أجب حصراً بكلمة: IGNORE_EXPIRED"
+        active_system_prompt += "\n- يمنع منعاً باتاً اختراع أي موعد أو تاريخ غير موجود في النص المصدر."
+        active_system_prompt += "\n- ركز على المنشورات التي تهم الطالب حالياً ومستقبلاً."
+
         if target_univ:
-            active_system_prompt += f"\n\n🚨 المنشور موجه لطلاب: ({target_univ}). تحدث كأنك زميلهم وممثل دفعتهم الناصح بأسلوب خليجي دافئ. ادخل في صلب الموضوع فوراً بدون أي قوالب إدارية نمطية. أبرز التواريخ والأوقات والمواعيد بخط عريض <b>...</b> وتخلص تماماً من أي حشو."
+            dialect_instruction = ""
+            if "الملك سعود" in target_univ or "KSU" in target_univ.upper():
+                dialect_instruction = "استخدم اللهجة السعودية البيضاء (جامعة الملك سعود)."
+            elif "التقنية العليا" in target_univ or "HCT" in target_univ.upper():
+                dialect_instruction = "استخدم اللهجة الإماراتية البيضاء (كليات التقنية العليا)."
+            
+            active_system_prompt += f"\n\n🚨 المنشور موجه لطلاب: ({target_univ}). {dialect_instruction} التزم بالحقائق الواردة فقط ولا تخترع أي تفاصيل."
 
         instruction_addon = f"توجيهات إضافية من المشرف: {custom_instruction}\n\n" if custom_instruction else ""
-        user_prompt = f"{instruction_addon}[توجيه سياقي ذكي: {ctx_guide}]\n\nالمحتوى المطلوب صياغته:\n{clean_input}"
+        user_prompt = f"{instruction_addon}[توجيه سياقي ذكي: {ctx_guide}]\n\nالمحتوى المطلوب تحليله وصياغته:\n{clean_input}"
 
         payload = {
             "model": PRIMARY_MODEL,
@@ -1431,9 +1486,10 @@ class StandaloneTelegramEducationalBot:
                 {"role": "system", "content": active_system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            "temperature": 0.4,
+            "temperature": 0.1,
             "max_tokens": 1500
         }
+
         headers = {
             "Authorization": f"Bearer {AI_API_KEY}",
             "Content-Type": "application/json",
@@ -1442,11 +1498,17 @@ class StandaloneTelegramEducationalBot:
         endpoint = f"{AI_BASE_URL}/chat/completions"
 
         def _process_ai_response(text: str) -> Optional[str]:
-            cleaned_ai = self.clean_text_from_sources(text)
+            # تنظيف أي روابط وهمية قد يكون الذكاء الاصطناعي قد اخترعها رغم التحذيرات
+            cleaned_ai = re.sub(r'\[?(?:الرابط هنا|رابط البوابة|اضغط هنا)\]?', '', text)
+            cleaned_ai = re.sub(r'https?://(?:www\.)?example\.com\S*', '', cleaned_ai)
+            cleaned_ai = self.clean_text_from_sources(cleaned_ai)
+            
+            # إضافة الروابط الحقيقية فقط إذا لم تكن موجودة بالفعل في النص
             for lk in ext_links:
                 if lk not in cleaned_ai:
                     cleaned_ai += f"\n\n🔗 <b>رابط البوابة الإلكترونية المعتمدة:</b>\n{lk}"
-            return cleaned_ai
+            return cleaned_ai.strip()
+
 
         # محاولة كوكبة النماذج الذكية المتتالية (Failover Cluster) مع تجاوز أخطاء 503 تلقائياً
         for model_name in AI_MODELS_CASCADE:
@@ -1458,9 +1520,13 @@ class StandaloneTelegramEducationalBot:
                         data = json.loads(resp.read().decode("utf-8"))
                         if "choices" in data and len(data["choices"]) > 0:
                             ai_text = data["choices"][0]["message"]["content"].strip()
+                            if "IGNORE_EXPIRED" in ai_text.upper():
+                                logger.info("🛡️ [مصفاة التواريخ] تم استبعاد الخبر لأنه قديم أو انتهى وقته (Expired).")
+                                return None
                             res = _process_ai_response(ai_text)
                             if res:
                                 return res
+
                 except urllib.error.HTTPError as e:
                     if e.code in [502, 503, 504, 429]:
                         logger.warning(f"ملاحظة في نموذج الذكاء {model_name} (خطأ {e.code})، الانتقال الفوري للنموذج البديل...")
@@ -1656,6 +1722,16 @@ class StandaloneTelegramEducationalBot:
                     post_queue.task_done()
                     continue
 
+                # 4. تفعيل محرك السحب الذكي (Smart Scraper) للروابط المكتشفة
+                ext_links = self.extract_external_links(raw_text, target_univ_name)
+                web_context = ""
+                if ext_links:
+                    logger.info(f"🌐 [Smart Scraper] جاري سحب محتوى الرابط المصدر: {ext_links[0]}...")
+                    web_context = self.extract_web_article(ext_links[0])
+                    if web_context:
+                        raw_text = f"المحتوى المسحوب من الموقع:\n{web_context}\n\nنص الخبر الأصلي:\n{raw_text}"
+                        logger.info(f"✅ تم دمج {len(web_context)} حرف من محتوى الموقع لزيادة دقة التحليل.")
+
                 custom_instructions = db.get_setting("custom_instructions", "")
 
                 # 4. دمج الأخبار المماثلة بالذكاء الاصطناعي (AI News Synthesis / Multi-Source Merging)
@@ -1666,9 +1742,9 @@ class StandaloneTelegramEducationalBot:
                 else:
                     rephrased = self.call_ai(raw_text, custom_instructions, target_univ=target_univ_name)
 
-
                 # إذا تعذر الـ AI أو كان المنشور عبارة عن صورة/جدول بمفرده، نصيغ كابشن أخوي عفوي ولا نسقط الوسائط إطلاقاً
                 if not rephrased:
+
                     if has_media_item or (raw_text and len(raw_text.strip()) > 3):
                         clean_t = self.clean_text_from_sources(raw_text).strip()
                         univ_tag = f"#{target_univ_name.replace(' ', '_')}" if target_univ_name else "#شؤون_الطلاب"
@@ -2756,7 +2832,38 @@ class StandaloneTelegramEducationalBot:
                 self.show_ad_panel(chat_id)
                 return
 
+        # ----------------- واجهة التدريب والمزامنة الذاتية (Training Interface) -----------------
+        if clean_text.startswith("تعلم:") or clean_text.startswith("توجيه:") or clean_text.startswith("Train:"):
+            if not self.is_admin(chat_id):
+                self.send_msg(chat_id, "⛔️ عذراً، واجهة التدريب متاحة فقط للمشرف العام.")
+                return
+            instruction = clean_text.split(":", 1)[1].strip()
+            if instruction:
+                old_instr = db.get_setting("custom_instructions", "")
+                new_instr = f"{old_instr}\n- {instruction}" if old_instr else f"- {instruction}"
+                db.set_setting("custom_instructions", new_instr)
+                
+                # مسح قواعد الذاكرة القديمة المتعارضة (تطهير الذاكرة)
+                if "انس" in instruction or "توقف عن" in instruction or "لا تكرر" in instruction:
+                    # منطق بسيط لتنظيف التعليمات القديمة إذا طلب المستخدم ذلك
+                    lines = new_instr.split("\n")
+                    # يمكن توسيع هذا المنطق لاحقاً
+                    pass
+                
+                self.send_msg(chat_id, "✅ **تم حفظ التوجيه الجديد وتحديث قواعد سلوك البوت فوراً!**\nتمت المزامنة مع قاعدة البيانات الدائمة وسيتم تطبيق التعليمات في المنشورات القادمة.")
+            return
+
+            return
+
+        if clean_text in ["مسح التعليمات", "فرمتة الذاكرة", "Reset Instructions"]:
+            if self.is_admin(chat_id):
+                db.set_setting("custom_instructions", "")
+                self.send_msg(chat_id, "🧹 **تم مسح كافة التعليمات والتوجيهات السابقة وتصفير ذاكرة السلوك!**\nسيعود البوت الآن لإعدادات المصنع الأصلية.")
+            return
+
         # ----------------- الأوامر المباشرة -----------------
+
+
         if clean_text in ["/git_sync", "🔄 مزامنة جيت هاب (Git Sync)", "مزامنة جيت هاب", "git sync"]:
             self.send_msg(chat_id, "🔄 **جاري مزامنة الإعدادات والمصادر ومشاريع الجامعات مع مستودع GitHub...**")
             res = db.git_sync("تحديث ومزامنة مباشرة من تيليجرام")

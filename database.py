@@ -1086,6 +1086,7 @@ def sync_to_json_files():
             "processed_count": int(get_setting("processed_count", "18")),
             "forwarded_count": int(get_setting("forwarded_count", "15")),
             "ad_replaced_count": int(get_setting("ad_replaced_count", "3")),
+            "custom_instructions": get_setting("custom_instructions", ""),
             "last_run_timestamp": datetime.utcnow().isoformat()
         }
         with open(STATE_FILE, "w", encoding="utf-8") as f:
