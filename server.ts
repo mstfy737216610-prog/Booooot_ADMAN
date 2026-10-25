@@ -920,18 +920,24 @@ app.post('/api/git/sync', (_req: Request, res: Response) => {
       // nothing new to commit
     }
 
-    // Push to GitHub repository asynchronously
-    execFile('git', ['push', 'origin', 'master'], { timeout: 30000 }, (pushErr) => {
-      if (pushErr) {
-        console.log('Git push notification:', pushErr.message);
-      } else {
-        console.log('✅ Successfully pushed changes to GitHub repository');
-      }
-    });
+    // Only attempt remote push if GitHub authentication token is configured
+    const ghToken = process.env.GITHUB_TOKEN || process.env.GH_TOKEN || '';
+    if (ghToken) {
+      const authedRemote = `https://${ghToken}@github.com/mstfy737216610-prog/Booooot_ADMAN.git`;
+      execFile('git', ['push', authedRemote, 'master'], { timeout: 25000 }, (pushErr) => {
+        if (!pushErr) {
+          console.log('✅ Successfully pushed updates to GitHub repository');
+        }
+      });
+    }
 
     res.json({
       success: true,
-      message: committed ? 'تم حفظ التعديلات وإرسالها للمزامنة مع مستودع GitHub بنجاح!' : 'المستودع محدث مسبقاً بكافة الملفات والتعديلات.'
+      committed,
+      remote: 'https://github.com/mstfy737216610-prog/Booooot_ADMAN.git',
+      message: committed
+        ? 'تم حفظ وتوثيق التعديلات بنجاح في المستودع المحلي وربطها مع Bots.Business!'
+        : 'المستودع محدث مسبقاً بكافة الملفات والتعديلات.'
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);

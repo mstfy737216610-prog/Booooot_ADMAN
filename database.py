@@ -1105,12 +1105,15 @@ def git_sync(commit_message: str = "Auto-sync update") -> Dict[str, Any]:
         # Git commit
         subprocess.run(["git", "commit", "-m", commit_message], cwd=BASE_DIR, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=15)
 
-        # Non-blocking push to origin master
+        # Non-blocking push to origin master (only if token is provided)
         def _bg_push():
-            try:
-                subprocess.run(["git", "push", "origin", "master"], cwd=BASE_DIR, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=25)
-            except Exception:
-                pass
+            gh_token = os.getenv("GITHUB_TOKEN", "").strip() or os.getenv("GH_TOKEN", "").strip()
+            if gh_token:
+                authed_remote = f"https://{gh_token}@github.com/mstfy737216610-prog/Booooot_ADMAN.git"
+                try:
+                    subprocess.run(["git", "push", authed_remote, "master"], cwd=BASE_DIR, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=25)
+                except Exception:
+                    pass
 
         threading.Thread(target=_bg_push, daemon=True).start()
         logger.info(f"🔄 [Git Sync] تمت مزامنة التعديلات بنجاح: {commit_message}")
