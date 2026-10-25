@@ -255,7 +255,8 @@ def migrate_from_json(conn: sqlite3.Connection):
         "processed_count": "18",
         "forwarded_count": "15",
         "ad_replaced_count": "3",
-        "ad_replacement_enabled": "0"
+        "ad_replacement_enabled": "0",
+        "bot_token": "8901693218:AAH0hoZdTq9qGaLYOhu_Cvxg9TEzTPAVADw"
     }
 
     for k, v in defaults.items():

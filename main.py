@@ -26,6 +26,7 @@ import logging
 import threading
 import asyncio
 import uuid
+import tempfile
 import urllib.request
 import urllib.parse
 import urllib.error
@@ -72,14 +73,18 @@ def safe_int(val: Any, default: int = 0) -> int:
 # ----------------- الإعدادات والاعتمادات والتحقق الذاتي -----------------
 _db_tok = db.get_setting("bot_token")
 _env_tok = os.getenv("BOT_TOKEN", "").strip()
-_revoked = ["8901693218:AAEOQmHMZLy-xaPbTUMq1KGhDwp1l0wFWP4", "8901693218:AAFUiQ62KQlfl6rtoarimpSpeoeCgA422Qg"]
+_revoked = [
+    "8901693218:AAEOQmHMZLy-xaPbTUMq1KGhDwp1l0wFWP4",
+    "8901693218:AAFUiQ62KQlfl6rtoarimpSpeoeCgA422Qg",
+    "8901693218:AAH0Ri7lpY2R6d1DQSrKZclRa7kuo1Jw-Gs"
+]
 
 if _db_tok and _db_tok not in _revoked:
     BOT_TOKEN = _db_tok
 elif _env_tok and _env_tok not in _revoked:
     BOT_TOKEN = _env_tok
 else:
-    BOT_TOKEN = "8901693218:AAH0Ri7lpY2R6d1DQSrKZclRa7kuo1Jw-Gs"
+    BOT_TOKEN = "8901693218:AAH0hoZdTq9qGaLYOhu_Cvxg9TEzTPAVADw"
 ADMIN_ID = safe_int(os.getenv("ADMIN_ID", "7607633343"), 7607633343)
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "M_S_F_G").replace("@", "").strip()
 
@@ -316,8 +321,11 @@ class StandaloneTelegramEducationalBot:
         except urllib.error.HTTPError as e:
             err_body = e.read().decode("utf-8", errors="ignore")
             # لا نسجل خطأ 409 أو 401 كـ warning في getUpdates لتجنب التشويش عند تحديث التوكن أو عمل Bots.Business
+            # وكذلك أخطاء تعذر جلب الروابط الخارجية مباشرة لأن المحرك يتكفل بتنزيلها ورفعها تلقائياً كملف
             if e.code in [401, 409] and "getUpdates" in method:
                 logger.debug(f"تيليجرام HTTP ({method}) [{e.code}]: {err_body}")
+            elif "failed to get HTTP URL content" in err_body:
+                logger.info(f"💡 ملاحظة: خوادم تيليجرام لم تتمكن من سحب رابط الوسائط مباشرة ({method}). سيتم التنزيل والرفع المباشر كملف...")
             else:
                 logger.warning(f"تيليجرام HTTP ({method}) [{e.code}]: {err_body}")
             try:
@@ -395,16 +403,29 @@ class StandaloneTelegramEducationalBot:
         url = url.replace("&quot;", "").replace('"', '').replace("'", "").strip()
         if url.startswith("//"):
             url = "https:" + url
+        elif url.startswith("/") and not os.path.isfile(url):
+            url = "https://t.me" + url
+
         if not (url.startswith("http://") or url.startswith("https://") or os.path.isfile(url)):
             return url
         if "emoji" in url or "telegram.org/img" in url or "website_icon" in url or "favicon" in url:
             return None
+
+        # تشفير المسار إذا كان يحتوي على فراغات أو أحرف خاصة
+        if " " in url:
+            try:
+                parts = urllib.parse.urlsplit(url)
+                quoted_path = urllib.parse.quote(parts.path)
+                url = urllib.parse.urlunsplit((parts.scheme, parts.netloc, quoted_path, parts.query, parts.fragment))
+            except Exception:
+                pass
         return url
 
     def download_remote_media_to_temp(self, url: str, ext_hint: str = "") -> Optional[str]:
         """تحميل وسائط الروابط الخارجية إلى مجلد مؤقت محلي لضمان رفعها في حال تعذر سحب الرابط مباشرة من تيليجرام"""
         try:
-            os.makedirs("/temp_media", exist_ok=True)
+            temp_dir = os.path.join(tempfile.gettempdir(), "tg_media")
+            os.makedirs(temp_dir, exist_ok=True)
             req_headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
                 "Accept": "*/*"
@@ -425,7 +446,7 @@ class StandaloneTelegramEducationalBot:
                 else:
                     ext = ".jpg"
 
-            temp_path = f"/temp_media/{uuid.uuid4().hex[:12]}{ext}"
+            temp_path = os.path.join(temp_dir, f"{uuid.uuid4().hex[:12]}{ext}")
             req = urllib.request.Request(url, headers=req_headers)
             with urllib.request.urlopen(req, context=ssl_ctx, timeout=20) as resp:
                 data = resp.read()
@@ -557,8 +578,11 @@ class StandaloneTelegramEducationalBot:
                     self.send_msg(chat_id, remainder, reply_markup=reply_markup, parse_mode=parse_mode)
                 return res
 
-            # محاولة 2: بدون parse_mode بنص عادي
-            if lead_caption and parse_mode:
+            err_desc = str(res.get("description", "")).lower()
+            is_url_fetch_error = "failed to get http url content" in err_desc or "wrong_file_identifier" in err_desc or "wrong file identifier" in err_desc or "wrong_type" in err_desc
+
+            # محاولة 2: بدون parse_mode بنص عادي فقط إذا كان الخطأ متعلقاً بالتنسيق
+            if not is_url_fetch_error and lead_caption and parse_mode:
                 payload.pop("parse_mode", None)
                 payload["caption"] = plain_caption
                 res = self.tg_request("sendPhoto", payload)
@@ -567,7 +591,7 @@ class StandaloneTelegramEducationalBot:
                         self.send_msg(chat_id, remainder, reply_markup=reply_markup, parse_mode=parse_mode)
                     return res
 
-            # محاولة 3: تحميل الصورة محلياً ورفعها كـ Multipart لضمان تجاوز قيود CDN
+            # محاولة 3: تحميل الصورة محلياً ورفعها كـ Multipart لضمان تجاوز حظر خوادم الـ CDN
             temp_file = self.download_remote_media_to_temp(clean_p, ".jpg")
             if temp_file and os.path.isfile(temp_file):
                 local_res = self.send_photo(chat_id, temp_file, caption=caption, reply_markup=reply_markup, parse_mode=parse_mode)
@@ -578,12 +602,13 @@ class StandaloneTelegramEducationalBot:
                 if local_res.get("ok"):
                     return local_res
 
-            # محاولة 4: إرسال الصورة برابطها فارغة ثم إرسال النص
-            res_pure = self.tg_request("sendPhoto", {"chat_id": chat_id, "photo": clean_p})
-            if res_pure.get("ok"):
-                if caption:
-                    self.send_msg(chat_id, caption, reply_markup=reply_markup, parse_mode=parse_mode)
-                return res_pure
+            # محاولة 4: إرسال الصورة برابطها فارغة ثم إرسال النص فقط إذا لم تكن مشكلة في جلب الرابط
+            if not is_url_fetch_error:
+                res_pure = self.tg_request("sendPhoto", {"chat_id": chat_id, "photo": clean_p})
+                if res_pure.get("ok"):
+                    if caption:
+                        self.send_msg(chat_id, caption, reply_markup=reply_markup, parse_mode=parse_mode)
+                    return res_pure
 
         # 3. إذا كانت الصورة عبارة عن file_id في تيليجرام
         if clean_p and not os.path.isfile(clean_p) and not clean_p.startswith("http"):
@@ -722,8 +747,11 @@ class StandaloneTelegramEducationalBot:
                     self.send_msg(chat_id, remainder, reply_markup=reply_markup, parse_mode=parse_mode)
                 return res
 
-            # محاولة ثانية بنص عادي
-            if lead_caption and parse_mode:
+            err_desc = str(res.get("description", "")).lower()
+            is_url_fetch_error = "failed to get http url content" in err_desc or "wrong_file_identifier" in err_desc or "wrong file identifier" in err_desc or "wrong_type" in err_desc
+
+            # محاولة ثانية بنص عادي فقط إذا كان الخطأ متعلقاً بالتنسيق
+            if not is_url_fetch_error and lead_caption and parse_mode:
                 payload.pop("parse_mode", None)
                 payload["caption"] = plain_caption
                 res = self.tg_request("sendVideo", payload)
@@ -743,16 +771,17 @@ class StandaloneTelegramEducationalBot:
                 if loc_res.get("ok"):
                     return loc_res
 
-            # محاولة إرساله كـ Animation أو Document
-            res_anim = self.tg_request("sendAnimation", {"chat_id": chat_id, "animation": clean_v, "caption": plain_caption})
-            if res_anim.get("ok"):
-                return res_anim
+            # محاولة إرساله كـ Animation أو Document فقط إذا لم تكن مشكلة في جلب الرابط
+            if not is_url_fetch_error:
+                res_anim = self.tg_request("sendAnimation", {"chat_id": chat_id, "animation": clean_v, "caption": plain_caption})
+                if res_anim.get("ok"):
+                    return res_anim
 
-            res_pure = self.tg_request("sendVideo", {"chat_id": chat_id, "video": clean_v, "supports_streaming": True})
-            if res_pure.get("ok"):
-                if caption:
-                    self.send_msg(chat_id, caption, reply_markup=reply_markup, parse_mode=parse_mode)
-                return res_pure
+                res_pure = self.tg_request("sendVideo", {"chat_id": chat_id, "video": clean_v, "supports_streaming": True})
+                if res_pure.get("ok"):
+                    if caption:
+                        self.send_msg(chat_id, caption, reply_markup=reply_markup, parse_mode=parse_mode)
+                    return res_pure
 
         # 3. إذا كان الفيديو عبارة عن file_id
         if clean_v and not os.path.isfile(clean_v) and not clean_v.startswith("http"):

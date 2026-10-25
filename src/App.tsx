@@ -39,7 +39,7 @@ const STORAGE_KEY_CONFIG = 'tg_educational_config_v2';
 const STORAGE_KEY_SOURCES = 'tg_educational_sources_v2';
 
 const DEFAULT_CONFIG: BotConfig = {
-  botToken: '8901693218:AAH0Ri7lpY2R6d1DQSrKZclRa7kuo1Jw-Gs',
+  botToken: '8901693218:AAH0hoZdTq9qGaLYOhu_Cvxg9TEzTPAVADw',
   adminId: '7607633343',
   adminUsername: '@M_S_F_G',
   additionalAdminIds: [],
@@ -177,7 +177,11 @@ export default function App() {
       const saved = localStorage.getItem(STORAGE_KEY_CONFIG);
       if (saved) {
         const parsed = JSON.parse(saved);
-        const oldRevoked = ['8901693218:AAFUiQ62KQlfl6rtoarimpSpeoeCgA422Qg', '8901693218:AAEOQmHMZLy-xaPbTUMq1KGhDwp1l0wFWP4'];
+        const oldRevoked = [
+          '8901693218:AAFUiQ62KQlfl6rtoarimpSpeoeCgA422Qg',
+          '8901693218:AAEOQmHMZLy-xaPbTUMq1KGhDwp1l0wFWP4',
+          '8901693218:AAH0Ri7lpY2R6d1DQSrKZclRa7kuo1Jw-Gs',
+        ];
         const currentToken = (!parsed.botToken || oldRevoked.includes(parsed.botToken))
           ? DEFAULT_CONFIG.botToken
           : parsed.botToken;
@@ -213,7 +217,7 @@ export default function App() {
   });
 
   const [logs, setLogs] = useState<ActivityLogItem[]>(INITIAL_LOGS);
-  const [activeTab, setActiveTab] = useState<'all' | 'userbot' | 'github' | 'sources' | 'ai' | 'ad' | 'sim' | 'code' | 'guide'>('github');
+  const [activeTab, setActiveTab] = useState<'all' | 'credentials' | 'userbot' | 'github' | 'sources' | 'ai' | 'ad' | 'sim' | 'code' | 'guide'>('credentials');
   const [isLicenseOpen, setIsLicenseOpen] = useState(false);
   const [isTesterModalOpen, setIsTesterModalOpen] = useState(false);
   const [isTestingBot, setIsTestingBot] = useState(false);
@@ -247,6 +251,27 @@ export default function App() {
     fetchSources();
   }, []);
 
+  // Sync active Bot Token from SQLite and Telegram API on mount
+  useEffect(() => {
+    const fetchBotToken = async () => {
+      try {
+        const res = await fetch('/api/bot/token');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && data.token) {
+            setConfig((prev) => ({ ...prev, botToken: data.token }));
+            if (data.botInfo) {
+              setBotInfo(data.botInfo as BotInfo);
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Bot token initial fetch fallback to local state', e);
+      }
+    };
+    fetchBotToken();
+  }, []);
+
   // Persistence
   useEffect(() => {
     try {
@@ -266,7 +291,7 @@ export default function App() {
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3000);
+    setTimeout(() => setToastMessage(null), 3500);
   };
 
   const handleSaveSources = async (newSources: SourceItem[]) => {
@@ -344,6 +369,53 @@ export default function App() {
     } catch (err: unknown) {
       const errorStr = err instanceof Error ? err.message : String(err);
       setBotTestError(`خطأ في الشبكة: ${errorStr}`);
+    } finally {
+      setIsTestingBot(false);
+    }
+  };
+
+  const handleSaveBotToken = async (token: string) => {
+    const trimmed = token.trim();
+    if (!trimmed) {
+      setBotTestError('الرجاء إدخال توكن البوت.');
+      setIsTesterModalOpen(true);
+      return;
+    }
+
+    setIsTestingBot(true);
+    setBotTestError(null);
+
+    try {
+      const res = await fetch('/api/bot/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: trimmed }),
+      });
+      const data = await res.json();
+
+      if (data.success && data.botInfo) {
+        setBotInfo(data.botInfo as BotInfo);
+        setConfig((prev) => ({ ...prev, botToken: trimmed }));
+        showToast(`✅ تم حفظ وتطبيق التوكن فورياً على البوت: @${data.botInfo.username}`);
+        setIsTesterModalOpen(true);
+        const newLog: ActivityLogItem = {
+          id: 'log-' + Date.now(),
+          timestamp: new Date().toLocaleTimeString('ar-EG'),
+          type: 'success',
+          messageText: `تم تطبيق توكن البوت @${data.botInfo.username} في السيرفر وتحديث المحرك`,
+          source: 'Web UI / Live Token Manager',
+          destination: 'Telegram Bot Engine & SQLite',
+          details: `المعرف: ${data.botInfo.id} | الاسم: ${data.botInfo.first_name}`,
+        };
+        setLogs((prev) => [newLog, ...prev]);
+      } else {
+        setBotTestError(data.error || 'فشلت المصادقة مع واجهة تيليجرام.');
+        setIsTesterModalOpen(true);
+      }
+    } catch (err: unknown) {
+      const errorStr = err instanceof Error ? err.message : String(err);
+      setBotTestError(`خطأ في الاتصال بالخادم: ${errorStr}`);
+      setIsTesterModalOpen(true);
     } finally {
       setIsTestingBot(false);
     }
@@ -477,6 +549,18 @@ export default function App() {
               عرض الكل
             </button>
             <button
+              onClick={() => setActiveTab('credentials')}
+              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-t-xl font-bold transition-all shrink-0 ${
+                activeTab === 'credentials'
+                  ? 'bg-slate-800 text-white border-b-2 border-emerald-500'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <KeyRound className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="font-bold text-emerald-300">توكن البوت والاعتمادات (Bot Token)</span>
+              {botInfo && <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>}
+            </button>
+            <button
               onClick={() => setActiveTab('userbot')}
               className={`flex items-center gap-1.5 px-3.5 py-2 rounded-t-xl font-bold transition-all shrink-0 ${
                 activeTab === 'userbot'
@@ -581,12 +665,13 @@ export default function App() {
         )}
 
         {/* 1. Credentials (Bot Token & Admin ID) */}
-        {(activeTab === 'all' || activeTab === 'sources') && (
+        {(activeTab === 'all' || activeTab === 'credentials' || activeTab === 'sources') && (
           <section id="credentials-section">
             <CredentialsPanel
               config={config}
               onChange={setConfig}
               onTestBot={handleTestBot}
+              onSaveBotToken={handleSaveBotToken}
               isTestingBot={isTestingBot}
               botInfo={botInfo}
             />

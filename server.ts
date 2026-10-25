@@ -4,7 +4,7 @@ import { createServer as createViteServer } from 'vite';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { execFile, spawn } from 'node:child_process';
+import { execFile, spawn, execSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import { GoogleGenAI } from '@google/genai';
 
@@ -140,9 +140,99 @@ app.post('/api/state', (req: Request, res: Response) => {
   }
 });
 
-// 5. Test Telegram Bot Token
+const DEFAULT_FALLBACK_TOKEN = "8901693218:AAH0hoZdTq9qGaLYOhu_Cvxg9TEzTPAVADw";
+
+function getActiveBotToken(): string {
+  try {
+    const out = execSync(`python3 -c "import database as db; print(db.get_setting('bot_token', ''))"`, { timeout: 3000 }).toString().trim();
+    if (out && out.length > 20 && !out.includes('Error') && !out.includes('AAH0Ri7lpY2R6d1DQSrKZclRa7kuo1Jw-Gs')) {
+      return out;
+    }
+  } catch (e) {
+    // fallback
+  }
+  const envTok = process.env.TELEGRAM_BOT_TOKEN || process.env.BOT_TOKEN;
+  if (envTok && envTok.length > 20 && !envTok.includes('AAH0Ri7lpY2R6d1DQSrKZclRa7kuo1Jw-Gs')) {
+    return envTok.trim();
+  }
+  return DEFAULT_FALLBACK_TOKEN;
+}
+
+function setActiveBotToken(token: string): void {
+  const clean = token.trim();
+  try {
+    const pyCmd = `import database as db; db.set_setting('bot_token', ${JSON.stringify(clean)})`;
+    execSync(`python3 -c ${JSON.stringify(pyCmd)}`, { timeout: 4000 });
+  } catch (e) {
+    console.error("Failed to persist token to SQLite:", e);
+  }
+  process.env.TELEGRAM_BOT_TOKEN = clean;
+  process.env.BOT_TOKEN = clean;
+}
+
+// 5. Bot Token Management: GET & POST
+app.get('/api/bot/token', async (_req: Request, res: Response) => {
+  try {
+    const token = getActiveBotToken();
+    let botInfo = null;
+    try {
+      const tgRes = await fetch(`https://api.telegram.org/bot${token}/getMe`);
+      const tgData = await tgRes.json();
+      if (tgData.ok) {
+        botInfo = tgData.result;
+      }
+    } catch {
+      // Telegram network check
+    }
+    res.json({ success: true, token, botInfo });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+app.post('/api/bot/token', async (req: Request, res: Response) => {
+  try {
+    const { token } = req.body;
+    const cleanToken = (token || '').trim();
+    if (!cleanToken || cleanToken.length < 20 || !cleanToken.includes(':')) {
+      res.status(400).json({ success: false, error: "صيغة التوكن غير صحيحة. يجب أن يتكون من معرف رقمي متبوع بنقطتين وسلسلة الحروف السرية." });
+      return;
+    }
+
+    // Verify token with Telegram official API
+    const tgRes = await fetch(`https://api.telegram.org/bot${cleanToken}/getMe`);
+    const tgData = await tgRes.json();
+
+    if (!tgData.ok) {
+      res.status(400).json({
+        success: false,
+        error: tgData.description || "فشلت المصادقة مع واجهة تيليجرام. تأكد من صحة التوكن من BotFather."
+      });
+      return;
+    }
+
+    // Persist to SQLite and environment
+    setActiveBotToken(cleanToken);
+
+    // Live reload Python bot process
+    restartPythonWorker();
+
+    res.json({
+      success: true,
+      token: cleanToken,
+      botInfo: tgData.result,
+      message: `تم تطبيق التوكن بنجاح للبوت @${tgData.result.username} وتمت إعادة تشغيل المحرك فورياً! 🚀`
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+// 5.1 Test Telegram Bot Token
 app.post('/api/telegram/test-bot', async (req: Request, res: Response) => {
-  const token = req.body.token || process.env.TELEGRAM_BOT_TOKEN || "8901693218:AAH0Ri7lpY2R6d1DQSrKZclRa7kuo1Jw-Gs";
+  const token = req.body.token || getActiveBotToken();
   try {
     const tgRes = await fetch(`https://api.telegram.org/bot${token}/getMe`);
     const data = await tgRes.json();
@@ -346,7 +436,7 @@ app.post('/api/university/post', async (req: Request, res: Response) => {
       res.status(400).json({ error: "قناة النشر ومحتوى الرسالة مطلوبان" });
       return;
     }
-    const token = process.env.TELEGRAM_BOT_TOKEN || "8901693218:AAH0Ri7lpY2R6d1DQSrKZclRa7kuo1Jw-Gs";
+    const token = getActiveBotToken();
     const tgRes = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -370,6 +460,24 @@ app.post('/api/university/post', async (req: Request, res: Response) => {
 
 
 let pythonProcess: any = null;
+let isRestartingWorker = false;
+
+function restartPythonWorker() {
+  console.log('🔄 جاري إعادة تشغيل محرك بايثون (main.py) لتطبيق التوكن الجديد فورياً...');
+  if (pythonProcess) {
+    isRestartingWorker = true;
+    try {
+      pythonProcess.kill('SIGTERM');
+    } catch (e) {}
+    setTimeout(() => {
+      isRestartingWorker = false;
+      startPythonWorker();
+    }, 1000);
+  } else {
+    startPythonWorker();
+  }
+}
+
 function startPythonWorker() {
   const pyPath = path.join(__dirname, 'main.py');
   if (!fs.existsSync(pyPath)) return;
@@ -393,7 +501,8 @@ function startPythonWorker() {
     const rawAdminId = (process.env.ADMIN_ID || '7607633343').trim();
     const sanitizedAdminId = /^\d+$/.test(rawAdminId) ? rawAdminId : '7607633343';
 
-    const activeBotToken = '8901693218:AAH0Ri7lpY2R6d1DQSrKZclRa7kuo1Jw-Gs';
+    const activeBotToken = getActiveBotToken();
+    console.log(`🔑 توكن البوت الفعال للعملية: ${activeBotToken.substring(0, 15)}...`);
     pythonProcess = spawn('python3', ['main.py'], {
       cwd: __dirname,
       env: {
@@ -419,6 +528,7 @@ function startPythonWorker() {
     });
 
     pythonProcess.on('close', (code: number | null) => {
+      if (isRestartingWorker) return;
       console.warn(`[PythonBot] انتهت العملية برمز ${code}. إعادة التشغيل التلقائي بعد 5 ثوانٍ...`);
       setTimeout(startPythonWorker, 5000);
     });

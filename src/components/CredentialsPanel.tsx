@@ -22,6 +22,7 @@ interface Props {
   config: BotConfig;
   onChange: (updated: BotConfig) => void;
   onTestBot: (token: string) => void;
+  onSaveBotToken?: (token: string) => void;
   isTestingBot: boolean;
   botInfo: BotInfo | null;
 }
@@ -30,6 +31,7 @@ export const CredentialsPanel: React.FC<Props> = ({
   config,
   onChange,
   onTestBot,
+  onSaveBotToken,
   isTestingBot,
   botInfo,
 }) => {
@@ -149,25 +151,43 @@ export const CredentialsPanel: React.FC<Props> = ({
                 </div>
               </div>
 
-              {/* Bot Test Action Button & Status */}
-              <div className="flex items-center justify-between pt-1">
+              {/* Bot Test & Save Action Buttons */}
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
                 <p className="text-[11px] text-slate-400">
                   الحصول عليه من <a href="https://t.me/BotFather" target="_blank" rel="noreferrer" className="text-sky-400 hover:underline">@BotFather</a> عبر أمر <code className="text-sky-300">/newbot</code>
                 </p>
 
-                <button
-                  type="button"
-                  onClick={() => onTestBot(config.botToken)}
-                  disabled={!config.botToken || isTestingBot}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 hover:text-white text-xs font-semibold rounded-lg border border-sky-500/30 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  {isTestingBot ? (
-                    <div className="w-3 h-3 border-2 border-sky-400 border-t-transparent rounded-full animate-spin"></div>
-                  ) : (
-                    <Zap className="w-3.5 h-3.5 text-sky-400" />
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onTestBot(config.botToken)}
+                    disabled={!config.botToken || isTestingBot}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-semibold rounded-lg border border-slate-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {isTestingBot ? (
+                      <div className="w-3 h-3 border-2 border-slate-400 border-t-transparent rounded-full animate-spin"></div>
+                    ) : (
+                      <Zap className="w-3.5 h-3.5 text-sky-400" />
+                    )}
+                    <span>فحص التوكن</span>
+                  </button>
+
+                  {onSaveBotToken && (
+                    <button
+                      type="button"
+                      onClick={() => onSaveBotToken(config.botToken)}
+                      disabled={!config.botToken || isTestingBot}
+                      className="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg shadow-sm shadow-emerald-950/60 border border-emerald-500/50 transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                    >
+                      {isTestingBot ? (
+                        <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      ) : (
+                        <CheckCircle2 className="w-3.5 h-3.5 text-white" />
+                      )}
+                      <span>حفظ وتطبيق التوكن فورياً 💾</span>
+                    </button>
                   )}
-                  <span>فحص التوكن الآن</span>
-                </button>
+                </div>
               </div>
 
               {/* Verified Bot Info Banner if available */}
@@ -292,6 +312,27 @@ export const CredentialsPanel: React.FC<Props> = ({
                   احصل على API_ID و API_HASH من <a href="https://my.telegram.org" target="_blank" rel="noreferrer" className="text-sky-400 underline">my.telegram.org</a>.
                 </p>
               </div>
+            </div>
+
+            {/* Quick Bot Token Overview */}
+            <div className="p-3 bg-slate-950/70 border border-slate-800 rounded-xl flex flex-wrap items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2">
+                <KeyRound className="w-4 h-4 text-sky-400" />
+                <span className="text-slate-300 font-semibold">توكن البوت الفعال للنشر:</span>
+                <span className="font-mono text-emerald-300 bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-800/40">
+                  {config.botToken ? `${config.botToken.substring(0, 16)}...` : 'غير محدد'}
+                </span>
+                {botInfo && (
+                  <span className="text-emerald-400 font-bold">(@{botInfo.username})</span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => onChange({ ...config, preferredEngine: 'bot' })}
+                className="px-2.5 py-1 bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 rounded-lg text-xs font-semibold border border-sky-500/30 transition-colors cursor-pointer"
+              >
+                تعديل وحفظ التوكن ⚙️
+              </button>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
