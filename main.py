@@ -115,17 +115,17 @@ STRING_SESSION = _raw_session
 
 AI_BASE_URL = os.getenv("AI_BASE_URL", "https://api.hcnsec.cn/v1").rstrip("/")
 AI_API_KEY = os.getenv("AI_API_KEY", "sk-J2ky44F6VTDMkL8Q1GHL5sfmbeIpARVDayNuwMfxKI5zCdii").strip()
-PRIMARY_MODEL = os.getenv("PRIMARY_MODEL", "DeepSeek-V4.1-Flash").strip()
-FALLBACK_MODEL = os.getenv("FALLBACK_MODEL", "DeepSeek-V4-Flash").strip()
+PRIMARY_MODEL = os.getenv("PRIMARY_MODEL", "DeepSeek-V4-Flash").strip()
+FALLBACK_MODEL = os.getenv("FALLBACK_MODEL", "DeepSeek-V4.1-Flash").strip()
 
-# كوكبة النماذج الذكية المتتالية للعمل بأقصى طاقة استيعابية وتخطي أي أخطاء 503 تلقائياً
+# كوكبة النماذج الذكية المتتالية للعمل بأقصى سرعة واستيعاب وتخطي أي أخطاء 503 تلقائياً
 AI_MODELS_CASCADE = [
     PRIMARY_MODEL,
+    "DeepSeek-V4-Flash",
+    "DeepSeek-V4.1-Flash",
     "auto",
-    "DeepSeek-V4-Pro",
-    "glm-5.3-flash",
+    "glm-5.3",
     "Qwen3.8-Flash-Next",
-    FALLBACK_MODEL,
     "MiniMax-M3.1-Flash"
 ]
 _raw_port = safe_int(os.getenv("PORT", os.getenv("KEEPALIVE_PORT", "8088")), 8088)
@@ -144,31 +144,34 @@ ssl_ctx = ssl.create_default_context()
 # طابور معالجة الرسائل والمنشورات غير المتزامن لمنع تجمد البوت
 post_queue = queue.Queue(maxsize=100)
 
-SYSTEM_PROMPT_REPHRASE = """# الدور: رئيس التحرير والناشر الرسمي للأخبار الأكاديمية والجامعية
-## الهوية:
-أنت الكاتب الرسمي والناشر المعتمد لقناة إخبارية أكاديمية وجامعية رائدة.
-مهمتك إعادة صياغة كافة المنشورات والقرارات والمواعيد والجداول بأسلوب تحريري أكاديمي فخم، راقٍ، وسلس، كأنك أنت المنصة الرسمية التي تصدر هذا الخبر.
+SYSTEM_PROMPT_REPHRASE = """# الدور: مستشار أكاديمي وممثل دفعة مقرب للطلاب (أنت إنسان حقيقي وزميل ناصح ولست روبوتاً آلياً)
+## الهوية والروح:
+أنت لست آلة تنقل البيانات بقوالب مكررة وصماء، بل أنت ممثل الدفعة والمستشار الطلابي المخلص والأمين. تكتب كأنك زميل ناصح يتحدث مع إخوانه وزملائه في قروب الدفعة وقناة الكلية، بأسلوب مباشر، ودود، محفز، ومفعم بالحيوية والاهتمام الحقيقي بمصلحة الطلاب.
 
-## القواعد الصارمة والإلزامية (100%):
-1. صياغة المنشور بالكامل بأسلوب أصلي دون الإشارة إلى أي مصدر خارجي أو عبارات نقل ("وفقاً لـ"، "كما ورد"، "نقلاً عن").
-2. احذف نهائياً أي روابط أو معرفات قنوات تيليجرام ترويجية خارجية (مثل @channel أو t.me/xxx).
-3. 🚨 نشر كافة التواريخ والمواعيد الأكاديمية والتقويم الفصلي والجداول وشروط القبول والاختبارات الواردة في المنشور بكل دقة وموضوعية دون حذف أو اختصار.
-4. 🚨 الحفاظ المطلق على جميع روابط التقديم والتسجيل والبوابات الرسمية (مثل apps.powerapps.com, forms.office.com, portals, blackboard, sites) بنصها الكامل في سطر مستقل يسبقه:
-   🔗 رابط التقديم / البوابة الرسمية: [الرابط الكامل]
-5. التنسيق الأكاديمي المعتمد:
-🎓 <b>[عنوان أكاديمي جذاب وواضح]</b>
+## القواعد الأساسية لصياغة المنشورات:
+1. 🚫 التخلص النهائي من المقدمات المبتذلة والقوالب الروبوتية المكررة:
+   - يمنع منعاً باتاً استخدام أي قوالب ثابتة أو عبارات نمطية مثل: (أبرز التفاصيل والتعليمات الأكاديمية / يسعدنا الرد على استفساراتكم في التعليقات / إعلان وتحديث أكاديمي رسمي / نود إفادتكم / يرجى الاطلاع على).
+   - ادخل في صلب الموضوع فوراً من السطر الأول بأسلوب شيق وجذاب (مثال: "عاجل لطلاب [اسم الجامعة].. تنويه مهم بخصوص جدول الاختبارات النهائية 🚨" أو "تنبيه سريع يا شباب.. غداً آخر موعد لتأكيد تسجيل المقررات ⏰").
 
-🗓 <b>المواعيد والتواريخ الهامة:</b>
-▫️ [المواعيد والمهل المحددة للطلاب إن وجدت في الخبر]
+2. 🎯 التركيز الحقيقي 100% على ما يهم الطالب:
+   - المواعيد، جداول الاختبارات، جداول المحاضرات، تغيير القاعات، مواعيد الحذف والإضافة، إعلانات الدكاترة، فعاليات التخرج، والأنشطة الكبرى.
+   - احذف تماماً أي حشو أو كلام بروتوكولي وإداري لا يفيد الطالب.
 
-📌 <b>أبرز التفاصيل والتعليمات:</b>
-▫️ [أهم النقاط والشروط منظمة ومباشرة بنقاط ▫️ سهلة القراءة]
+3. 🔤 إبراز الأهم بالخط العريض (Bold) باستخدام وسوم <b>...</b>:
+   - ضع التواريخ، الأوقات، أرقام القاعات، أسماء الدكاترة والمواد، والمواعيد النهائية وشروط القبول بخط عريض <b>...</b> لكي تقع عين الطالب عليها فوراً دون عناء قراءة نصوص طويلة.
 
-🔗 [رابط التقديم الرسمي إن وُجد]
+4. ❤️ الروح الإنسانية والودية الصادقة (الأدعية والتحفيز):
+   - إذا كان المنشور يحمل دعاءً للاختبارات (مثل التسهيل والتوفيق)، عبارة تحفيزية صباحية، أو مشاركة فرحة إجازة أو تخرج: انشره فوراً كما هو بروح لطيفة وعفوية وأخوية (مع إيموجي لطيف: 🤲 ✨ 🎓 💡).
+   - اختم المنشورات الهامة دائماً بدعوة أخوية عفوية صادقة (مثل: "فالكم أعلى الدرجات والتوفيق يا رب 🤲" أو "منشن زميلك لا يفوته الموعد ⏰").
 
-💬 يسعدنا الرد على استفساراتكم في التعليقات ومشاركة الخبر مع زملائكم!
+5. 🔗 الحفاظ المطلق على الروابط الرسمية (بدون ذكر مصادر النقل):
+   - لا تذكر المصدر الذي نقلت منه إطلاقاً.
+   - إذا كان هناك رابط تقديم، استمارة، أو بوابة إلكترونية رسمية (مثل forms, portals, blackboard, powerapps): ضعه بنصه الكامل في سطر مستقل:
+     🔗 <b>رابط التقديم المباشر:</b> [الرابط]
+   - احذف أي معرفات قنوات خارجية (@channel أو t.me).
 
-#جامعة #قبول #تسجيل #مواعيد #شؤون_الطلاب"""
+6. 🖼️ مرافقة الوسائط (الصور والجداول):
+   - إذا كان الخبر مرفقاً بجدول أو صورة أو ملف: اجعل النص كابشن شارح ومركّز يلفت النظر للصورة/الجدول المرفق فوراً لتسهيل مراجعته."""
 
 AD_KEYWORDS = [
     "حل واجبات بمقابل", "حل واجبات واختبارات", "حل كويزات", "حل فاينل", "حل اسايمنت",
@@ -1131,32 +1134,41 @@ class StandaloneTelegramEducationalBot:
         except Exception as e:
             logger.warning(f"ملاحظة في دمج الأخبار بالذكاء الاصطناعي: {e}")
 
-        combined = f"🎓 <b>تحديث وتفاصيل مكملة - {univ_label}</b>\n\n📌 <b>أبرز التفاصيل المدمجة:</b>\n▫️ {clean1[:300]}\n▫️ {clean2[:300]}"
+        combined = f"🚨 <b>تحديث وتفاصيل مكملة - {univ_label}</b>\n\n▫️ {clean1[:300]}\n▫️ {clean2[:300]}"
         if all_links:
             combined += "\n\n🔗 <b>رابط البوابة الإلكترونية المعتمدة:</b>\n" + "\n".join(all_links)
         return combined
 
     def call_ai(self, raw_text: str, custom_instruction: str = "", system_prompt: Optional[str] = None, target_univ: Optional[str] = None) -> Optional[str]:
         clean_input = self.clean_text_from_sources(raw_text)
-        if not clean_input or len(clean_input) < 15:
+        if not clean_input or len(clean_input.strip()) < 5:
             return None
+
+        # فحص إذا كان المنشور عبارة عن دعاء صادق أو عبارة تحفيزية إنسانية
+        # في هذه الحالة يجب الحفاظ على الروح البشرية اللطيفة فوراً دون تشويهها أو تحويلها لقالب جامد
+        is_prayer_or_motivational = any(w in clean_input for w in ["اللهم", "يا رب", "بالتوفيق", "دعواتنا", "أجمل التهاني", "مبارك التخرج", "صباح الخير", "جمعة مباركة", "إجازة سعيدة", "فالكم التوفيق"])
 
         # استخراج كافة الروابط الخارجية (بوابات التقديم، PowerApps، الاستمارات، بوابات الجامعات) مع تنظيفها وفك روابط Google News
         ext_links = self.extract_external_links(raw_text, target_univ)
 
         active_system_prompt = system_prompt or SYSTEM_PROMPT_REPHRASE
         if target_univ:
-            active_system_prompt += f"\n\n🚨 المنشور موجه حصراً لقناة وطلاب: ({target_univ}). أعد صياغة المحتوى بأعلى مستوى من البلاغة والبيان الأكاديمي ليفيد طلاب هذه القناة، مع إبراز أي مواعيد أو شروط تقديم بتفصيل دقيق دون ذكر أي مصادر سابقة."
+            active_system_prompt += f"\n\n🚨 المنشور موجه خصيصاً لطلاب: ({target_univ}). تحدث كأنك زميلهم وممثل دفعتهم الناصح. ادخل في صلب الموضوع فوراً بدون أي مقدمات نمطية مكررة. أبرز التواريخ والأوقات والمواعيد بخط عريض <b>...</b> وتخلص تماماً من أي حشو."
 
-        instruction_addon = f"تعليمات إضافية من المشرف: {custom_instruction}\n\n" if custom_instruction else ""
+        instruction_addon = f"توجيهات إضافية من المشرف: {custom_instruction}\n\n" if custom_instruction else ""
+        if is_prayer_or_motivational:
+            user_prompt = f"{instruction_addon}هذا المنشور عبارة عن دعاء أو رسالة تحفيزية إنسانية للطلاب. حافظ على روحها العفوية واللطيفة والصادقة وانشرها بأسلوب زميل محب لزملائه مع تنسيق جميل وأدعية صادقة دون أي قوالب رسمية صماء:\n\n{clean_input}"
+        else:
+            user_prompt = f"{instruction_addon}صيغ هذا التنبيه كأنك ممثل الدفعة ومستشار طلابي مقرب للطلاب (ادخل مباشرة في صلب الموضوع من السطر الأول، احذف أي حشو، أبرز التواريخ والأوقات وأسماء المواد والدكاترة والقاعات بخط عريض <b>...</b>، وامتنع تماماً عن استخدام أي قوالب مكررة مثل 'أبرز التفاصيل والتعليمات'):\n\n{clean_input}"
+
         payload = {
             "model": PRIMARY_MODEL,
             "messages": [
                 {"role": "system", "content": active_system_prompt},
-                {"role": "user", "content": f"{instruction_addon}صيغ هذا المحتوى الأكاديمي كمنشور رسمي أصلي لقناتك بأقصى درجات الإتقان والبيان الأكاديمي المفصل (مع الحفاظ التام والكامل على كافة المواعيد والتواريخ وشروط القبول وروابط البوابات دون أي اختصار):\n\n{clean_input}"}
+                {"role": "user", "content": user_prompt}
             ],
-            "temperature": 0.35,
-            "max_tokens": 3500
+            "temperature": 0.4,
+            "max_tokens": 1500
         }
         headers = {
             "Authorization": f"Bearer {AI_API_KEY}",
@@ -1197,29 +1209,42 @@ class StandaloneTelegramEducationalBot:
                     logger.debug(f"استثناء في نموذج الذكاء {model_name} (محاولة {attempt+1}): {e}")
                     time.sleep(0.5)
 
-        # صياغة محلية ذكية وأكاديمية فائقة التنظيم في حال تعذر الاتصال بكامل كوكبة النماذج
+        # صياغة بديلة إنسانية ومباشرة كزميل ناصح في حال تعذر الاتصال بجميع نماذج الذكاء
         clean_lines = [l.strip() for l in clean_input.split("\n") if l.strip() and not l.startswith("@") and "t.me/" not in l]
         text_lines = [l for l in clean_lines if not l.startswith("http://") and not l.startswith("https://") and l not in ["•", "-", "*", "📌", "🎓"]]
         if not text_lines:
             return None
 
+        # إذا كان دعاء أو تحفيز
+        if is_prayer_or_motivational:
+            full_msg = "\n".join(text_lines[:6])
+            tag = f"#{target_univ.replace(' ', '_')}" if target_univ else "#مجتمع_الطلاب"
+            return f"✨ {full_msg}\n\nدعواتنا لكم دائماً بأعلى المراتب والتوفيق 🤲\n{tag}"
+
         first_line = text_lines[0]
-        first_line = re.sub(r'^[•\-\*#📌📢✨🎓▫️]\s*', '', first_line).strip()
-        title = first_line[:75] + "..." if len(first_line) > 80 else first_line
+        first_line = re.sub(r'^[•\-\*#📌📢✨🎓▫️🚨]\s*', '', first_line).strip()
+        title = first_line[:85] + "..." if len(first_line) > 90 else first_line
 
         body_lines = [l for l in text_lines[1:10] if len(l) > 3]
         clean_bullets = []
         for bl in body_lines:
             bl_text = re.sub(r'^[•\-\*▫️]\s*', '', bl).strip()
+            # إبراز التواريخ والأوقات بالخط العريض تلقائياً
+            bl_text = re.sub(r'(\d{1,2}[:/]\d{1,2}(?:[:/]\d{2,4})?|\d{1,4}/\d{1,2}/\d{1,4}|\b(?:الأحد|الإثنين|الثلاثاء|الأربعاء|الخميس|الجمعة|السبت)\b|\b(?:صباحاً|مساءً|م|ص)\b)', r'<b>\1</b>', bl_text)
             clean_bullets.append(f"▫️ {bl_text}")
         bullets = "\n".join(clean_bullets)
 
         links_block = ""
         if ext_links:
-            links_block = "\n\n🔗 <b>رابط التقديم / البوابة الإلكترونية:</b>\n" + "\n".join(ext_links)
+            links_block = "\n\n🔗 <b>رابط البوابة الإلكترونية المعتمدة:</b>\n" + "\n".join(ext_links)
 
-        tag = f"#{target_univ.replace(' ', '_')}" if target_univ else "#أخبار_التعليم"
-        return f"🎓 <b>{title}</b>\n\n📌 <b>أبرز التفاصيل والتعليمات الأكاديمية:</b>\n{bullets}{links_block}\n\n💬 يسعدنا الرد على استفساراتكم في التعليقات ومشاركة الخبر مع زملائكم الطلاب!\n\n{tag} #أخبار_التعليم #شؤون_الطلاب #مواعيد"
+        tag = f"#{target_univ.replace(' ', '_')}" if target_univ else "#أخبار_الطلاب"
+        header = f"🚨 <b>تنبيه لطلاب {target_univ}.. {title}</b>" if target_univ else f"🚨 <b>تنبيه هام.. {title}</b>"
+        footer = "دعواتنا لكم بالتوفيق والنجاح دائماً 🤲\nشاركوا التنبيه مع زملائكم الطلاب 🤝"
+        if bullets:
+            return f"{header}\n\n{bullets}{links_block}\n\n{footer}\n\n{tag} #شؤون_الطلاب #مواعيد"
+        else:
+            return f"{header}{links_block}\n\n{footer}\n\n{tag} #شؤون_الطلاب"
 
     def call_ai_for_comment(self, comment_text: str, original_post: str = "", target_univ: Optional[str] = None) -> Optional[str]:
         """توليد رد أكاديمي ذكي وفوري على تعليقات واستفسارات الطلاب تحت منشورات القناة بأقصى طاقة استيعابية"""
@@ -1346,11 +1371,12 @@ class StandaloneTelegramEducationalBot:
                 if not rephrased:
                     if has_media_item or (raw_text and len(raw_text.strip()) > 3):
                         clean_t = self.clean_text_from_sources(raw_text).strip()
-                        univ_tag = f"#{target_univ_name.replace(' ', '_')}" if target_univ_name else "#أخبار_الجامعة"
+                        univ_tag = f"#{target_univ_name.replace(' ', '_')}" if target_univ_name else "#شؤون_الطلاب"
+                        univ_header = f"🚨 <b>تنبيه لطلاب {target_univ_name}</b>" if target_univ_name else "🚨 <b>تنبيه هام للطلاب</b>"
                         if clean_t:
-                            rephrased = f"🎓 <b>إعلان وتحديث أكاديمي رسمي</b>\n\n📌 <b>أبرز التفاصيل والمواعيد:</b>\n{clean_t}\n\n💬 يسعدنا الرد على استفساراتكم في التعليقات ومشاركة الخبر مع زملائكم الطلاب!\n\n{univ_tag} #شؤون_الطلاب #أخبار_التعليم #مواعيد"
+                            rephrased = f"{univ_header}\n\n{clean_t}\n\nدعواتنا لكم بالتوفيق الدائم 🤲\n\n{univ_tag} #مواعيد"
                         else:
-                            rephrased = f"🎓 <b>إعلان وتحديث أكاديمي رسمي</b>\n\n📌 يرجى الاطلاع على التفاصيل والمواعيد الموضحة في المرفق أعلاه.\n\n💬 يسعدنا الرد على كافة استفساراتكم في التعليقات!\n\n{univ_tag} #شؤون_الطلاب #أخبار_التعليم"
+                            rephrased = f"{univ_header}\n\n📌 <b>الجدول والتفاصيل المعتمدة موضحة في المرفق أعلاه</b>، يرجى مراجعته بدقة.\n\nبالتوفيق للجميع 🤲\n\n{univ_tag} #جداول_ومواعيد"
                     else:
                         logger.info(f"🛡️ تم تخطي منشور فارغ بدون أي نص أو وسائط.")
                         post_queue.task_done()
