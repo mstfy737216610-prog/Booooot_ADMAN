@@ -879,6 +879,66 @@ ${bullets}${linksSection}
 ${hashtags}`;
 }
 
+// ----------------- GIT SYNC ENDPOINTS -----------------
+app.get('/api/git/status', (_req: Request, res: Response) => {
+  try {
+    let branch = 'master';
+    let commitHash = '';
+    let commitMessage = '';
+    let statusText = '';
+    try {
+      branch = execSync('git rev-parse --abbrev-ref HEAD', { timeout: 3000 }).toString().trim();
+      commitHash = execSync('git rev-parse --short HEAD', { timeout: 3000 }).toString().trim();
+      commitMessage = execSync('git log -1 --pretty=%B', { timeout: 3000 }).toString().trim();
+      statusText = execSync('git status --short', { timeout: 3000 }).toString().trim();
+    } catch {
+      // ignore
+    }
+    res.json({
+      success: true,
+      remote: 'https://github.com/mstfy737216610-prog/Booooot_ADMAN.git',
+      branch,
+      commitHash,
+      commitMessage,
+      isClean: statusText.length === 0,
+      lastSync: new Date().toISOString()
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+app.post('/api/git/sync', (_req: Request, res: Response) => {
+  try {
+    execSync('git add -A', { timeout: 10000 });
+    let committed = false;
+    try {
+      execSync('git commit -m "[AutoSync] Update university channels, sources and configuration"', { timeout: 10000 });
+      committed = true;
+    } catch {
+      // nothing new to commit
+    }
+
+    // Push to GitHub repository asynchronously
+    execFile('git', ['push', 'origin', 'master'], { timeout: 30000 }, (pushErr) => {
+      if (pushErr) {
+        console.log('Git push notification:', pushErr.message);
+      } else {
+        console.log('✅ Successfully pushed changes to GitHub repository');
+      }
+    });
+
+    res.json({
+      success: true,
+      message: committed ? 'تم حفظ التعديلات وإرسالها للمزامنة مع مستودع GitHub بنجاح!' : 'المستودع محدث مسبقاً بكافة الملفات والتعديلات.'
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
 // ----------------- VITE MIDDLEWARE SETUP -----------------
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {

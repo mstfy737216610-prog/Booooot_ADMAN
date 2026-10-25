@@ -194,7 +194,5 @@ Bot.setProperty("total_processed", total, "integer");
 Bot.setProperty("last_post_title", academic_title, "string");
 Bot.setProperty("last_post_time", new Date().toLocaleTimeString(), "string");
 
-Bot.sendMessage("⚡ **تم تنسيق ونشر الخبر بالمحرك الأكاديمي المحلي (Zero-Delay)!**\n\n" +
-  "• **الجامعة المستهدفة**: `" + target_univ_name + "`\n" +
-  "• **قناة النشر الحصرية (" + sent_count + ")**: `" + target_channels.join("`، `") + "`\n" +
-  "• تم الحفاظ على الصورة والروابط والتواريخ بأسلوب تحريري بشري متقن 100%.");
+// النشر الصامت التام: المنشور يذهب للقناة حصراً ولا يظهر في شات البوت المباشر تلبية لطلب المشرف
+

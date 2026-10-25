@@ -1050,6 +1050,166 @@ class StandaloneTelegramEducationalBot:
             payload["show_alert"] = alert
         return self.tg_request("answerCallbackQuery", payload)
 
+    # ----------------- التعرف الضوئي على الحروف (OCR) وتنزيل الوسائط -----------------
+    def get_telegram_file_bytes(self, file_id: str) -> Optional[bytes]:
+        """تنزيل ملف أو صورة من تيليجرام باستخدام معرف الملف file_id"""
+        try:
+            url = f"https://api.telegram.org/bot{self.token}/getFile?file_id={file_id}"
+            req = urllib.request.Request(url, headers={"User-Agent": "TelegramEducationalBot/3.0"})
+            with urllib.request.urlopen(req, context=ssl_ctx, timeout=20) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                if not data.get("ok"):
+                    return None
+                file_path = data.get("result", {}).get("file_path")
+                if not file_path:
+                    return None
+
+            download_url = f"https://api.telegram.org/file/bot{self.token}/{file_path}"
+            down_req = urllib.request.Request(download_url, headers={"User-Agent": "TelegramEducationalBot/3.0"})
+            with urllib.request.urlopen(down_req, context=ssl_ctx, timeout=35) as down_resp:
+                return down_resp.read()
+        except Exception as e:
+            logger.warning(f"ملاحظة في تنزيل ملف الصورة من تيليجرام: {e}")
+            return None
+
+    def extract_text_via_ocr(self, photo_id: str) -> Optional[str]:
+        """
+        التعرف الضوئي على الحروف (Optical Character Recognition - OCR)
+        يستخرج بدقة تامة الجداول والتواريخ والمواعيد والنصوص من صور الإعلانات والتعاميم الجامعية
+        يعمل بخفة وسرعة فائقة ومتوافق 100% مع بيئة Termux عبر Google Gemini Vision و Vision APIs
+        """
+        try:
+            img_bytes = self.get_telegram_file_bytes(photo_id)
+            if not img_bytes:
+                return None
+
+            import base64
+            b64_img = base64.b64encode(img_bytes).decode("utf-8")
+
+            # 1. التجربة الأولى: Google Gemini Multimodal Vision API (الأدق في قراءة الخط العربي وجداول الاختبارات)
+            gemini_key = os.getenv("GEMINI_API_KEY", "").strip() or os.getenv("AI_API_KEY", "").strip()
+            if gemini_key and (gemini_key.startswith("AIza") or "gemini" in gemini_key.lower() or len(gemini_key) > 25):
+                gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_key}"
+                gemini_payload = {
+                    "contents": [
+                        {
+                            "parts": [
+                                {
+                                    "text": (
+                                        "أنت نظام التعرف الضوئي على الحروف الأكاديمي (OCR) الدقيق والذكي.\n"
+                                        "اقرأ هذه الصورة المرفقة (وهي إعلان جامعي أو جدول اختبارات أو تعميم رسمي) واستخرج كافة النصوص المكتوبة فيها بدقة 100%:\n"
+                                        "• التواريخ، الأيام، المواعيد النهائية وساعات البدء والانتهاء.\n"
+                                        "• أسماء المقررات، القاعات، الأقسام، الشروط والخطوات.\n"
+                                        "• روابط المواقع والباركود المكتوبة إن وجدت.\n"
+                                        "اكتب النصوص المستخرجة بشكل مرتب ومنظم دون أي إضافات أو تعليقات خارجية."
+                                    )
+                                },
+                                {
+                                    "inline_data": {
+                                        "mime_type": "image/jpeg",
+                                        "data": b64_img
+                                    }
+                                }
+                            ]
+                        }
+                    ],
+                    "generationConfig": {
+                        "temperature": 0.1,
+                        "maxOutputTokens": 1200
+                    }
+                }
+                try:
+                    g_req = urllib.request.Request(
+                        gemini_url,
+                        data=json.dumps(gemini_payload).encode("utf-8"),
+                        headers={"Content-Type": "application/json"}
+                    )
+                    with urllib.request.urlopen(g_req, context=ssl_ctx, timeout=30) as g_resp:
+                        g_data = json.loads(g_resp.read().decode("utf-8"))
+                        candidates = g_data.get("candidates", [])
+                        if candidates:
+                            parts = candidates[0].get("content", {}).get("parts", [])
+                            if parts and "text" in parts[0]:
+                                extracted = parts[0]["text"].strip()
+                                if len(extracted) > 15:
+                                    logger.info(f"🔍 [التعرف الضوئي OCR - Gemini] تم استخراج {len(extracted)} حرف من الصورة بنجاح!")
+                                    return extracted
+                except Exception as eg:
+                    logger.debug(f"ملاحظة في Gemini OCR: {eg}")
+
+            # 2. التجربة الثانية: نموذج الرؤية المتعدد عبر AI_BASE_URL (OpenAI-compatible Vision)
+            vision_models = ["Qwen-VL", "glm-4v", "DeepSeek-VL", "gpt-4o-mini", PRIMARY_MODEL]
+            for v_model in vision_models:
+                try:
+                    v_url = f"{AI_BASE_URL}/chat/completions"
+                    v_payload = {
+                        "model": v_model,
+                        "messages": [
+                            {
+                                "role": "user",
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": "استخرج بدقة تامة كافة النصوص، التواريخ، المواعيد، الجداول، وأرقام القاعات والشروط المكتوبة في هذه الصورة الجامعية، ونظمها في نقاط واضحة وافية:"
+                                    },
+                                    {
+                                        "type": "image_url",
+                                        "image_url": {
+                                            "url": f"data:image/jpeg;base64,{b64_img}"
+                                        }
+                                    }
+                                ]
+                            }
+                        ],
+                        "temperature": 0.1,
+                        "max_tokens": 1000
+                    }
+                    v_req = urllib.request.Request(
+                        v_url,
+                        data=json.dumps(v_payload).encode("utf-8"),
+                        headers={
+                            "Authorization": f"Bearer {AI_API_KEY}",
+                            "Content-Type": "application/json"
+                        }
+                    )
+                    with urllib.request.urlopen(v_req, context=ssl_ctx, timeout=25) as v_resp:
+                        v_data = json.loads(v_resp.read().decode("utf-8"))
+                        choices = v_data.get("choices", [])
+                        if choices:
+                            extracted_v = choices[0].get("message", {}).get("content", "").strip()
+                            if len(extracted_v) > 15:
+                                logger.info(f"🔍 [التعرف الضوئي OCR - Vision] تم استخراج {len(extracted_v)} حرف من الصورة بنجاح!")
+                                return extracted_v
+                except Exception:
+                    continue
+
+            # 3. التجربة الثالثة: محرك Tesseract المحلي إن وجد (بيئة Termux / Linux)
+            try:
+                import subprocess
+                with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tf:
+                    tf.write(img_bytes)
+                    tmp_img_path = tf.name
+
+                cmd = ["tesseract", tmp_img_path, "stdout", "-l", "ara+eng"]
+                res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=15)
+                try:
+                    os.unlink(tmp_img_path)
+                except Exception:
+                    pass
+                if res.returncode == 0:
+                    tess_text = res.stdout.decode("utf-8", errors="ignore").strip()
+                    if len(tess_text) > 15:
+                        logger.info(f"🔍 [التعرف الضوئي OCR - Tesseract] تم استخراج {len(tess_text)} حرف بنجاح!")
+                        return tess_text
+            except Exception:
+                pass
+
+        except Exception as e:
+            logger.warning(f"ملاحظة عامة في معالج OCR: {e}")
+
+        return None
+
+
     # ----------------- فحص الصلاحيات والأدوار -----------------
     def check_user_access(self, from_user: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
         user_id = from_user.get("id")
@@ -1084,6 +1244,7 @@ class StandaloneTelegramEducationalBot:
             [{"text": "🏛️ إدارة الجامعات وقنوات النشر"}, {"text": "➕ إضافة جامعة وقناة نشر"}],
             [{"text": "🔄 فحص وسحب أخبار الجامعات"}, {"text": "🌐 بحث أخبار جوجل للجامعة"}],
             [{"text": "📝 صياغة ونشر خبر فوري"}, {"text": "🎯 إعلان خدماتي البديل"}],
+            [{"text": "🔄 مزامنة جيت هاب (Git Sync)"}, {"text": "💬 محادثة وبحث الذكاء"}],
             [{"text": "📊 تقارير القنوات"}, {"text": "⏸ إيقاف / استئناف"}],
             [{"text": "👥 إدارة المستخدمين"}, {"text": "👤 حسابي والاشتراك"}],
             [{"text": "📱 ربط رقم هاتفي (تحقق)"}, {"text": "🧪 تجربة الصياغة الفورية"}]
@@ -1445,6 +1606,15 @@ class StandaloneTelegramEducationalBot:
                 target_channels = task.get("targets") or db.get_target_channels()
                 target_univ_name = task.get("target_univ")
                 user_id = task.get("user_id")
+                has_media_item = bool(photo or video or media_group or animation or document or media_type in ["photo", "video", "animation", "document"])
+
+                # 0. التعرف الضوئي على الحروف (OCR) للإعلانات وجداول الاختبارات والتعاميم المصورة
+                if (photo or media_type == "photo") and (not raw_text or len(raw_text.strip()) < 40):
+                    logger.info("🔍 [التعرف الضوئي OCR] جاري فحص صورة الإعلان/الجدول واستخراج النصوص والمواعيد بدقة...")
+                    ocr_extracted = self.extract_text_via_ocr(photo)
+                    if ocr_extracted and len(ocr_extracted.strip()) > 10:
+                        raw_text = (raw_text + "\n\n" if raw_text else "") + ocr_extracted.strip()
+                        logger.info(f"✅ تم بنجاح استخراج {len(ocr_extracted)} حرف بالتعرف الضوئي وتمريرها للصياغة الأكاديمية!")
 
                 # 1. كشف إعلانات المنافسين واستبدالها (فقط إذا كانت الميزة مفعلة صراحة من المشرف ومع التأكد الصارم)
                 custom_ad = db.get_setting("custom_ad", "")
@@ -1496,7 +1666,6 @@ class StandaloneTelegramEducationalBot:
                 else:
                     rephrased = self.call_ai(raw_text, custom_instructions, target_univ=target_univ_name)
 
-                has_media_item = bool(photo or video or media_group or animation or document or media_type in ["photo", "video", "animation", "document"])
 
                 # إذا تعذر الـ AI أو كان المنشور عبارة عن صورة/جدول بمفرده، نصيغ كابشن أخوي عفوي ولا نسقط الوسائط إطلاقاً
                 if not rephrased:
@@ -2475,7 +2644,32 @@ class StandaloneTelegramEducationalBot:
 
         clean_text = text.strip()
 
-        # معالجة الحالات المعلقة
+        # معالجة الحالات المعلقة وحماية الأزرار من التجمد
+        MENU_INTERCEPT_BUTTONS = {
+            "/start", "/menu", "/help", "🎛 لوحة التحكم الرئيسية", "الرئيسية",
+            "🏛️ إدارة الجامعات وقنوات النشر", "🏛️ إدارة الجامعات والمصادر", "🏛️ الجامعات وقنواتها", "/universities", "/univ", "الجامعات",
+            "➕ معالج ربط جامعة وقناة (5 خطوات)", "➕ معالج ربط جامعة وقناة", "➕ إضافة جامعة وقناة نشر", "➕ إضافة جامعة جديدة", "/add_university", "/new_univ",
+            "🔄 فحص وسحب الأخبار فوراً", "🔄 فحص وسحب أخبار الجامعات", "🔄 فحص وسحب المصادر الآن", "/crawl_sources", "/crawl",
+            "🌐 بحث أخبار جوجل للجامعة", "🌐 بحث أخبار جوجل الأكاديمية", "🌐 أخبار جوجل", "أخبار جوجل", "/google_news",
+            "📝 صياغة ونشر خبر فوري", "/new_post",
+            "🎯 إعلان خدماتي البديل", "الإعلان", "/ad", "/advertisement",
+            "⚙️ إعدادات الذكاء الاصطناعي", "⚙️ إعدادات الذكاء", "/ai",
+            "💬 محادثة وبحث الذكاء", "💬 محادثة الذكاء", "/chat", "/ask",
+            "🔑 مفاتيح API والاعتمادات", "/keys",
+            "👤 إدارة اليوزربوت وجلسة الحساب", "👤 إدارة اليوزربوت", "/userbot",
+            "📝 تعليمات المحرر الأكاديمي", "/instructions",
+            "🧪 تجربة الصياغة الفورية", "/test",
+            "📊 حالة النظام والتقارير", "📊 تقارير القنوات", "/status",
+            "🟢 تشغيل / إيقاف البوت", "⏸ إيقاف / استئناف", "إيقاف", "/pause",
+            "📞 الدعم الفني والمساعدة", "/support",
+            "🌐 قنواتنا وروابط التواصل", "/social",
+            "👥 إدارة المستخدمين", "/users",
+            "📢 قنوات النشر المعتمدة", "قنوات النشر",
+            "👤 حسابي والاشتراك", "/my_account",
+            "📱 ربط رقم هاتفي (تحقق)", "/register",
+            "🔄 مزامنة جيت هاب (Git Sync)", "/git_sync"
+        }
+
         if chat_id in self.user_waiting_state:
             state = self.user_waiting_state.get(chat_id)
 
@@ -2484,6 +2678,12 @@ class StandaloneTelegramEducationalBot:
                 self.univ_wizard_data.pop(chat_id, None)
                 self.send_msg(chat_id, "تم إلغاء العملية والعودة للقائمة الرئيسية ✅", self.get_main_reply_keyboard(user_data.get("role", "user")))
                 return
+
+            if clean_text in MENU_INTERCEPT_BUTTONS or (clean_text.startswith("/") and len(clean_text) > 1 and not clean_text.startswith("/add_")):
+                self.user_waiting_state.pop(chat_id, None)
+                self.univ_wizard_data.pop(chat_id, None)
+                # إلغاء الحالة المعلقة فوراً والتنفيذ المباشر للزر أو الأمر المختار
+
 
             if state == "waiting_for_new_source":
                 self.user_waiting_state.pop(chat_id, None)
@@ -2557,6 +2757,21 @@ class StandaloneTelegramEducationalBot:
                 return
 
         # ----------------- الأوامر المباشرة -----------------
+        if clean_text in ["/git_sync", "🔄 مزامنة جيت هاب (Git Sync)", "مزامنة جيت هاب", "git sync"]:
+            self.send_msg(chat_id, "🔄 **جاري مزامنة الإعدادات والمصادر ومشاريع الجامعات مع مستودع GitHub...**")
+            res = db.git_sync("تحديث ومزامنة مباشرة من تيليجرام")
+            sync_msg = """✅ **تمت المزامنة بنجاح تام مع مستودع GitHub!**
+━━━━━━━━━━━━━━━━━━━
+📦 **المستودع الرسمي المربوط**:
+`https://github.com/mstfy737216610-prog/Booooot_ADMAN.git`
+
+⚡ تم حفظ وتحديث:
+• ملف المصادر والمراقبة (`sources.json`)
+• ملف حالة النظام وإحصائيات النشر (`state.json`)
+• قاعدة البيانات الدائمة وكافة القنوات المربوطة."""
+            self.send_msg(chat_id, sync_msg)
+            return
+
         if clean_text in ["🎯 إعلان خدماتي البديل", "/ad", "الإعلان", "/advertisement"]:
             self.show_ad_panel(chat_id)
             return

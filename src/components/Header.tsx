@@ -19,6 +19,27 @@ export const Header: React.FC<Props> = ({
   hasCredentials,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isSyncing, setIsSyncing] = React.useState(false);
+  const [syncStatus, setSyncStatus] = React.useState<string | null>(null);
+
+  const handleGitSync = async () => {
+    setIsSyncing(true);
+    setSyncStatus('جاري المزامنة مع GitHub...');
+    try {
+      const res = await fetch('/api/git/sync', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        setSyncStatus('تمت المزامنة بنجاح ✅');
+      } else {
+        setSyncStatus('تم الحفظ محلياً ℹ️');
+      }
+    } catch {
+      setSyncStatus('تم الحفظ محلياً');
+    } finally {
+      setIsSyncing(false);
+      setTimeout(() => setSyncStatus(null), 4000);
+    }
+  };
 
   return (
     <header className="border-b border-slate-800 bg-slate-900/90 backdrop-blur-md sticky top-0 z-30">
@@ -55,6 +76,23 @@ export const Header: React.FC<Props> = ({
 
         {/* Action Controls */}
         <div className="grid grid-cols-2 sm:flex sm:flex-wrap sm:items-center gap-2 w-full md:w-auto">
+          {syncStatus && (
+            <div className="col-span-2 sm:col-span-1 px-2.5 py-1 bg-purple-500/20 border border-purple-500/40 rounded-lg text-purple-300 text-[11px] font-medium text-center">
+              {syncStatus}
+            </div>
+          )}
+
+          {/* Git Sync Button */}
+          <button
+            onClick={handleGitSync}
+            disabled={isSyncing}
+            title="مزامنة الإعدادات ومشاريع الجامعات مع مستودع GitHub"
+            className="flex items-center justify-center gap-1.5 px-3 py-2 sm:py-1.5 bg-gradient-to-r from-purple-900/60 to-indigo-900/60 hover:from-purple-800 hover:to-indigo-800 text-purple-200 text-xs font-semibold rounded-xl border border-purple-700/60 transition-all shadow-sm"
+          >
+            <Sparkles className={`w-3.5 h-3.5 text-purple-400 ${isSyncing ? 'animate-spin' : ''}`} />
+            <span className="whitespace-nowrap">{isSyncing ? 'جاري المزامنة...' : 'مزامنة GitHub'}</span>
+          </button>
+
           {/* Quick status pill */}
           <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-slate-950/60 rounded-xl border border-slate-800 text-xs shrink-0">
             <span className={`w-2 h-2 rounded-full ${hasCredentials ? 'bg-emerald-400 shadow-sm shadow-emerald-400/50' : 'bg-amber-400'}`}></span>

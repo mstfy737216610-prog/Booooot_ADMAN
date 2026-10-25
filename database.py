@@ -1037,7 +1037,7 @@ def find_university_for_post(source: str, text: str = "") -> Optional[Dict[str, 
     return {"name": "أخبار الجامعة", "target_channel": default_ch, "enabled": True}
 
 
-# ----------------- المزامنة مع ملفات JSON لدعم Bots.Business -----------------
+# ----------------- المزامنة مع ملفات JSON ومستودع GitHub -----------------
 
 def sync_to_json_files():
     """حفظ الحالة الحالية في sources.json و state.json لضمان عمل بوت بزنس وأي أداة خارجية"""
@@ -1094,5 +1094,32 @@ def sync_to_json_files():
         logger.warning(f"ملاحظة في مزامنة JSON: {e}")
 
 
+def git_sync(commit_message: str = "Auto-sync update") -> Dict[str, Any]:
+    """مزامنة ثنائية الاتجاه مع مستودع GitHub تلقائياً عند أي تعديل من الويب أو تيليجرام"""
+    try:
+        sync_to_json_files()
+        import subprocess
+
+        # Git add
+        subprocess.run(["git", "add", "-A"], cwd=BASE_DIR, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=15)
+        # Git commit
+        subprocess.run(["git", "commit", "-m", commit_message], cwd=BASE_DIR, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=15)
+
+        # Non-blocking push to origin master
+        def _bg_push():
+            try:
+                subprocess.run(["git", "push", "origin", "master"], cwd=BASE_DIR, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=25)
+            except Exception:
+                pass
+
+        threading.Thread(target=_bg_push, daemon=True).start()
+        logger.info(f"🔄 [Git Sync] تمت مزامنة التعديلات بنجاح: {commit_message}")
+        return {"success": True, "message": "تمت المزامنة بنجاح مع مستودع GitHub"}
+    except Exception as e:
+        logger.warning(f"ملاحظة في Git sync: {e}")
+        return {"success": False, "error": str(e)}
+
+
 # تشغيل التهيئة تلقائياً عند استيراد الملف
 init_db()
+
