@@ -143,28 +143,34 @@ ssl_ctx = ssl.create_default_context()
 # طابور معالجة الرسائل والمنشورات غير المتزامن لمنع تجمد البوت
 post_queue = queue.Queue(maxsize=100)
 
-SYSTEM_PROMPT_REPHRASE = """# الدور: ممثل الدفعة والزميل الناصح (صوت الطالب الحقيقي)
-## المهمة الأساسية:
-أنت لست مجرد بوت آلي، بل أنت "زميل" وإنسان حقيقي ينقل الأخبار لزملائه في (جامعة الملك سعود) أو (كليات التقنية العليا). صغ الخبر بأسلوب "أخوي" عفوي يلمس قلب الطالب ويفيده بعيداً عن القوالب الإدارية الجافة.
+SYSTEM_PROMPT_REPHRASE = """# الدور: ممثل الدفعة والزميل الأكاديمي الناصح وصوت الطالب الحقيقي (إنسان حقيقي ورفيق درب لزملائه)
+## الهوية والروح الحقيقية:
+أنت لست آلة تنسخ بيانات جامعية جافة بقوالب صماء ميتة، بل أنت ممثل الدفعة والزميل المقرب المحبوب والناصح الأمين.
+تقف مع زملائك الطلاب والطالبات في كل موقف ولحظة:
+- في ضغط الاختبارات والفاينل: تهدئ روعهم، تذكرهم بالتوكل على الله والأذكار والدعاء، وتبث فيهم العزيمة والأمل وفالهم الـ A+.
+- في فترات التسجيل وجداول المقررات: تحثهم على مراجعة الأدفايزر وحل تعليق السكاشن قبل إغلاق النظام بأسلوب أخوي حريص.
+- في إعلانات التخرج والنتائج: تشاركهم الفرحة الغامرة والفخر بالجهد المبارك والدعاء لهم بأفضل الوظائف والمستقبل الزاهر.
+- في مواسم الصيفي (السمر): تشرح الشروط بوضوح وتشجعهم على إنجاز متطلباتهم بتفاؤل.
+- في الأيام الهادئة ويوم الجمعة: تبث روحاً إيمانية دافئة، والصلاة على النبي ﷺ، وتذكير بسورة الكهف، ونصائح دراسية ذكية لتنظيم الوقت.
 
-## 🚫 المبادئ والضوابط الصارمة:
-1. **منع التوليد الوهمي (Zero Hallucination):** 
-   - يُمنع منعاً باتاً إضافة أي معلومة أو تاريخ أو اسم (مثل: أبو محمد، الأدفايزر) إذا لم تكن موجودة نصاً في المصدر.
-   - إذا لم يذكر الخبر تاريخاً، لا تخمن! قل فقط ما هو مؤكد.
-2. **عزل الجامعات واللهجات:**
-   - (KSU): لهجة سعودية بيضاء ودية.
-   - (HCT): لهجة إماراتية بيضاء مهذبة.
-3. **حظر الروابط الوهمية:**
-   - يمنع وضع عبارات مثل [الرابط هنا] أو روابط تجريبية. لا تضع رابطاً إلا إذا كان حقيقياً من المصدر.
-4. **روح المنشور:**
-   - الغِ المقدمات الرسمية (نود إفادتكم، إعلان وتحديث). ادخل في الموضوع فوراً.
-   - ركز على (الاختبارات، الجداول، التسجيل، المكافأة).
-   - اختم دائماً بدعوات صادقة (فالكم التوفيق، الله يسهل لكم، شدوا الحيل يا أبطال).
+## 🚫 ضوابط حاسمة لمنع التوليد الوهمي (Zero Hallucination Rules):
+1. **منع اختلاق التواريخ والمواعيد منعاً باتاً:**
+   - يمنع منعاً كلياً تأليف أو تخمين أي تاريخ أو موعد أو ساعة أو يوم أو نسبة أو اسم شخص لم يُذكر حرفياً في النص المصدري المرفق.
+   - إذا لم يحتوي الخبر المصدري على تاريخ محدد، لا تذكر أي تاريخ على الإطلاق!
+2. **عزل الجامعات والسياق واللهجات التام:**
+   - لكل جامعة مسارها وقناتها المستقلة حصرياً؛ يمنع منعاً باتاً خلط أخبار جامعة مع جامعة أخرى أو دمج مصطلحاتها.
+   - التزم بلهجة وثقافة البلد المخصص للجامعة (لهجة سعودية بيضاء للجامعات السعودية، إماراتية بيضاء للجامعات الإماراتية، كويتية بيضاء للجامعات الكويتية، وأسلوب خليجي أخوي ناصح دائماً).
+3. **حظر الروابط والعبارات الوهمية:**
+   - يمنع منعاً باتاً طباعة عبارات مثل [الرابط هنا] أو روابط تجريبية كـ example.com. لا تضع إلا الروابط الحقيقية المستخرجة من النص المصدري.
+4. **كسر الروبوتية والقوالب الباردة:**
+   - يمنع البدء بـ "🚨 تنبيه لطلاب..." أو أي قالب ثابت مكرر. نوع بداياتك بما يناسب الحدث!
+   - يمنع استخدام القوالب الإدارية الجافة: (يسعدنا الرد على استفساراتكم في التعليقات / إعلان وتحديث رسمي / نود إفادتكم).
+   - ادخل في صلب الموضوع مباشرة بأسلوب ممثل الدفعة الناصح والمبسط.
 
-## 🔤 التنسيق الإلزامي:
-- استخدم <b>...</b> للمواعيد والتواريخ والنسب المهمة.
-- استخدم النقاط [▫️] لسرد الشروط أو الخطوات.
-- اجعل المنشور قصيراً، ذكياً، ومفيداً جداً."""
+## 🔤 التنسيق والتنظيم الإلزامي:
+- أبرز المواعيد الرسمية، الساعات، النسب، والقاعات بالخط العريض <b>...</b> لتسهيل القراءة السريعة.
+- استخدم النقاط المنظمة [▫️] لسرد الخطوات والشروط الأكاديمية بوضوح تام.
+- اختم دائماً بدعوات صادقة ولمسة أخوية تلامس قلب الطالب."""
 
 
 
@@ -1367,17 +1373,26 @@ class StandaloneTelegramEducationalBot:
                 valid.append(resolved)
         return valid
 
-    def extract_web_article(self, url: str) -> str:
-        """سحب وقراءة المقال أو محتوى الصفحة من الرابط المباشر للتحليل الفوري"""
+    def extract_web_article(self, url: str) -> Tuple[str, Optional[str]]:
+        """سحب وقراءة المقال أو محتوى الصفحة من الرابط المباشر مع استخراج الصورة المرفقة"""
         if not url or not url.startswith("http"):
-            return ""
+            return "", None
         try:
             req = urllib.request.Request(url, headers={
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
             })
             with urllib.request.urlopen(req, context=ssl_ctx, timeout=8) as resp:
-                html = resp.read().decode("utf-8", errors="ignore")
-                clean_html = re.sub(r'<script[^>]*>.*?</script>', '', html, flags=re.DOTALL | re.IGNORECASE)
+                html_raw = resp.read().decode("utf-8", errors="ignore")
+                
+                # استخراج الصورة الرئيسية المرفقة
+                img_url = None
+                img_m = (re.search(r'<meta[^>]+property=[\'"]og:image[\'"][^>]+content=[\'"]([^\'"]+)[\'"]', html_raw, re.I) or
+                         re.search(r'<meta[^>]+content=[\'"]([^\'"]+)[\'"][^>]+property=[\'"]og:image[\'"]', html_raw, re.I) or
+                         re.search(r'<meta[^>]+name=[\'"]twitter:image[\'"][^>]+content=[\'"]([^\'"]+)[\'"]', html_raw, re.I))
+                if img_m:
+                    img_url = self.clean_media_url(img_m.group(1))
+
+                clean_html = re.sub(r'<script[^>]*>.*?</script>', '', html_raw, flags=re.DOTALL | re.IGNORECASE)
                 clean_html = re.sub(r'<style[^>]*>.*?</style>', '', clean_html, flags=re.DOTALL | re.IGNORECASE)
                 clean_html = re.sub(r'<svg[^>]*>.*?</svg>', '', clean_html, flags=re.DOTALL | re.IGNORECASE)
                 
@@ -1387,70 +1402,164 @@ class StandaloneTelegramEducationalBot:
                 text = re.sub(r'<[^>]+>', ' ', clean_html)
                 text = re.sub(r'\s+', ' ', text).strip()
                 if title:
-                    return f"عنوان الصفحة: {title}\nالمحتوى: {text[:2000]}"
-                return text[:2000]
+                    return f"عنوان المقال: {title}\nالمحتوى: {text[:2200]}", img_url
+                return text[:2200], img_url
         except Exception as e:
             logger.debug(f"ملاحظة في سحب محتوى الرابط {url}: {e}")
-            return ""
+            return "", None
+
+    def fetch_twitter_post_or_profile(self, text_or_url: str) -> Optional[Dict[str, Any]]:
+        """سحب أحدث التغريدات والوسائط المرفقة وتفاصيل الحساب من X/Twitter بدقة تامة وبدون أي هلوسة"""
+        try:
+            status_m = re.search(r'(?:x\.com|twitter\.com)/[a-zA-Z0-9_]+/status/(\d+)', text_or_url, re.IGNORECASE)
+            if status_m:
+                tid = status_m.group(1)
+                req = urllib.request.Request(f"https://api.fxtwitter.com/status/{tid}", headers={"User-Agent": "Mozilla/5.0"})
+                with urllib.request.urlopen(req, context=ssl_ctx, timeout=5) as r:
+                    data = json.loads(r.read().decode("utf-8"))
+                tw = data.get("tweet", {})
+                if tw:
+                    photos = []
+                    videos = []
+                    m = tw.get("media")
+                    if m and isinstance(m, dict):
+                        if m.get("photos") and isinstance(m["photos"], list):
+                            photos = [p.get("url") for p in m["photos"] if isinstance(p, dict) and p.get("url")]
+                        if m.get("videos") and isinstance(m["videos"], list):
+                            videos = [v.get("url") for v in m["videos"] if isinstance(v, dict) and v.get("url")]
+                        if not photos and m.get("all") and isinstance(m["all"], list):
+                            photos = [x.get("url") for x in m["all"] if isinstance(x, dict) and x.get("type") == "photo" and x.get("url")]
+                    return {
+                        "name": tw.get("author", {}).get("name", ""),
+                        "handle": tw.get("author", {}).get("screen_name", ""),
+                        "text": tw.get("text", ""),
+                        "date": tw.get("created_at", ""),
+                        "url": tw.get("url", f"https://x.com/i/status/{tid}"),
+                        "bio": tw.get("author", {}).get("description", ""),
+                        "photos": photos,
+                        "videos": videos,
+                        "tweet_id": tw.get("id", tid)
+                    }
+
+            handle_m = re.search(r'(?:x\.com|twitter\.com)/([a-zA-Z0-9_]+)', text_or_url, re.IGNORECASE) or re.search(r'@([a-zA-Z0-9_]+)', text_or_url)
+            handle = handle_m.group(1) if handle_m else ""
+            if handle.lower() in ["status", "home", "explore", "search", "notifications"]:
+                handle = ""
+            if not handle:
+                return None
+
+            name = handle
+            bio = ""
+            tweet_text = ""
+            tweet_date = ""
+            tweet_url = f"https://x.com/{handle}"
+            tweet_id = None
+            photos = []
+            videos = []
+
+            # 1. Profile via fxtwitter
+            try:
+                req = urllib.request.Request(f"https://api.fxtwitter.com/{handle}", headers={"User-Agent": "Mozilla/5.0"})
+                with urllib.request.urlopen(req, context=ssl_ctx, timeout=4) as r:
+                    udata = json.loads(r.read().decode("utf-8")).get("user", {})
+                    name = udata.get("name", handle)
+                    bio = udata.get("description", "")
+            except Exception:
+                pass
+
+            # 2. Guest Token + GraphQL UserByScreenName
+            try:
+                bearer = "AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA"
+                req = urllib.request.Request("https://api.twitter.com/1.1/guest/activate.json", headers={
+                    "authorization": "Bearer " + bearer,
+                    "User-Agent": "Mozilla/5.0"
+                }, data=b"")
+                with urllib.request.urlopen(req, context=ssl_ctx, timeout=4) as r:
+                    gt = json.loads(r.read().decode("utf-8"))["guest_token"]
+
+                q_url = f"https://twitter.com/i/api/graphql/sLVLhk0bGj3MVFEKTdax1w/UserByScreenName?variables=%7B%22screen_name%22%3A%22{handle}%22%2C%22withSafetyModeUserFields%22%3Atrue%7D"
+                req2 = urllib.request.Request(q_url, headers={
+                    "authorization": "Bearer " + bearer,
+                    "x-guest-token": gt,
+                    "User-Agent": "Mozilla/5.0"
+                })
+                with urllib.request.urlopen(req2, context=ssl_ctx, timeout=4) as r:
+                    res = json.loads(r.read().decode("utf-8"))
+                legacy = res.get("data", {}).get("user", {}).get("result", {}).get("legacy", {})
+                if legacy.get("name"):
+                    name = legacy.get("name")
+                if legacy.get("description"):
+                    bio = legacy.get("description")
+                pinned = legacy.get("pinned_tweet_ids_str", [])
+                if pinned:
+                    tid = pinned[0]
+                    tweet_id = tid
+                    req3 = urllib.request.Request(f"https://api.fxtwitter.com/status/{tid}", headers={"User-Agent": "Mozilla/5.0"})
+                    with urllib.request.urlopen(req3, context=ssl_ctx, timeout=4) as r:
+                        tdata = json.loads(r.read().decode("utf-8")).get("tweet", {})
+                    tweet_text = tdata.get("text", "")
+                    tweet_date = tdata.get("created_at", "")
+                    tweet_url = tdata.get("url", f"https://x.com/{handle}/status/{tid}")
+                    m = tdata.get("media")
+                    if m and isinstance(m, dict):
+                        if m.get("photos") and isinstance(m["photos"], list):
+                            photos = [p.get("url") for p in m["photos"] if isinstance(p, dict) and p.get("url")]
+                        if m.get("videos") and isinstance(m["videos"], list):
+                            videos = [v.get("url") for v in m["videos"] if isinstance(v, dict) and v.get("url")]
+            except Exception as e:
+                logger.debug(f"Twitter guest scrape note: {e}")
+
+            if not tweet_text and bio:
+                tweet_text = f"نبذة الحساب: {bio}"
+
+            return {
+                "name": name,
+                "handle": handle,
+                "text": tweet_text,
+                "date": tweet_date,
+                "url": tweet_url,
+                "bio": bio,
+                "photos": photos,
+                "videos": videos,
+                "tweet_id": tweet_id
+            }
+        except Exception as e:
+            logger.debug(f"fetch_twitter_post_or_profile error: {e}")
+            return None
 
     def fetch_live_account_or_url_content(self, text_or_url: str) -> Tuple[str, str, List[Dict[str, str]]]:
         """
         محرك الزحف الذكي وقراءة الروابط والحسابات (Smart Scraper & Real-Time Analyzer)
-        يسحب فورياً أحدث التغريدات أو الأخبار أو المنشورات من حسابات X/Twitter ومواقع الجامعات والروابط المباشرة
+        يسحب فورياً أحدث التغريدات أو الأخبار أو المنشورات من حسابات X/Twitter ومواقع الجامعات والروابط المباشرة ديناميكياً
         """
         urls = re.findall(r'https?://[^\s<>"]+', text_or_url)
         raw_url = urls[0].rstrip(".,;!?)>]\'\"") if urls else ""
 
-        is_twitter = "x.com/" in text_or_url or "twitter.com/" in text_or_url or "x.com/" in raw_url or "twitter.com/" in raw_url
+        is_twitter = "x.com/" in text_or_url or "twitter.com/" in text_or_url or "x.com/" in raw_url or "twitter.com/" in raw_url or bool(re.search(r'@[a-zA-Z0-9_]{3,}', text_or_url))
         if is_twitter:
-            target_str = raw_url or text_or_url
-            handle_m = re.search(r'(?:x\.com|twitter\.com)/([a-zA-Z0-9_]+)', target_str, re.IGNORECASE)
-            handle = handle_m.group(1) if handle_m else ""
-            if handle.lower() in ["status", "home", "explore", "search"]:
-                handle = ""
-
-            entity = "جامعة الشرق الأوسط الأمريكية (AUM - الكويت)" if (handle and "aum" in handle.lower()) else (f"@{handle}" if handle else "الحساب الأكاديمي المعتمد")
-            if handle and "aum" in handle.lower():
-                q_query = f'"{handle}" OR "AUM" OR "جامعة الشرق الأوسط الأمريكية"'
-            elif handle:
-                q_query = f'"{handle}" OR "جامعة {handle}"'
-            else:
-                q_query = f'"{entity}"'
-            
-            live_news = self.search_web_live(q_query)
-
-            # فحص قناة تيليجرام المرآة إن وجدت
-            mirror_text = ""
-            if handle:
-                try:
-                    tg_url = f"https://t.me/s/{handle}"
-                    req = urllib.request.Request(tg_url, headers={"User-Agent": "Mozilla/5.0"})
-                    with urllib.request.urlopen(req, context=ssl_ctx, timeout=6) as r:
-                        thtml = r.read().decode("utf-8", errors="ignore")
-                        blocks = re.split(r'<div[^>]*class=[\'"][^\'"]*tgme_widget_message_wrap', thtml)
-                        if len(blocks) > 1:
-                            last_b = blocks[-1]
-                            tm = re.search(r'class=[\'"][^\'"]*tgme_widget_message_text[^\'"]*[\'"][^>]*>(.*?)</div>', last_b, re.DOTALL)
-                            if tm:
-                                mirror_text = re.sub(r'<[^>]+>', '', re.sub(r'<br\s*/?>', '\n', tm.group(1))).strip()
-                except Exception:
-                    pass
-
-            desc_lines = []
-            if mirror_text:
-                desc_lines.append(f"أحدث منشور مسحوب من القناة/الحساب مباشرة:\n{mirror_text[:500]}")
-
-            for n in live_news[:4]:
-                d_str = f" (التاريخ: {n.get('pub_date', '')})" if n.get('pub_date') else ""
-                desc_lines.append(f"• {n.get('title', '')}{d_str}\n  {n.get('snippet', '')}")
-
-            summary = "\n\n".join(desc_lines)
-            return entity, raw_url or f"https://x.com/{handle}", live_news
+            tw = self.fetch_twitter_post_or_profile(raw_url or text_or_url)
+            if tw and (tw.get("text") or tw.get("bio")):
+                entity = f"{tw['name']} (@{tw['handle']})"
+                items = [{
+                    "title": f"آخر منشور من {tw['name']} (@{tw['handle']})",
+                    "snippet": tw.get("text", ""),
+                    "pub_date": tw.get("date", ""),
+                    "link": tw.get("url", raw_url or f"https://x.com/{tw['handle']}"),
+                    "photo": tw.get("photos", [None])[0] if tw.get("photos") else None,
+                    "video": tw.get("videos", [None])[0] if tw.get("videos") else None
+                }]
+                return entity, tw.get("url", raw_url), items
 
         if raw_url:
-            article_text = self.extract_web_article(raw_url)
+            article_text, article_img = self.extract_web_article(raw_url)
             if article_text:
-                return raw_url, raw_url, [{"title": "المقال المسحوب من الرابط", "snippet": article_text[:800], "link": raw_url, "pub_date": ""}]
+                return raw_url, raw_url, [{
+                    "title": "المقال المسحوب من الرابط",
+                    "snippet": article_text[:800],
+                    "link": raw_url,
+                    "pub_date": "",
+                    "photo": article_img
+                }]
 
         return "", "", []
 
@@ -1852,10 +1961,14 @@ class StandaloneTelegramEducationalBot:
                 web_context = ""
                 if ext_links:
                     logger.info(f"🌐 [Smart Scraper] جاري سحب محتوى الرابط المصدر: {ext_links[0]}...")
-                    web_context = self.extract_web_article(ext_links[0])
+                    web_context, web_img = self.extract_web_article(ext_links[0])
                     if web_context:
                         raw_text = f"المحتوى المسحوب من الموقع:\n{web_context}\n\nنص الخبر الأصلي:\n{raw_text}"
                         logger.info(f"✅ تم دمج {len(web_context)} حرف من محتوى الموقع لزيادة دقة التحليل.")
+                    if web_img and not photo and not video and not media_group:
+                        photo = web_img
+                        has_media_item = True
+                        logger.info(f"📸 [Media Binding] تم استخراج وربط الصورة المرفقة من الرابط الأصلي: {photo[:60]}")
 
                 custom_instructions = db.get_setting("custom_instructions", "")
 
@@ -2030,21 +2143,30 @@ class StandaloneTelegramEducationalBot:
         reply = self.call_ai(query_payload, system_prompt=system_prompt)
 
         # إذا تعذر الذكاء أو أعاد النموذج رداً نمطياً بالرفض، نصيغ البيانات المسحوبة الحية مباشرة
-        if not reply or len(reply) < 15 or "لا يمكنني الوصول إلى الروابط" in reply or "لا أستطيع تصفح الإنترنت" in reply or "لا يمكنني تصفح" in reply:
+        snippet_lead = (live_items[0].get("snippet", "").strip()[:25]) if live_items else ""
+        missed_scraped = bool(live_items and snippet_lead and snippet_lead not in reply)
+        is_refusal = (
+            not reply or len(reply) < 15 or
+            "لا يمكنني الوصول إلى الروابط" in reply or
+            "لا أستطيع تصفح الإنترنت" in reply or
+            "لا يمكنني تصفح" in reply or
+            "لا أستطيع قراءة" in reply or
+            missed_scraped
+        )
+        if is_refusal:
             if live_items:
-                bullets = []
-                for it in live_items[:4]:
-                    d_str = f" (تاريخ النشر: {it.get('pub_date')})" if it.get('pub_date') else ""
-                    bullets.append(f"▫️ <b>{it.get('title')}</b>{d_str}\n   {it.get('snippet')}")
-                b_text = "\n\n".join(bullets)
-                reply = f"""🎓 <b>أحدث المنشورات والمستجدات الرسمية لـ ({entity}):</b>
+                main_it = live_items[0]
+                reply = f"""أهلاً بك يا زميلي العزيز! 🎓✨
+بصفتي مستشارك وممثل الدفعة، يسعدني جداً أن أضع بين يديك <b>آخر منشور تم سحبه مباشرة وحصرياً</b> من حساب <b>{entity}</b>:
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📢 تم سحب وتحليل المحتوى الفعلي والمباشر عبر محرك الزحف الذكي (Smart Scraper):
+📢 <b>نص المنشور:</b>
+{main_it.get('snippet', '')}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-{b_text}
-
-🔗 <b>رابط الحساب / البوابة الإلكترونية المعتمدة:</b>
-{target_url or 'https://x.com/Aum_page'}"""
+📅 <b>تاريخ النشر:</b> {main_it.get('pub_date') or 'حديث وموثق'}
+🔗 <b>رابط المنشور الأصلي على X (تويتر):</b>
+{main_it.get('link', target_url)}"""
             else:
                 reply = f"بخصوص استفسارك عن: {user_query}\n\nتعتمد الأنظمة الجامعية الإعلانات الرسمية عبر بوابات الطلبة والتطبيقات المعتمدة."
 
@@ -2082,21 +2204,30 @@ class StandaloneTelegramEducationalBot:
         reply = self.call_ai(msg_payload, system_prompt=system_prompt)
 
         # استبعاد الرفض النمطي للنموذج وصياغة البيانات المسحوبة مباشرة
-        if not reply or "لا يمكنني الوصول إلى الروابط" in reply or "لا أستطيع تصفح الإنترنت" in reply or "لا يمكنني تصفح" in reply:
+        snippet_lead_gen = (live_items[0].get("snippet", "").strip()[:25]) if live_items else ""
+        missed_scraped_gen = bool(live_items and snippet_lead_gen and snippet_lead_gen not in reply)
+        is_refusal = (
+            not reply or len(reply) < 15 or
+            "لا يمكنني الوصول إلى الروابط" in reply or
+            "لا أستطيع تصفح الإنترنت" in reply or
+            "لا يمكنني تصفح" in reply or
+            "لا أستطيع قراءة" in reply or
+            missed_scraped_gen
+        )
+        if is_refusal:
             if live_items:
-                bullets = []
-                for it in live_items[:4]:
-                    d_str = f" (تاريخ النشر: {it.get('pub_date')})" if it.get('pub_date') else ""
-                    bullets.append(f"▫️ <b>{it.get('title')}</b>{d_str}\n   {it.get('snippet')}")
-                b_text = "\n\n".join(bullets)
-                reply = f"""🎓 <b>أحدث المنشورات والمستجدات الرسمية لـ ({entity}):</b>
+                main_it = live_items[0]
+                reply = f"""أهلاً بك يا زميلي العزيز! 🎓✨
+بصفتي مستشارك وممثل الدفعة، يسعدني جداً أن أضع بين يديك <b>آخر منشور تم سحبه مباشرة وحصرياً</b> من حساب <b>{entity}</b>:
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📢 تم سحب وتحليل المحتوى الفعلي والمباشر عبر محرك الزحف الذكي (Smart Scraper):
+📢 <b>نص المنشور:</b>
+{main_it.get('snippet', '')}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-{b_text}
-
-🔗 <b>رابط الحساب / البوابة الإلكترونية المعتمدة:</b>
-{target_url or 'https://x.com/Aum_page'}"""
+📅 <b>تاريخ النشر:</b> {main_it.get('pub_date') or 'حديث وموثق'}
+🔗 <b>رابط المنشور الأصلي على X (تويتر):</b>
+{main_it.get('link', target_url)}"""
             else:
                 reply = "أهلاً بك يا مشرفنا العزيز! 🌸\nأنا مستشارك الأكاديمي والذكي لمساعدتك في إدارة قنوات الجامعات وتحسين المحتوى ومنع أي هلوسة في التواريخ. كل شيء يعمل بانتظام، كيف تحب أن نساعدك الآن؟"
 
@@ -2313,7 +2444,43 @@ class StandaloneTelegramEducationalBot:
         univ_name = matched_univ["name"] if matched_univ else handle
         target_ch = matched_univ["target_channel"] if matched_univ else (db.get_target_channels()[0] if db.get_target_channels() else "@jhdhhdcj")
 
-        # الاستراتيجية 1: فحص وجود قناة تيليجرام مطابقة للمعرف (حيث تنشر معظم الجامعات تغريداتها مباشرة مع الصور)
+        # الاستراتيجية 1 الأساسية: سحب التغريدة المباشرة والوسائط الفعلية عبر محرك تويتر/X الذكي
+        try:
+            tw = self.fetch_twitter_post_or_profile(handle)
+            if tw and tw.get("text") and len(tw.get("text", "").strip()) > 5:
+                tweet_text = tw.get("text", "").strip()
+                tweet_id = str(tw.get("tweet_id") or hashlib.md5(tweet_text[:80].encode("utf-8")).hexdigest())
+                last_known = str(src.get("last_post_id") or "")
+
+                if tweet_id != last_known:
+                    p_hash = hashlib.md5((tweet_text[:80] + tweet_id).encode("utf-8")).hexdigest()
+                    if not db.is_post_seen(tweet_id, p_hash):
+                        db.update_source_last_id(src.get("target"), tweet_id)
+                        db.mark_post_seen(tweet_id, p_hash, src.get("target"))
+
+                        photos = tw.get("photos", [])
+                        photo_url = photos[0] if photos else None
+                        videos = tw.get("videos", [])
+                        video_url = videos[0] if videos else None
+                        media_group = [{"type": "photo", "media": u} for u in photos] if len(photos) > 1 else None
+
+                        logger.info(f"⚡️ [Twitter Direct Scraper] التقاط منشور حقيقي ومباشر من @{handle} موجه إلى {target_ch} ({univ_name})")
+                        post_queue.put({
+                            "type": "twitter_post",
+                            "text": tweet_text,
+                            "photo": photo_url,
+                            "video": video_url,
+                            "media_group": media_group,
+                            "media_type": "video" if video_url else ("photo" if photo_url else "text"),
+                            "targets": [target_ch],
+                            "target_univ": univ_name,
+                            "user_id": None
+                        })
+                        return
+        except Exception as e:
+            logger.debug(f"Direct Twitter scraper note for @{handle}: {e}")
+
+        # الاستراتيجية 2: فحص وجود قناة تيليجرام مطابقة للمعرف (حيث تنشر بعض المصادر تغريداتها مباشرة مع الصور)
         try:
             tg_url = f"https://t.me/s/{handle}"
             req = urllib.request.Request(tg_url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})

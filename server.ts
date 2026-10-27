@@ -547,6 +547,160 @@ interface ScrapedLiveInfo {
   rawContent?: string;
 }
 
+const TWITTER_BEARER = 'AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA';
+
+interface TwitterScrapedResult {
+  handle: string;
+  name: string;
+  bio: string;
+  tweetId?: string;
+  tweetText?: string;
+  tweetDate?: string;
+  tweetUrl?: string;
+}
+
+async function fetchTwitterPostOrProfile(input: string): Promise<TwitterScrapedResult | null> {
+  try {
+    // 1. Direct Tweet Status URL (e.g. /status/2107201158213181734)
+    const statusMatch = input.match(/(?:x\.com|twitter\.com)\/[a-zA-Z0-9_]+\/status\/(\d+)/i);
+    if (statusMatch) {
+      const tid = statusMatch[1];
+      try {
+        const fxRes = await fetch(`https://api.fxtwitter.com/status/${tid}`, {
+          headers: { 'User-Agent': 'Mozilla/5.0' },
+          signal: AbortSignal.timeout(5000)
+        });
+        if (fxRes.ok) {
+          const fxJson = await fxRes.json();
+          const tw = fxJson.tweet;
+          if (tw) {
+            return {
+              handle: tw.author?.screen_name || '',
+              name: tw.author?.name || '',
+              bio: tw.author?.description || '',
+              tweetId: tw.id,
+              tweetText: tw.text || '',
+              tweetDate: tw.created_at || '',
+              tweetUrl: tw.url || `https://x.com/i/status/${tid}`
+            };
+          }
+        }
+      } catch (e) {
+        console.warn('Direct status fetch error:', e);
+      }
+    }
+
+    // 2. Profile URL or Handle
+    const handleMatch = input.match(/(?:x\.com|twitter\.com)\/([a-zA-Z0-9_]+)/i) || input.match(/@([a-zA-Z0-9_]+)/);
+    let handle = handleMatch ? handleMatch[1] : '';
+    if (handle.toLowerCase().match(/^(status|home|explore|search|notifications)$/)) {
+      handle = '';
+    }
+    if (!handle) return null;
+
+    let displayName = handle;
+    let bio = '';
+    let tweetId = '';
+    let tweetText = '';
+    let tweetDate = '';
+    let tweetUrl = `https://x.com/${handle}`;
+
+    // A. Profile via fxtwitter
+    try {
+      const fxRes = await fetch(`https://api.fxtwitter.com/${handle}`, {
+        headers: { 'User-Agent': 'Mozilla/5.0' },
+        signal: AbortSignal.timeout(4000)
+      });
+      if (fxRes.ok) {
+        const fxData = await fxRes.json();
+        if (fxData.user) {
+          displayName = fxData.user.name || handle;
+          bio = fxData.user.description || '';
+        }
+      }
+    } catch {}
+
+    // B. Twitter Guest Token + UserByScreenName to retrieve pinned or latest tweet ID
+    try {
+      const gtRes = await fetch('https://api.twitter.com/1.1/guest/activate.json', {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${TWITTER_BEARER}`,
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        },
+        signal: AbortSignal.timeout(4500)
+      });
+      if (gtRes.ok) {
+        const gtJson = await gtRes.json();
+        const guestToken = gtJson.guest_token;
+        if (guestToken) {
+          const userGqlUrl = `https://twitter.com/i/api/graphql/sLVLhk0bGj3MVFEKTdax1w/UserByScreenName?variables=${encodeURIComponent(JSON.stringify({ screen_name: handle, withSafetyModeUserFields: true }))}`;
+          const userRes = await fetch(userGqlUrl, {
+            headers: {
+              authorization: `Bearer ${TWITTER_BEARER}`,
+              'x-guest-token': guestToken,
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            },
+            signal: AbortSignal.timeout(4500)
+          });
+          if (userRes.ok) {
+            const userJson = await userRes.json();
+            const legacy = userJson?.data?.user?.result?.legacy;
+            if (legacy) {
+              if (legacy.name) displayName = legacy.name;
+              if (legacy.description) bio = legacy.description;
+              const pinned = legacy.pinned_tweet_ids_str || [];
+              if (pinned.length > 0) {
+                tweetId = pinned[0];
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Twitter guest token scraping error:', e);
+    }
+
+    // C. If tweet ID discovered, retrieve full tweet payload via fxtwitter
+    if (tweetId) {
+      try {
+        const twRes = await fetch(`https://api.fxtwitter.com/status/${tweetId}`, {
+          headers: { 'User-Agent': 'Mozilla/5.0' },
+          signal: AbortSignal.timeout(4500)
+        });
+        if (twRes.ok) {
+          const twJson = await twRes.json();
+          const tw = twJson.tweet;
+          if (tw) {
+            tweetText = tw.text || '';
+            tweetDate = tw.created_at || '';
+            tweetUrl = tw.url || `https://x.com/${handle}/status/${tweetId}`;
+          }
+        }
+      } catch (e) {
+        console.warn('Fx tweet retrieval error:', e);
+      }
+    }
+
+    if (!tweetText && bio) {
+      tweetText = `نبذة الحساب الرسمية:\n${bio}`;
+    }
+
+    return {
+      handle,
+      name: displayName,
+      bio,
+      tweetId,
+      tweetText,
+      tweetDate,
+      tweetUrl
+    };
+  } catch (err) {
+    console.warn('fetchTwitterPostOrProfile error:', err);
+    return null;
+  }
+}
+
 async function fetchLiveContentForUrl(text: string): Promise<ScrapedLiveInfo | null> {
   const urlMatch = text.match(/https?:\/\/[^\s<>"]+/i);
   const rawUrl = urlMatch ? urlMatch[0].replace(/[.,;!?)>\]'"]+$/, '') : '';
@@ -554,50 +708,28 @@ async function fetchLiveContentForUrl(text: string): Promise<ScrapedLiveInfo | n
   const isTwitter = rawUrl.includes('x.com/') || rawUrl.includes('twitter.com/') || text.includes('x.com/') || text.includes('twitter.com/');
   
   if (isTwitter) {
-    let handle = '';
-    const handleMatch = (rawUrl || text).match(/(?:x\.com|twitter\.com)\/([a-zA-Z0-9_]+)/i);
-    if (handleMatch) {
-      handle = handleMatch[1];
-    }
-    const cleanHandle = handle.replace(/^(status|home|explore|search)$/i, '');
-    const entityName = cleanHandle ? (cleanHandle.toLowerCase().includes('aum') ? 'جامعة الشرق الأوسط الأمريكية (AUM - الكويت)' : cleanHandle) : 'الحساب الأكاديمي المعتمد';
-
-    try {
-      const q = encodeURIComponent(`"${cleanHandle || 'AUM'}" OR "جامعة الشرق الأوسط الأمريكية" OR "${entityName}"`);
-      const gRes = await fetch(`https://news.google.com/rss/search?q=${q}&hl=ar&gl=KW&ceid=KW:ar`, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0.0.0 Safari/537.36' },
-        signal: AbortSignal.timeout(6000)
-      });
-      const xml = await gRes.text();
+    const tw = await fetchTwitterPostOrProfile(rawUrl || text);
+    if (tw && (tw.tweetText || tw.bio)) {
       const items: Array<{ title: string; date?: string; snippet: string; link: string }> = [];
-      const matches = [...xml.matchAll(/<item>[\s\S]*?<title>(.*?)<\/title>[\s\S]*?<link>(.*?)<\/link>[\s\S]*?<pubDate>(.*?)<\/pubDate>[\s\S]*?<description>(.*?)<\/description>[\s\S]*?<\/item>/gi)];
-      for (const m of matches.slice(0, 5)) {
-        const title = m[1].replace(/<!\[CDATA\[(.*?)\]\]>/g, '$1').replace(/\s*-\s*[^-]+$/, '').trim();
-        const link = m[2];
-        const pubDate = m[3];
-        const rawDesc = m[4]
-          .replace(/&lt;/g, '<')
-          .replace(/&gt;/g, '>')
-          .replace(/&amp;/g, '&')
-          .replace(/&quot;/g, '"')
-          .replace(/&#39;/g, "'");
-        const desc = rawDesc.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
-        items.push({ title, date: pubDate, snippet: desc, link });
+      if (tw.tweetText) {
+        items.push({
+          title: `آخر منشور من ${tw.name} (@${tw.handle})`,
+          date: tw.tweetDate,
+          snippet: tw.tweetText,
+          link: tw.tweetUrl || `https://x.com/${tw.handle}`
+        });
       }
-      if (items.length > 0) {
-        return {
-          url: rawUrl || `https://x.com/${cleanHandle}`,
-          sourceType: 'twitter',
-          entity: entityName,
-          items
-        };
-      }
-    } catch (e) {
-      console.warn('Live Twitter news fetch failed:', e);
+      return {
+        url: tw.tweetUrl || rawUrl || `https://x.com/${tw.handle}`,
+        sourceType: 'twitter',
+        entity: `${tw.name} (@${tw.handle})`,
+        items,
+        rawContent: tw.tweetText || tw.bio
+      };
     }
   }
 
-  // If general URL
+  // If general web URL
   if (rawUrl && !isTwitter) {
     try {
       const resp = await fetch(rawUrl, {
@@ -630,7 +762,39 @@ async function fetchLiveContentForUrl(text: string): Promise<ScrapedLiveInfo | n
 function generateIntelligentChatFallback(message: string, history: any[] = [], scrapedInfo: ScrapedLiveInfo | null = null): string {
   const msgLower = (message || '').toLowerCase();
 
-  // If we have live scraped items from Twitter / Web, format them directly as the latest news!
+  // If we have live scraped items from Twitter, format the EXACT tweet and its links directly!
+  if (scrapedInfo && scrapedInfo.sourceType === 'twitter' && scrapedInfo.items && scrapedInfo.items.length > 0) {
+    const mainPost = scrapedInfo.items[0];
+    let dFormatted = '';
+    if (mainPost.date) {
+      try {
+        const d = new Date(mainPost.date);
+        dFormatted = d.toLocaleDateString('ar-KW', { year: 'numeric', month: 'long', day: 'numeric' });
+      } catch {
+        dFormatted = mainPost.date;
+      }
+    }
+
+    const linksInSnippet = extractExternalLinks(mainPost.snippet);
+    let linksPart = '';
+    if (linksInSnippet.length > 0) {
+      linksPart = `\n\n📌 **الروابط المرفقة في المنشور:**\n` + linksInSnippet.map(l => `🔗 ${l}`).join('\n');
+    }
+
+    return `أهلاً بك يا زميلي العزيز! 🎓✨
+بصفتي مستشارك وممثل الدفعة، يسعدني جداً أن أضع بين يديك **آخر منشور تم نشره وسحبه مباشرة** من حساب **${scrapedInfo.entity}**:
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📢 **نص المنشور:**
+${mainPost.snippet}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${linksPart}
+
+📅 **تاريخ النشر:** ${dFormatted || mainPost.date || 'حديث وموثق'}
+🔗 **رابط المنشور الأصلي على X (تويتر):**
+${mainPost.link}`;
+  }
+
+  // If general web scrape
   if (scrapedInfo && scrapedInfo.items && scrapedInfo.items.length > 0) {
     const bullets = scrapedInfo.items.slice(0, 4).map(it => {
       let dStr = '';
@@ -647,13 +811,13 @@ function generateIntelligentChatFallback(message: string, history: any[] = [], s
       return `▫️ **${it.title}**${dStr}${snippetPart}`;
     }).join('\n\n');
 
-    return `🎓 **أحدث المنشورات والمستجدات الرسمية لـ (${scrapedInfo.entity}):**
+    return `🎓 **أحدث المستجدات الرسمية لـ (${scrapedInfo.entity}):**
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📢 تم سحب وتحليل المحتوى الفعلي والمباشر عبر محرك الزحف الذكي (Smart Scraper):
 
 ${bullets}
 
-🔗 **رابط الحساب / البوابة الإلكترونية المعتمدة:**
+🔗 **رابط البوابة الإلكترونية المعتمدة:**
 ${scrapedInfo.url}`;
   }
 
@@ -734,7 +898,7 @@ async function callAICurl(url: string, apiKey: string, payload: any, timeoutSec 
   }
 }
 
-async function callGemini(systemPrompt: string, userContent: string): Promise<string> {
+async function callGemini(systemPrompt: string, userContent: string, useSearch: boolean = false): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new Error('GEMINI_API_KEY is not configured');
@@ -757,7 +921,7 @@ async function callGemini(systemPrompt: string, userContent: string): Promise<st
         config: {
           systemInstruction: systemPrompt || undefined,
           temperature: 0.2,
-          tools: [{ googleSearch: {} }]
+          tools: useSearch ? [{ googleSearch: {} }] : undefined
         },
       }),
       new Promise<never>((_, reject) =>
@@ -929,8 +1093,9 @@ app.post('/api/ai/chat', async (req: Request, res: Response) => {
   const liveScraped = await fetchLiveContentForUrl(message);
   let liveContext = '';
   if (liveScraped && liveScraped.items && liveScraped.items.length > 0) {
-    liveContext = `\n\n🌐 [بيانات محرك الزحف الذكي المسحوبة فورياً من (${liveScraped.entity})]:\n` +
-      liveScraped.items.map((it, i) => `${i + 1}. ${it.title} ${it.date ? `(${it.date})` : ''}\n   ${it.snippet}\n   المصدر: ${it.link}`).join('\n');
+    liveContext = `\n\n🌐 [بيانات محرك الزحف الذكي المسحوبة فورياً وحصرياً من (${liveScraped.entity})]:\n` +
+      liveScraped.items.map((it, i) => `${i + 1}. ${it.title} ${it.date ? `(تاريخ النشر: ${it.date})` : ''}\n   النص الفعلي المسحوب:\n   "${it.snippet}"\n   رابط المصدر المباشر: ${it.link}`).join('\n\n') +
+      `\n\n⚠️ تعليمات حاسمة وإلزامية: المستخدم طلب قراءة هذا الحساب/الرابط تحديداً. تم جلب المنشور الفعلي والمباشر أعلاه بنجاح. وظيفتك هي عرض وتلخيص هذا المنشور الحقيقي فقط بكامل تفاصيله (النص، الروابط المرفقة مثل قروب الواتساب، والتاريخ، ورابط التغريدة الأصلي) بأسلوب ممثل الدفعة الناصح. يُمنع منعاً باتاً تأليف أي أخبار خارجية أو ذكر أخبار غير متعلقة بهذا الحساب.`;
   } else if (liveScraped?.rawContent) {
     liveContext = `\n\n🌐 [محتوى الرابط المباشر المسحوب من الموقع (${liveScraped.entity})]:\n${liveScraped.rawContent}`;
   }
@@ -947,11 +1112,11 @@ app.post('/api/ai/chat', async (req: Request, res: Response) => {
   let reply = '';
   let usedModel = model;
 
-  // 1. If Gemini available, attempt Google GenAI with search grounding
+  // 1. If Gemini available, attempt Google GenAI
   if (process.env.GEMINI_API_KEY) {
     try {
       usedModel = 'Gemini (Google GenAI)';
-      reply = await callGemini(finalSystemPrompt, `History: ${JSON.stringify(history)}\nUser: ${userContentWithContext}`);
+      reply = await callGemini(finalSystemPrompt, `History: ${JSON.stringify(history)}\nUser: ${userContentWithContext}`, !liveScraped);
     } catch {
       // Gemini temporary spike or offline, proceed to fallback
     }
@@ -969,7 +1134,7 @@ app.post('/api/ai/chat', async (req: Request, res: Response) => {
       const payload = {
         model: model.includes('gemini') ? 'DeepSeek-V4.1-Flash' : model,
         messages: messages,
-        temperature: 0.3,
+        temperature: 0.2,
         max_tokens: 1000
       };
 
@@ -984,7 +1149,18 @@ app.post('/api/ai/chat', async (req: Request, res: Response) => {
   }
 
   // 3. Intelligent persona-aware fallback guaranteeing zero downtime & instant response with real scraped data
-  if (!reply) {
+  const isRefusal = !reply ||
+    reply.includes('لا يمكنني الوصول إلى الروابط') ||
+    reply.includes('لا أستطيع تصفح الإنترنت') ||
+    reply.includes('لا يمكنني تصفح') ||
+    reply.includes('لا أستطيع الوصول') ||
+    reply.includes('لا يمكنني فتح الروابط');
+
+  const mainSnippet = liveScraped?.items?.[0]?.snippet || '';
+  const snippetLead = mainSnippet.trim().substring(0, 25);
+  const missedScrapedData = liveScraped && snippetLead && !reply.includes(snippetLead);
+
+  if (isRefusal || missedScrapedData) {
     usedModel = 'المستشار الذكي (النواة الأكاديمية)';
     reply = generateIntelligentChatFallback(message, history, liveScraped);
   }

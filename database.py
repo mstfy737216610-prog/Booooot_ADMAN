@@ -1019,16 +1019,26 @@ def find_university_for_post(source: str, text: str = "") -> Optional[Dict[str, 
         if (clean_src_no_at and clean_src_no_at in all_sources_clean) or (clean_src_with_at and clean_src_with_at in all_sources):
             return p
 
-    # 2. فحص الكلمات المفتاحية في النص إن وجدت عدة جامعات
+    # 2. فحص الكلمات المفتاحية واسم الجامعة في النص مع نظام النقاط وعزل التعارض التام
     if text:
         text_lower = text.lower()
+        scored_projects = []
         for p in active_projects:
-            kws = p.get("keywords", []) + [p.get("name", "")]
-            for kw in kws:
+            score = 0
+            p_name = p.get("name", "").lower()
+            if p_name and p_name in text_lower:
+                score += 10
+            for kw in p.get("keywords", []):
                 if kw and kw.lower() in text_lower:
-                    return p
+                    score += 3
+            if score > 0:
+                scored_projects.append((score, p))
 
-    # 3. توجيه المنشور للجامعة النشطة الأولى لضمان نشر كافة التنبيهات والمواعيد دون ضياع
+        if scored_projects:
+            scored_projects.sort(key=lambda x: x[0], reverse=True)
+            return scored_projects[0][1]
+
+    # 3. توجيه المنشور للجامعة النشطة الأولى فقط إذا لم يكن هناك تعارض صريح
     if active_projects:
         return active_projects[0]
 
