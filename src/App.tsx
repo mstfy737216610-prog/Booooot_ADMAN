@@ -20,6 +20,7 @@ import { DeploymentGuide } from './components/DeploymentGuide.tsx';
 import { LicenseRightsModal } from './components/LicenseRightsModal.tsx';
 import { BotTesterModal } from './components/BotTesterModal.tsx';
 import { UserBotPanel } from './components/UserBotPanel.tsx';
+import { ChatPanel } from './components/ChatPanel.tsx';
 import {
   Shield,
   Sparkles,
@@ -33,6 +34,7 @@ import {
   Activity,
   BookOpen,
   Smartphone,
+  MessageSquare,
 } from 'lucide-react';
 
 const STORAGE_KEY_CONFIG = 'tg_educational_config_v2';
@@ -230,7 +232,7 @@ export default function App() {
   });
 
   const [logs, setLogs] = useState<ActivityLogItem[]>(INITIAL_LOGS);
-  const [activeTab, setActiveTab] = useState<'all' | 'credentials' | 'userbot' | 'github' | 'sources' | 'ai' | 'ad' | 'sim' | 'code' | 'guide'>('credentials');
+  const [activeTab, setActiveTab] = useState<'all' | 'credentials' | 'userbot' | 'chat' | 'github' | 'sources' | 'ai' | 'ad' | 'sim' | 'code' | 'guide'>('credentials');
   const [isLicenseOpen, setIsLicenseOpen] = useState(false);
   const [isTesterModalOpen, setIsTesterModalOpen] = useState(false);
   const [isTestingBot, setIsTestingBot] = useState(false);
@@ -586,6 +588,18 @@ export default function App() {
               <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse"></span>
             </button>
             <button
+              onClick={() => setActiveTab('chat')}
+              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-t-xl font-bold transition-all shrink-0 ${
+                activeTab === 'chat'
+                  ? 'bg-slate-800 text-white border-b-2 border-indigo-500'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <MessageSquare className="w-3.5 h-3.5 text-indigo-400" />
+              <span className="font-extrabold text-indigo-300">دردشة الذكاء (Web Chat)</span>
+              <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse"></span>
+            </button>
+            <button
               onClick={() => setActiveTab('github')}
               className={`flex items-center gap-1.5 px-3.5 py-2 rounded-t-xl font-bold transition-all shrink-0 ${
                 activeTab === 'github'
@@ -664,6 +678,13 @@ export default function App() {
               onChange={setConfig}
               sources={sources}
             />
+          </section>
+        )}
+        
+        {/* Web AI Chat Interface */}
+        {(activeTab === 'all' || activeTab === 'chat') && (
+          <section id="chat-section">
+            <ChatPanel aiConfig={config.ai} />
           </section>
         )}
 

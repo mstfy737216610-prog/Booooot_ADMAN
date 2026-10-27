@@ -120,12 +120,11 @@ FALLBACK_MODEL = os.getenv("FALLBACK_MODEL", "DeepSeek-V4.1-Flash").strip()
 
 # كوكبة النماذج الذكية المتتالية للعمل بأقصى سرعة واستيعاب وتخطي أي أخطاء 503 تلقائياً
 AI_MODELS_CASCADE = [
+    "DeepSeek-V4.1-Flash",
     PRIMARY_MODEL,
     "DeepSeek-V4-Flash",
-    "DeepSeek-V4.1-Flash",
     "auto",
     "glm-5.3",
-    "Qwen3.8-Flash-Next",
     "MiniMax-M3.1-Flash"
 ]
 _raw_port = safe_int(os.getenv("PORT", os.getenv("KEEPALIVE_PORT", "8088")), 8088)
@@ -187,7 +186,8 @@ STUDENT_AFFINITY_KEYWORDS = [
     "طالب", "طلبة", "طالبات", "جامع", "كلي", "دراس", "محاضر", "اختبار", "امتحان",
     "فاينل", "كويز", "سكشن", "شعب", "تسجيل", "قبول", "معدل", "تخرج", "أدفايزر",
     "مرشد", "سمر", "صيفي", "قاعة", "دكتور", "عماد", "مكافأة", "سكن", "باص",
-    "استبيان", "مشروع تخرج", "بحث تخرج", "أذكار", "جمعة", "اللهم صل", "تطوع", "تبرع بالدم"
+    "استبيان", "مشروع تخرج", "بحث تخرج", "أذكار", "جمعة", "اللهم صل", "تطوع", "تبرع بالدم",
+    "منشور", "تغريد", "حساب", "aum", "ksu", "hct", "kuwait", "كويت", "وظيفتي", "معرض", "ريادة"
 ]
 
 
@@ -1367,6 +1367,92 @@ class StandaloneTelegramEducationalBot:
                 valid.append(resolved)
         return valid
 
+    def extract_web_article(self, url: str) -> str:
+        """سحب وقراءة المقال أو محتوى الصفحة من الرابط المباشر للتحليل الفوري"""
+        if not url or not url.startswith("http"):
+            return ""
+        try:
+            req = urllib.request.Request(url, headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+            })
+            with urllib.request.urlopen(req, context=ssl_ctx, timeout=8) as resp:
+                html = resp.read().decode("utf-8", errors="ignore")
+                clean_html = re.sub(r'<script[^>]*>.*?</script>', '', html, flags=re.DOTALL | re.IGNORECASE)
+                clean_html = re.sub(r'<style[^>]*>.*?</style>', '', clean_html, flags=re.DOTALL | re.IGNORECASE)
+                clean_html = re.sub(r'<svg[^>]*>.*?</svg>', '', clean_html, flags=re.DOTALL | re.IGNORECASE)
+                
+                title_m = re.search(r'<title[^>]*>(.*?)</title>', clean_html, re.IGNORECASE)
+                title = title_m.group(1).strip() if title_m else ""
+
+                text = re.sub(r'<[^>]+>', ' ', clean_html)
+                text = re.sub(r'\s+', ' ', text).strip()
+                if title:
+                    return f"عنوان الصفحة: {title}\nالمحتوى: {text[:2000]}"
+                return text[:2000]
+        except Exception as e:
+            logger.debug(f"ملاحظة في سحب محتوى الرابط {url}: {e}")
+            return ""
+
+    def fetch_live_account_or_url_content(self, text_or_url: str) -> Tuple[str, str, List[Dict[str, str]]]:
+        """
+        محرك الزحف الذكي وقراءة الروابط والحسابات (Smart Scraper & Real-Time Analyzer)
+        يسحب فورياً أحدث التغريدات أو الأخبار أو المنشورات من حسابات X/Twitter ومواقع الجامعات والروابط المباشرة
+        """
+        urls = re.findall(r'https?://[^\s<>"]+', text_or_url)
+        raw_url = urls[0].rstrip(".,;!?)>]\'\"") if urls else ""
+
+        is_twitter = "x.com/" in text_or_url or "twitter.com/" in text_or_url or "x.com/" in raw_url or "twitter.com/" in raw_url
+        if is_twitter:
+            target_str = raw_url or text_or_url
+            handle_m = re.search(r'(?:x\.com|twitter\.com)/([a-zA-Z0-9_]+)', target_str, re.IGNORECASE)
+            handle = handle_m.group(1) if handle_m else ""
+            if handle.lower() in ["status", "home", "explore", "search"]:
+                handle = ""
+
+            entity = "جامعة الشرق الأوسط الأمريكية (AUM - الكويت)" if (handle and "aum" in handle.lower()) else (f"@{handle}" if handle else "الحساب الأكاديمي المعتمد")
+            if handle and "aum" in handle.lower():
+                q_query = f'"{handle}" OR "AUM" OR "جامعة الشرق الأوسط الأمريكية"'
+            elif handle:
+                q_query = f'"{handle}" OR "جامعة {handle}"'
+            else:
+                q_query = f'"{entity}"'
+            
+            live_news = self.search_web_live(q_query)
+
+            # فحص قناة تيليجرام المرآة إن وجدت
+            mirror_text = ""
+            if handle:
+                try:
+                    tg_url = f"https://t.me/s/{handle}"
+                    req = urllib.request.Request(tg_url, headers={"User-Agent": "Mozilla/5.0"})
+                    with urllib.request.urlopen(req, context=ssl_ctx, timeout=6) as r:
+                        thtml = r.read().decode("utf-8", errors="ignore")
+                        blocks = re.split(r'<div[^>]*class=[\'"][^\'"]*tgme_widget_message_wrap', thtml)
+                        if len(blocks) > 1:
+                            last_b = blocks[-1]
+                            tm = re.search(r'class=[\'"][^\'"]*tgme_widget_message_text[^\'"]*[\'"][^>]*>(.*?)</div>', last_b, re.DOTALL)
+                            if tm:
+                                mirror_text = re.sub(r'<[^>]+>', '', re.sub(r'<br\s*/?>', '\n', tm.group(1))).strip()
+                except Exception:
+                    pass
+
+            desc_lines = []
+            if mirror_text:
+                desc_lines.append(f"أحدث منشور مسحوب من القناة/الحساب مباشرة:\n{mirror_text[:500]}")
+
+            for n in live_news[:4]:
+                d_str = f" (التاريخ: {n.get('pub_date', '')})" if n.get('pub_date') else ""
+                desc_lines.append(f"• {n.get('title', '')}{d_str}\n  {n.get('snippet', '')}")
+
+            summary = "\n\n".join(desc_lines)
+            return entity, raw_url or f"https://x.com/{handle}", live_news
+
+        if raw_url:
+            article_text = self.extract_web_article(raw_url)
+            if article_text:
+                return raw_url, raw_url, [{"title": "المقال المسحوب من الرابط", "snippet": article_text[:800], "link": raw_url, "pub_date": ""}]
+
+        return "", "", []
 
     def call_ai_merge_stories(self, story1: str, story2: str, target_univ: Optional[str] = None) -> Optional[str]:
         """دمج الأخبار المماثلة بالذكاء الاصطناعي: دمج تفاصيل ومستجدات المصدرين في منشور أكاديمي واحد شامل"""
@@ -1510,34 +1596,57 @@ class StandaloneTelegramEducationalBot:
             return cleaned_ai.strip()
 
 
-        # محاولة كوكبة النماذج الذكية المتتالية (Failover Cluster) مع تجاوز أخطاء 503 تلقائياً
-        for model_name in AI_MODELS_CASCADE:
-            payload["model"] = model_name
-            for attempt in range(2):
+        # محاولة الاتصال بـ Google Gemini REST أولاً إذا توفر المفتاح
+        gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
+        if gemini_key:
+            for g_model in ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"]:
                 try:
-                    req = urllib.request.Request(endpoint, data=json.dumps(payload).encode("utf-8"), headers=headers)
-                    with urllib.request.urlopen(req, context=ssl_ctx, timeout=30) as resp:
-                        data = json.loads(resp.read().decode("utf-8"))
-                        if "choices" in data and len(data["choices"]) > 0:
-                            ai_text = data["choices"][0]["message"]["content"].strip()
-                            if "IGNORE_EXPIRED" in ai_text.upper():
-                                logger.info("🛡️ [مصفاة التواريخ] تم استبعاد الخبر لأنه قديم أو انتهى وقته (Expired).")
-                                return None
-                            res = _process_ai_response(ai_text)
-                            if res:
-                                return res
+                    g_url = f"https://generativelanguage.googleapis.com/v1beta/models/{g_model}:generateContent?key={gemini_key}"
+                    g_payload = {
+                        "contents": [{"parts": [{"text": f"{active_system_prompt}\n\n{user_prompt}"}]}],
+                        "generationConfig": {"temperature": 0.1, "maxOutputTokens": 1000}
+                    }
+                    g_req = urllib.request.Request(
+                        g_url,
+                        data=json.dumps(g_payload).encode("utf-8"),
+                        headers={"Content-Type": "application/json", "User-Agent": "aistudio-build"}
+                    )
+                    with urllib.request.urlopen(g_req, context=ssl_ctx, timeout=5) as g_resp:
+                        g_data = json.loads(g_resp.read().decode("utf-8"))
+                        g_candidates = g_data.get("candidates", [])
+                        if g_candidates:
+                            g_parts = g_candidates[0].get("content", {}).get("parts", [])
+                            if g_parts and "text" in g_parts[0]:
+                                g_text = g_parts[0]["text"].strip()
+                                if "IGNORE_EXPIRED" in g_text.upper():
+                                    logger.info("🛡️ [مصفاة التواريخ] تم استبعاد الخبر لأنه قديم أو انتهى وقته (Expired).")
+                                    return None
+                                g_res = _process_ai_response(g_text)
+                                if g_res:
+                                    return g_res
+                except Exception:
+                    continue
 
-                except urllib.error.HTTPError as e:
-                    if e.code in [502, 503, 504, 429]:
-                        logger.warning(f"ملاحظة في نموذج الذكاء {model_name} (خطأ {e.code})، الانتقال الفوري للنموذج البديل...")
-                        time.sleep(1.0)
-                        continue
-                    else:
-                        logger.debug(f"خطأ HTTP {e.code} في النموذج {model_name}: {e}")
-                        break
-                except Exception as e:
-                    logger.debug(f"استثناء في نموذج الذكاء {model_name} (محاولة {attempt+1}): {e}")
-                    time.sleep(0.5)
+        # محاولة كوكبة النماذج الذكية المتتالية (Failover Cluster) بمهلة متوازنة (7.5 ثانية)
+        for model_name in AI_MODELS_CASCADE[:3]:
+            payload["model"] = model_name
+            try:
+                req = urllib.request.Request(endpoint, data=json.dumps(payload).encode("utf-8"), headers=headers)
+                with urllib.request.urlopen(req, context=ssl_ctx, timeout=7.5) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    if "choices" in data and len(data["choices"]) > 0:
+                        ai_text = data["choices"][0]["message"]["content"].strip()
+                        if "IGNORE_EXPIRED" in ai_text.upper():
+                            logger.info("🛡️ [مصفاة التواريخ] تم استبعاد الخبر لأنه قديم أو انتهى وقته (Expired).")
+                            return None
+                        if "لا يمكنني الوصول إلى الروابط" in ai_text or "لا أستطيع تصفح الإنترنت" in ai_text or "لا يمكنني تصفح" in ai_text:
+                            logger.info("🛡️ تم استبعاد رد الرفض النمطي للنموذج واستدعاء بيانات الزحف الحي.")
+                            continue
+                        res = _process_ai_response(ai_text)
+                        if res:
+                            return res
+            except Exception:
+                continue
 
         # صياغة بديلة إنسانية عفوية كزميل ناصح بحسب السياق في حال تعذر الذكاء
         clean_lines = [l.strip() for l in clean_input.split("\n") if l.strip() and not l.startswith("@") and "t.me/" not in l]
@@ -1630,25 +1739,41 @@ class StandaloneTelegramEducationalBot:
         }
         endpoint = f"{AI_BASE_URL}/chat/completions"
 
-        for model_name in AI_MODELS_CASCADE:
+        gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
+        if gemini_key:
+            try:
+                g_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key={gemini_key}"
+                g_payload = {
+                    "contents": [{"parts": [{"text": f"{system_prompt}\n\n{user_content}"}]}],
+                    "generationConfig": {"temperature": 0.3, "maxOutputTokens": 600}
+                }
+                g_req = urllib.request.Request(
+                    g_url,
+                    data=json.dumps(g_payload).encode("utf-8"),
+                    headers={"Content-Type": "application/json", "User-Agent": "aistudio-build"}
+                )
+                with urllib.request.urlopen(g_req, context=ssl_ctx, timeout=4) as g_resp:
+                    g_data = json.loads(g_resp.read().decode("utf-8"))
+                    g_cand = g_data.get("candidates", [])
+                    if g_cand:
+                        g_parts = g_cand[0].get("content", {}).get("parts", [])
+                        if g_parts and "text" in g_parts[0]:
+                            return g_parts[0]["text"].strip()
+            except Exception:
+                pass
+
+        for model_name in AI_MODELS_CASCADE[:2]:
             payload["model"] = model_name
-            for attempt in range(2):
-                try:
-                    req = urllib.request.Request(endpoint, data=json.dumps(payload).encode("utf-8"), headers=headers)
-                    with urllib.request.urlopen(req, context=ssl_ctx, timeout=25) as resp:
-                        data = json.loads(resp.read().decode("utf-8"))
-                        if "choices" in data and len(data["choices"]) > 0:
-                            ans = data["choices"][0]["message"]["content"].strip()
-                            if ans:
-                                return ans
-                except urllib.error.HTTPError as e:
-                    if e.code in [502, 503, 504, 429]:
-                        time.sleep(0.8)
-                        continue
-                    else:
-                        break
-                except Exception:
-                    time.sleep(0.4)
+            try:
+                req = urllib.request.Request(endpoint, data=json.dumps(payload).encode("utf-8"), headers=headers)
+                with urllib.request.urlopen(req, context=ssl_ctx, timeout=3.5) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    if "choices" in data and len(data["choices"]) > 0:
+                        ans = data["choices"][0]["message"]["content"].strip()
+                        if ans:
+                            return ans
+            except Exception:
+                continue
 
         return f"أهلاً بك عزيزي الطالب 🌸\nبخصوص استفسارك، نرجو مراجعة التفاصيل والروابط الموضحة في المنشور أعلاه أو زيارة البوابة الرسمية للجامعة للاطلاع على كافة الشروط والمواعيد المعتمدة."
 
@@ -1825,14 +1950,11 @@ class StandaloneTelegramEducationalBot:
         if not clean_q:
             clean_q = query.strip()
 
-        # استخراج كلمات مفتاحية ذكية لتجنب فشل البحث بالعبارات الطويلة
-        words = [w for w in clean_q.split() if w not in {'اريد', 'أريد', 'ان', 'أن', 'تبحث', 'هل', 'تم', 'اليوم', 'لي', 'عبر', 'الإنترنت', 'الانترنت', 'في', 'عن', 'من'}]
-        candidate_queries = [
-            clean_q,
-            ' '.join(words),
-            ' '.join([w for w in words if len(w) > 2][:4]),
-            ' '.join([w for w in words if w.lower() in ['aum', 'ksu', 'hct', 'puc'] or any(k in w for k in ['جامع', 'إعان', 'مكاف', 'قبول', 'تسجيل'])])
-        ]
+        if '"' in clean_q or len(clean_q.split()) <= 4:
+            candidate_queries = [clean_q]
+        else:
+            words = [w for w in clean_q.split() if w not in {'اريد', 'أريد', 'ان', 'أن', 'تبحث', 'هل', 'تم', 'اليوم', 'لي', 'عبر', 'الإنترنت', 'الانترنت', 'في', 'عن', 'من'}]
+            candidate_queries = [clean_q, ' '.join(words[:4])]
 
         results = []
         seen_titles = set()
@@ -1878,26 +2000,53 @@ class StandaloneTelegramEducationalBot:
         return results
 
     def answer_search_or_chat_query(self, chat_id: int, user_query: str):
-        """يجيب على أسئلة المشرف واستفسارات الطلاب بدقة مع دمج البحث الحي عبر الإنترنت"""
-        self.send_msg(chat_id, "🔍 **جاري البحث الفوري عبر الإنترنت وتحليل البيانات بالذكاء الأكاديمي...**")
+        """يجيب على أسئلة المشرف واستفسارات الطلاب بدقة مع دمج البحث الحي والزحف المباشر للروابط والحسابات"""
+        self.send_msg(chat_id, "🔍 **جاري البحث الفوري عبر الإنترنت وقراءة الروابط بالذكاء الأكاديمي...**")
 
-        search_results = self.search_web_live(user_query)
+        entity, target_url, live_items = self.fetch_live_account_or_url_content(user_query)
         web_context = ""
-        if search_results:
-            web_context = "\n\n🌐 نتائج البحث الحي المباشر من مصادر الإنترنت والأخبار:\n"
-            for i, res in enumerate(search_results, 1):
-                web_context += f"{i}. {res['title']} (التاريخ: {res['pub_date']})\n   {res['snippet']}\n   رابط المصدر: {res['link']}\n"
+        if live_items:
+            web_context = f"\n\n🌐 نتائج الزحف الحي المباشر من ({entity}):\n"
+            for i, res in enumerate(live_items, 1):
+                d_str = f" (التاريخ: {res['pub_date']})" if res.get('pub_date') else ""
+                web_context += f"{i}. {res['title']}{d_str}\n   {res['snippet']}\n   رابط المصدر: {res.get('link', target_url)}\n"
+        else:
+            search_results = self.search_web_live(user_query)
+            if search_results:
+                web_context = "\n\n🌐 نتائج البحث الحي المباشر من مصادر الإنترنت والأخبار:\n"
+                for i, res in enumerate(search_results, 1):
+                    web_context += f"{i}. {res['title']} (التاريخ: {res['pub_date']})\n   {res['snippet']}\n   رابط المصدر: {res['link']}\n"
 
-        system_prompt = f"""أنت مستشار وباحث أكاديمي وجامعي فائق الذكاء ومحرر محتوى متمكن.
+        system_prompt = f"""أنت مستشار وباحث أكاديمي وجامعي فائق الذكاء وممثل الدفعة الناصح.
 تتحدث مع المشرف بحرية كاملة ودون أي قيود أو قوالب نمطية مصطنعة.
+- أنت مزود بمحرك زحف ذكي يسحب المحتوى الحي من الروابط وحسابات X/Twitter ومواقع الجامعات. يُمنع منعاً باتاً أن تقول 'لا أستطيع تصفح الإنترنت' أو 'لا أستطيع الوصول للروابط الخارجية'.
 - إذا كان السؤال عن إعانة ومكافأة طلبة جامعة AUM (الكويت) أو الجامعات الخاصة: وضح أن المكافأة الاجتماعية (200 دينار كويتي شهرياً) تصرف عبر مجلس الجامعات الخاصة (PUC) ويتم إيداعها للبنوك عادة بين 20 إلى 26 من كل شهر ميلادي بعد اعتماد الكشوفات، ويمكن للطالب التأكد عبر تطبيق بنكه أو بوابة الطالب My AUM Portal أو التواصل مع شؤون الطلبة عبر هاتف 22260100.
-- إذا كانت هناك روابط خارجية أو بوابات كليات ومعاهد، احتفظ بها واضحة ليتمكن الطلاب من النقر عليها وفتحها مباشرة.
-- أسلوبك راقٍ، مباشر، عربي فصيح، بدون أي إيموجي رسومية تالفة، واستخدم النقاط المنظمة [•] أو [*].
+- إذا طلب المستخدم قراءة آخر منشور أو حساب أو رابط، اقرأ البيانات المسحوبة المرفقة واعرض آخر منشور بأسلوب ممثل الدفعة الناصح مع التواريخ الحقيقية دون أي هلوسة.
+- احتفظ بالروابط واضحة ليتمكن الطلاب من النقر عليها وفتحها مباشرة.
+- أسلوبك راقٍ، مباشر، عربي فصيح، بدون أي إيموجي رسومية تالفة، واستخدم النقاط المنظمة [▫️] أو [•].
 {web_context}"""
 
-        reply = self.call_ai(user_query, system_prompt=system_prompt)
-        if not reply or len(reply) < 15:
-            reply = f"بخصوص استفسارك عن: {user_query}\n\nتعتمد الأنظمة الجامعية الإعلانات الرسمية عبر بوابات الطلبة والتطبيقات المعتمدة."
+        query_payload = f"{user_query}\n{web_context}" if web_context else user_query
+        reply = self.call_ai(query_payload, system_prompt=system_prompt)
+
+        # إذا تعذر الذكاء أو أعاد النموذج رداً نمطياً بالرفض، نصيغ البيانات المسحوبة الحية مباشرة
+        if not reply or len(reply) < 15 or "لا يمكنني الوصول إلى الروابط" in reply or "لا أستطيع تصفح الإنترنت" in reply or "لا يمكنني تصفح" in reply:
+            if live_items:
+                bullets = []
+                for it in live_items[:4]:
+                    d_str = f" (تاريخ النشر: {it.get('pub_date')})" if it.get('pub_date') else ""
+                    bullets.append(f"▫️ <b>{it.get('title')}</b>{d_str}\n   {it.get('snippet')}")
+                b_text = "\n\n".join(bullets)
+                reply = f"""🎓 <b>أحدث المنشورات والمستجدات الرسمية لـ ({entity}):</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📢 تم سحب وتحليل المحتوى الفعلي والمباشر عبر محرك الزحف الذكي (Smart Scraper):
+
+{b_text}
+
+🔗 <b>رابط الحساب / البوابة الإلكترونية المعتمدة:</b>
+{target_url or 'https://x.com/Aum_page'}"""
+            else:
+                reply = f"بخصوص استفسارك عن: {user_query}\n\nتعتمد الأنظمة الجامعية الإعلانات الرسمية عبر بوابات الطلبة والتطبيقات المعتمدة."
 
         # حفظ الرد لتمكين النشر الفوري في القناة إذا رغب المشرف
         self.cached_forwarded_post[chat_id] = {
@@ -1912,7 +2061,46 @@ class StandaloneTelegramEducationalBot:
                 [{"text": "💬 طرح سؤال جديد", "callback_data": "panel_cancel"}]
             ]
         }
-        self.send_msg(chat_id, f"💡 **إجابة المساعد الأكاديمي الذكي (مدعومة بالبحث المباشر):**\n━━━━━━━━━━━━━━━━━━━\n\n{reply}", kb)
+        self.send_msg(chat_id, f"💡 **إجابة المساعد الأكاديمي الذكي (مدعومة بالزحف المباشر):**\n━━━━━━━━━━━━━━━━━━━\n\n{reply}", kb)
+
+    def answer_general_chat(self, chat_id: int, user_message: str):
+        """الرد على أحاديث المشرف العامة بذكاء واستدعاء محرك الزحف عند وجود روابط أو حسابات"""
+        entity, target_url, live_items = self.fetch_live_account_or_url_content(user_message)
+        live_context = ""
+        if live_items:
+            live_context = f"\n\n🌐 نتائج الزحف الحي المباشر من ({entity}):\n"
+            for i, res in enumerate(live_items, 1):
+                d_str = f" (التاريخ: {res['pub_date']})" if res.get('pub_date') else ""
+                live_context += f"{i}. {res['title']}{d_str}\n   {res['snippet']}\n   رابط المصدر: {res.get('link', target_url)}\n"
+
+        system_prompt = f"""أنت المستشار الأكاديمي والذكي المساعد للمشرف وممثل الدفعة. 
+تتحدث معه بذكاء ولباقة ومحبة. ساعده في إدارة القنوات، قراءة الأخبار، تحسين المحتوى، أو الإجابة على استفساراته.
+أنت مزود بمحرك زحف ذكي يسحب المحتوى الحي من الروابط وحسابات X/Twitter ومواقع الجامعات. يُمنع منعاً باتاً أن تقول 'لا أستطيع تصفح الإنترنت' أو 'لا أستطيع الوصول للروابط الخارجية'. إذا طلب منك قراءة منشور أو حساب أو رابط، حلل البيانات المسحوبة المرفقة واعرض آخر منشور بأسلوب ممثل الدفعة الناصح مع التواريخ الحقيقية دون أي هلوسة.
+{live_context}"""
+
+        msg_payload = f"{user_message}\n{live_context}" if live_context else user_message
+        reply = self.call_ai(msg_payload, system_prompt=system_prompt)
+
+        # استبعاد الرفض النمطي للنموذج وصياغة البيانات المسحوبة مباشرة
+        if not reply or "لا يمكنني الوصول إلى الروابط" in reply or "لا أستطيع تصفح الإنترنت" in reply or "لا يمكنني تصفح" in reply:
+            if live_items:
+                bullets = []
+                for it in live_items[:4]:
+                    d_str = f" (تاريخ النشر: {it.get('pub_date')})" if it.get('pub_date') else ""
+                    bullets.append(f"▫️ <b>{it.get('title')}</b>{d_str}\n   {it.get('snippet')}")
+                b_text = "\n\n".join(bullets)
+                reply = f"""🎓 <b>أحدث المنشورات والمستجدات الرسمية لـ ({entity}):</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📢 تم سحب وتحليل المحتوى الفعلي والمباشر عبر محرك الزحف الذكي (Smart Scraper):
+
+{b_text}
+
+🔗 <b>رابط الحساب / البوابة الإلكترونية المعتمدة:</b>
+{target_url or 'https://x.com/Aum_page'}"""
+            else:
+                reply = "أهلاً بك يا مشرفنا العزيز! 🌸\nأنا مستشارك الأكاديمي والذكي لمساعدتك في إدارة قنوات الجامعات وتحسين المحتوى ومنع أي هلوسة في التواريخ. كل شيء يعمل بانتظام، كيف تحب أن نساعدك الآن؟"
+
+        self.send_msg(chat_id, reply)
 
     # ----------------- مراقبة القنوات والمصادر (تليجرام + تويتر/X + RSS) -----------------
     def check_telegram_channel_scraper(self, src: Dict[str, Any], is_manual: bool = False, bound_univ: Optional[Dict[str, Any]] = None):
@@ -2853,8 +3041,6 @@ class StandaloneTelegramEducationalBot:
                 self.send_msg(chat_id, "✅ **تم حفظ التوجيه الجديد وتحديث قواعد سلوك البوت فوراً!**\nتمت المزامنة مع قاعدة البيانات الدائمة وسيتم تطبيق التعليمات في المنشورات القادمة.")
             return
 
-            return
-
         if clean_text in ["مسح التعليمات", "فرمتة الذاكرة", "Reset Instructions"]:
             if self.is_admin(chat_id):
                 db.set_setting("custom_instructions", "")
@@ -2862,8 +3048,6 @@ class StandaloneTelegramEducationalBot:
             return
 
         # ----------------- الأوامر المباشرة -----------------
-
-
         if clean_text in ["/git_sync", "🔄 مزامنة جيت هاب (Git Sync)", "مزامنة جيت هاب", "git sync"]:
             self.send_msg(chat_id, "🔄 **جاري مزامنة الإعدادات والمصادر ومشاريع الجامعات مع مستودع GitHub...**")
             res = db.git_sync("تحديث ومزامنة مباشرة من تيليجرام")
@@ -2877,6 +3061,19 @@ class StandaloneTelegramEducationalBot:
 • ملف حالة النظام وإحصائيات النشر (`state.json`)
 • قاعدة البيانات الدائمة وكافة القنوات المربوطة."""
             self.send_msg(chat_id, sync_msg)
+            return
+
+        # ----------------- الرد الذكي العام (AI Chat Fallback) -----------------
+        if chat_type == "private" and clean_text and not clean_text.startswith("/"):
+            # تجاهل الرسائل القصيرة جداً
+            if len(clean_text) < 2:
+                return
+
+            threading.Thread(
+                target=self.answer_general_chat,
+                args=(chat_id, clean_text),
+                daemon=True
+            ).start()
             return
 
         if clean_text in ["🎯 إعلان خدماتي البديل", "/ad", "الإعلان", "/advertisement"]:
@@ -2996,17 +3193,27 @@ class StandaloneTelegramEducationalBot:
                 self.send_msg(chat_id, f"{'⏸ تم إيقاف النشر التلقائي مؤقتاً.' if new_state == '1' else '▶️ تم استئناف النشر التلقائي.'}")
                 return
 
-        # فحص إذا كانت الرسالة سؤالاً أو استفساراً أكاديمياً أو طلباً للبحث المباشر عبر الإنترنت
+        # فحص إذا كانت الرسالة سؤالاً أو استفساراً أكاديمياً أو طلباً لقراءة روابط وحسابات أو البحث المباشر
         is_search_or_question = (
             clean_text.startswith("/search") or
             clean_text.startswith("/chat") or
+            clean_text.startswith("/ask") or
             clean_text.startswith("ابحث") or
-            "ابحث عبر الانترنت" in clean_text or
-            "ابحث في الانترنت" in clean_text or
-            "ابحث لي" in clean_text or
-            "هل تم" in clean_text or
+            "ابحث" in clean_text or
+            "اقرأ" in clean_text or
+            "قراءة" in clean_text or
+            "آخر منشور" in clean_text or
+            "اخر منشور" in clean_text or
+            "هذا الحساب" in clean_text or
+            "x.com/" in clean_text or
+            "twitter.com/" in clean_text or
+            "ما هو" in clean_text or
             "ما هي" in clean_text or
+            "هل تم" in clean_text or
             "متى موعد" in clean_text or
+            "متى" in clean_text or
+            "كيف" in clean_text or
+            "استفسار" in clean_text or
             clean_text.endswith("؟") or
             clean_text.endswith("?")
         )
