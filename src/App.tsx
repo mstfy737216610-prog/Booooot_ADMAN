@@ -35,13 +35,15 @@ import {
   BookOpen,
   Smartphone,
   MessageSquare,
+  AlertCircle,
+  Zap,
 } from 'lucide-react';
 
 const STORAGE_KEY_CONFIG = 'tg_educational_config_v2';
 const STORAGE_KEY_SOURCES = 'tg_educational_sources_v2';
 
 const DEFAULT_CONFIG: BotConfig = {
-  botToken: '8901693218:AAH0hoZdTq9qGaLYOhu_Cvxg9TEzTPAVADw',
+  botToken: '',
   adminId: '7607633343',
   adminUsername: '@M_S_F_G',
   additionalAdminIds: [],
@@ -190,6 +192,7 @@ export default function App() {
           '8901693218:AAFUiQ62KQlfl6rtoarimpSpeoeCgA422Qg',
           '8901693218:AAEOQmHMZLy-xaPbTUMq1KGhDwp1l0wFWP4',
           '8901693218:AAH0Ri7lpY2R6d1DQSrKZclRa7kuo1Jw-Gs',
+          '8901693218:AAH0hoZdTq9qGaLYOhu_Cvxg9TEzTPAVADw',
         ];
         const currentToken = (!parsed.botToken || oldRevoked.includes(parsed.botToken))
           ? DEFAULT_CONFIG.botToken
@@ -237,14 +240,10 @@ export default function App() {
   const [isTesterModalOpen, setIsTesterModalOpen] = useState(false);
   const [isTestingBot, setIsTestingBot] = useState(false);
   const [isSavingSources, setIsSavingSources] = useState(false);
-  const [botInfo, setBotInfo] = useState<BotInfo | null>({
-    id: 8901693218,
-    is_bot: true,
-    first_name: 'ADMIN_p',
-    username: 'admiuin_bot',
-    can_join_groups: true,
-    can_read_all_group_messages: true,
-  });
+  const [botInfo, setBotInfo] = useState<BotInfo | null>(null);
+  const [botAuthError, setBotAuthError] = useState<string | null>(null);
+  const [quickTokenInput, setQuickTokenInput] = useState<string>('');
+  const [isSavingQuickToken, setIsSavingQuickToken] = useState<boolean>(false);
   const [botTestError, setBotTestError] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -273,10 +272,16 @@ export default function App() {
         const res = await fetch('/api/bot/token');
         if (res.ok) {
           const data = await res.json();
-          if (data.success && data.token) {
-            setConfig((prev) => ({ ...prev, botToken: data.token }));
+          if (data.success) {
+            if (data.token) {
+              setConfig((prev) => ({ ...prev, botToken: data.token }));
+            }
             if (data.botInfo) {
               setBotInfo(data.botInfo as BotInfo);
+              setBotAuthError(null);
+            } else {
+              setBotInfo(null);
+              setBotAuthError(data.authError || 'توكن البوت يحتاج إلى تحديث (401 Unauthorized)');
             }
           }
         }
@@ -410,6 +415,8 @@ export default function App() {
 
       if (data.success && data.botInfo) {
         setBotInfo(data.botInfo as BotInfo);
+        setBotAuthError(null);
+        setQuickTokenInput('');
         setConfig((prev) => ({ ...prev, botToken: trimmed }));
         showToast(`✅ تم حفظ وتطبيق التوكن فورياً على البوت: @${data.botInfo.username}`);
         setIsTesterModalOpen(true);
@@ -425,6 +432,7 @@ export default function App() {
         setLogs((prev) => [newLog, ...prev]);
       } else {
         setBotTestError(data.error || 'فشلت المصادقة مع واجهة تيليجرام.');
+        setBotAuthError(data.error || 'فشلت المصادقة مع واجهة تيليجرام.');
         setIsTesterModalOpen(true);
       }
     } catch (err: unknown) {
@@ -549,6 +557,76 @@ export default function App() {
             </div>
           </div>
         </div>
+
+        {/* Token Alert Banner if not authorized / revoked */}
+        {(!botInfo || botAuthError) && (
+          <div className="bg-amber-950/40 border border-amber-500/50 rounded-2xl p-4 sm:p-5 shadow-xl relative overflow-hidden backdrop-blur-sm">
+            <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
+              <div className="space-y-1.5 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse"></span>
+                  <h3 className="text-sm sm:text-base font-extrabold text-amber-300 flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+                    <span>تنبيه للمشرف: توكن تيليجرام يحتاج إلى إدخال وتفعيل (Bot Token)</span>
+                  </h3>
+                </div>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  التوكن السابق للبوت تم إلغاؤه من قبل BotFather. يمكنك إنشاء توكن جديد أو استخراجه في ثوانٍ عبر{' '}
+                  <a
+                    href="https://t.me/BotFather"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-sky-400 font-bold underline hover:text-sky-300"
+                  >
+                    @BotFather
+                  </a>{' '}
+                  باستخدام أمر <code className="text-amber-300 bg-slate-900 px-1 py-0.5 rounded text-[11px]">/newbot</code> أو{' '}
+                  <code className="text-amber-300 bg-slate-900 px-1 py-0.5 rounded text-[11px]">/token</code>، ثم الصقه أدناه لتشغيل البوت وقنوات النشر فورياً:
+                </p>
+                {botAuthError && (
+                  <p className="text-[11px] text-amber-400/90 font-mono">
+                    الحالة الحالية: {botAuthError}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full lg:w-auto shrink-0">
+                <input
+                  type="text"
+                  placeholder="الصق التوكن الجديد هنا: 123456789:AAF..."
+                  value={quickTokenInput}
+                  onChange={(e) => setQuickTokenInput(e.target.value.trim())}
+                  dir="ltr"
+                  className="bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder:text-slate-500 font-mono w-full sm:w-72 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                />
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const tok = quickTokenInput || config.botToken;
+                    if (!tok) {
+                      showToast('الرجاء إدخال توكن البوت الجديد.');
+                      return;
+                    }
+                    setIsSavingQuickToken(true);
+                    await handleSaveBotToken(tok);
+                    setIsSavingQuickToken(false);
+                  }}
+                  disabled={isSavingQuickToken || isTestingBot}
+                  className="px-4 py-2.5 bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-950 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-md shadow-amber-950/40 cursor-pointer disabled:opacity-50"
+                >
+                  {isSavingQuickToken || isTestingBot ? (
+                    <div className="w-3.5 h-3.5 border-2 border-slate-950 border-t-transparent rounded-full animate-spin"></div>
+                  ) : (
+                    <>
+                      <Zap className="w-3.5 h-3.5" />
+                      <span>حفظ وتفعيل التوكن 🚀</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Section Tabs Bar for quick navigation */}
         <div className="relative">

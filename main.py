@@ -76,15 +76,16 @@ _env_tok = os.getenv("BOT_TOKEN", "").strip()
 _revoked = [
     "8901693218:AAEOQmHMZLy-xaPbTUMq1KGhDwp1l0wFWP4",
     "8901693218:AAFUiQ62KQlfl6rtoarimpSpeoeCgA422Qg",
-    "8901693218:AAH0Ri7lpY2R6d1DQSrKZclRa7kuo1Jw-Gs"
+    "8901693218:AAH0Ri7lpY2R6d1DQSrKZclRa7kuo1Jw-Gs",
+    "8901693218:AAH0hoZdTq9qGaLYOhu_Cvxg9TEzTPAVADw"
 ]
 
-if _db_tok and _db_tok not in _revoked:
+if _db_tok and _db_tok not in _revoked and len(_db_tok) > 20 and ":" in _db_tok:
     BOT_TOKEN = _db_tok
-elif _env_tok and _env_tok not in _revoked:
+elif _env_tok and _env_tok not in _revoked and len(_env_tok) > 20 and ":" in _env_tok:
     BOT_TOKEN = _env_tok
 else:
-    BOT_TOKEN = "8901693218:AAH0hoZdTq9qGaLYOhu_Cvxg9TEzTPAVADw"
+    BOT_TOKEN = ""
 ADMIN_ID = safe_int(os.getenv("ADMIN_ID", "7607633343"), 7607633343)
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "M_S_F_G").replace("@", "").strip()
 
@@ -431,9 +432,27 @@ class StandaloneTelegramEducationalBot:
             return ""
 
 
+    def get_current_token(self) -> str:
+        try:
+            t = db.get_setting("bot_token")
+            if t and t not in _revoked and len(t) > 20 and ":" in t:
+                return t.strip()
+        except Exception:
+            pass
+        env_tok = os.getenv("BOT_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN") or ""
+        if env_tok and env_tok.strip() not in _revoked and len(env_tok.strip()) > 20 and ":" in env_tok:
+            return env_tok.strip()
+        if BOT_TOKEN and BOT_TOKEN not in _revoked:
+            return BOT_TOKEN
+        return ""
+
     # ----------------- طلبات تيليجرام الأساسية -----------------
     def tg_request(self, method: str, payload: Optional[Dict] = None, timeout: int = 25) -> Dict[str, Any]:
-        url = f"https://api.telegram.org/bot{BOT_TOKEN}/{method}"
+        curr_token = self.get_current_token()
+        if not curr_token or curr_token in _revoked:
+            return {"ok": False, "http_code": 401, "error_code": 401, "description": "Unauthorized: Token revoked or not configured"}
+
+        url = f"https://api.telegram.org/bot{curr_token}/{method}"
         data_bytes = None
         headers = {"User-Agent": "TelegramEducationalBot/3.0"}
         if payload is not None:
@@ -446,9 +465,11 @@ class StandaloneTelegramEducationalBot:
                 return json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
             err_body = e.read().decode("utf-8", errors="ignore")
-            # لا نسجل خطأ 409 أو 401 كـ warning في getUpdates لتجنب التشويش عند تحديث التوكن أو عمل Bots.Business
-            # وكذلك أخطاء تعذر جلب الروابط الخارجية مباشرة لأن المحرك يتكفل بتنزيلها ورفعها تلقائياً كملف
-            if e.code in [401, 409] and "getUpdates" in method:
+            if e.code == 401:
+                if not getattr(self, "_unauth_logged", False):
+                    logger.info("ℹ️ ملاحظة: توكن البوت في تيليجرام غير مصرح (401 Unauthorized). بانتظار إدخال توكن جديد من لوحة التحكم لتفعيل النشر والاستماع.")
+                    self._unauth_logged = True
+            elif e.code in [401, 409] and "getUpdates" in method:
                 logger.debug(f"تيليجرام HTTP ({method}) [{e.code}]: {err_body}")
             elif "failed to get HTTP URL content" in err_body:
                 logger.info(f"💡 ملاحظة: خوادم تيليجرام لم تتمكن من سحب رابط الوسائط مباشرة ({method}). سيتم التنزيل والرفع المباشر كملف...")
@@ -520,8 +541,8 @@ class StandaloneTelegramEducationalBot:
         lead_balanced = self.balance_html_tags(lead)
         return lead_balanced, remainder
 
-    def clean_media_url(self, raw_url: Optional[str]) -> Optional[str]:
-        """تنظيف وفك تشفير روابط الوسائط واستبعاد الرموز التعبيرية والأيقونات"""
+    def clean_media_url(self, raw_url: Optional[str], base_url: Optional[str] = None) -> Optional[str]:
+        """تنظيف وفك تشفير روابط الوسائط واستبعاد الرموز التعبيرية والأيقونات ودعم الروابط النسبية"""
         if not raw_url:
             return None
         url = str(raw_url).strip()
@@ -530,7 +551,10 @@ class StandaloneTelegramEducationalBot:
         if url.startswith("//"):
             url = "https:" + url
         elif url.startswith("/") and not os.path.isfile(url):
-            url = "https://t.me" + url
+            if base_url:
+                url = urllib.parse.urljoin(base_url, url)
+            else:
+                url = "https://t.me" + url
 
         if not (url.startswith("http://") or url.startswith("https://") or os.path.isfile(url)):
             return url
@@ -650,8 +674,11 @@ class StandaloneTelegramEducationalBot:
                 body.extend(img_bytes)
                 body.extend(f'\r\n--{boundary}--\r\n'.encode('utf-8'))
 
+                curr_tok = self.get_current_token()
+                if not curr_tok:
+                    return {"ok": False, "description": "Token not configured for photo upload"}
                 u_req = urllib.request.Request(
-                    f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto",
+                    f"https://api.telegram.org/bot{curr_tok}/sendPhoto",
                     data=body,
                     headers={"Content-Type": f"multipart/form-data; boundary={boundary}"}
                 )
@@ -820,8 +847,11 @@ class StandaloneTelegramEducationalBot:
                 body.extend(vid_bytes)
                 body.extend(f'\r\n--{boundary}--\r\n'.encode('utf-8'))
 
+                curr_tok = self.get_current_token()
+                if not curr_tok:
+                    return {"ok": False, "description": "Token not configured for video upload"}
                 u_req = urllib.request.Request(
-                    f"https://api.telegram.org/bot{BOT_TOKEN}/sendVideo",
+                    f"https://api.telegram.org/bot{curr_tok}/sendVideo",
                     data=body,
                     headers={"Content-Type": f"multipart/form-data; boundary={boundary}"}
                 )
@@ -1374,7 +1404,7 @@ class StandaloneTelegramEducationalBot:
         return valid
 
     def extract_web_article(self, url: str) -> Tuple[str, Optional[str]]:
-        """سحب وقراءة المقال أو محتوى الصفحة من الرابط المباشر مع استخراج الصورة المرفقة"""
+        """سحب وقراءة المقال أو محتوى الصفحة من الرابط المباشر مع استخراج الصورة المرفقة الحقيقية"""
         if not url or not url.startswith("http"):
             return "", None
         try:
@@ -1384,13 +1414,26 @@ class StandaloneTelegramEducationalBot:
             with urllib.request.urlopen(req, context=ssl_ctx, timeout=8) as resp:
                 html_raw = resp.read().decode("utf-8", errors="ignore")
                 
-                # استخراج الصورة الرئيسية المرفقة
+                # استخراج الصورة الرئيسية المرفقة مع معالجة الروابط النسبية
                 img_url = None
                 img_m = (re.search(r'<meta[^>]+property=[\'"]og:image[\'"][^>]+content=[\'"]([^\'"]+)[\'"]', html_raw, re.I) or
                          re.search(r'<meta[^>]+content=[\'"]([^\'"]+)[\'"][^>]+property=[\'"]og:image[\'"]', html_raw, re.I) or
-                         re.search(r'<meta[^>]+name=[\'"]twitter:image[\'"][^>]+content=[\'"]([^\'"]+)[\'"]', html_raw, re.I))
+                         re.search(r'<meta[^>]+name=[\'"]twitter:image[\'"][^>]+content=[\'"]([^\'"]+)[\'"]', html_raw, re.I) or
+                         re.search(r'<meta[^>]+content=[\'"]([^\'"]+)[\'"][^>]+name=[\'"]twitter:image[\'"]', html_raw, re.I))
                 if img_m:
-                    img_url = self.clean_media_url(img_m.group(1))
+                    raw_img = img_m.group(1).strip()
+                    img_url = self.clean_media_url(urllib.parse.urljoin(url, raw_img), base_url=url)
+
+                if not img_url:
+                    # البحث داخل نص المقال عن صورة حقيقية
+                    article_imgs = re.findall(r'<img[^>]+src=[\'"]([^\'"]+)[\'"]', html_raw, re.I)
+                    for aim in article_imgs:
+                        aim_clean = aim.strip()
+                        if any(ext in aim_clean.lower() for ext in [".jpg", ".jpeg", ".png", ".webp", ".avif"]):
+                            if "logo" not in aim_clean.lower() and "icon" not in aim_clean.lower() and "emoji" not in aim_clean.lower():
+                                img_url = self.clean_media_url(urllib.parse.urljoin(url, aim_clean), base_url=url)
+                                if img_url:
+                                    break
 
                 clean_html = re.sub(r'<script[^>]*>.*?</script>', '', html_raw, flags=re.DOTALL | re.IGNORECASE)
                 clean_html = re.sub(r'<style[^>]*>.*?</style>', '', clean_html, flags=re.DOTALL | re.IGNORECASE)
@@ -1429,6 +1472,15 @@ class StandaloneTelegramEducationalBot:
                             videos = [v.get("url") for v in m["videos"] if isinstance(v, dict) and v.get("url")]
                         if not photos and m.get("all") and isinstance(m["all"], list):
                             photos = [x.get("url") for x in m["all"] if isinstance(x, dict) and x.get("type") == "photo" and x.get("url")]
+
+                    author_avatar = tw.get("author", {}).get("avatar_url", "")
+                    author_banner = tw.get("author", {}).get("banner_url", "")
+                    if not photos:
+                        if author_banner:
+                            photos.append(author_banner)
+                        elif author_avatar:
+                            photos.append(author_avatar)
+
                     return {
                         "name": tw.get("author", {}).get("name", ""),
                         "handle": tw.get("author", {}).get("screen_name", ""),
@@ -1438,11 +1490,20 @@ class StandaloneTelegramEducationalBot:
                         "bio": tw.get("author", {}).get("description", ""),
                         "photos": photos,
                         "videos": videos,
+                        "avatar": author_avatar,
+                        "banner": author_banner,
                         "tweet_id": tw.get("id", tid)
                     }
 
-            handle_m = re.search(r'(?:x\.com|twitter\.com)/([a-zA-Z0-9_]+)', text_or_url, re.IGNORECASE) or re.search(r'@([a-zA-Z0-9_]+)', text_or_url)
-            handle = handle_m.group(1) if handle_m else ""
+            clean_str = text_or_url.strip()
+            handle_m = re.search(r'(?:x\.com|twitter\.com)/([a-zA-Z0-9_]+)', clean_str, re.IGNORECASE) or re.search(r'@([a-zA-Z0-9_]+)', clean_str)
+            if handle_m:
+                handle = handle_m.group(1)
+            else:
+                pure = re.sub(r'^https?://(?:www\.)?(?:x|twitter)\.com/', '', clean_str)
+                pure = pure.lstrip('@').split('/')[0].split('?')[0].strip()
+                handle = pure if re.match(r'^[a-zA-Z0-9_]+$', pure) else ""
+
             if handle.lower() in ["status", "home", "explore", "search", "notifications"]:
                 handle = ""
             if not handle:
@@ -1456,6 +1517,8 @@ class StandaloneTelegramEducationalBot:
             tweet_id = None
             photos = []
             videos = []
+            avatar_url = ""
+            banner_url = ""
 
             # 1. Profile via fxtwitter
             try:
@@ -1464,6 +1527,8 @@ class StandaloneTelegramEducationalBot:
                     udata = json.loads(r.read().decode("utf-8")).get("user", {})
                     name = udata.get("name", handle)
                     bio = udata.get("description", "")
+                    avatar_url = udata.get("avatar_url", "")
+                    banner_url = udata.get("banner_url", "")
             except Exception:
                 pass
 
@@ -1490,6 +1555,11 @@ class StandaloneTelegramEducationalBot:
                     name = legacy.get("name")
                 if legacy.get("description"):
                     bio = legacy.get("description")
+                if not banner_url and legacy.get("profile_banner_url"):
+                    banner_url = legacy.get("profile_banner_url")
+                if not avatar_url and legacy.get("profile_image_url_https"):
+                    avatar_url = legacy.get("profile_image_url_https", "").replace("_normal", "_400x400")
+
                 pinned = legacy.get("pinned_tweet_ids_str", [])
                 if pinned:
                     tid = pinned[0]
@@ -1512,6 +1582,13 @@ class StandaloneTelegramEducationalBot:
             if not tweet_text and bio:
                 tweet_text = f"نبذة الحساب: {bio}"
 
+            # إذا لم تكن هناك صور مرفقة بالتغريدة مباشرة، نرفق بانر الحساب أو صورة البروفيل الرسمية
+            if not photos:
+                if banner_url:
+                    photos.append(banner_url)
+                elif avatar_url:
+                    photos.append(avatar_url)
+
             return {
                 "name": name,
                 "handle": handle,
@@ -1521,31 +1598,35 @@ class StandaloneTelegramEducationalBot:
                 "bio": bio,
                 "photos": photos,
                 "videos": videos,
+                "avatar": avatar_url,
+                "banner": banner_url,
                 "tweet_id": tweet_id
             }
         except Exception as e:
             logger.debug(f"fetch_twitter_post_or_profile error: {e}")
             return None
 
-    def fetch_live_account_or_url_content(self, text_or_url: str) -> Tuple[str, str, List[Dict[str, str]]]:
+    def fetch_live_account_or_url_content(self, text_or_url: str) -> Tuple[str, str, List[Dict[str, Any]]]:
         """
         محرك الزحف الذكي وقراءة الروابط والحسابات (Smart Scraper & Real-Time Analyzer)
-        يسحب فورياً أحدث التغريدات أو الأخبار أو المنشورات من حسابات X/Twitter ومواقع الجامعات والروابط المباشرة ديناميكياً
+        يسحب فورياً أحدث التغريدات أو الأخبار أو المنشورات مع صورها الحقيقية من حسابات X/Twitter ومواقع الجامعات والروابط المباشرة ديناميكياً
         """
         urls = re.findall(r'https?://[^\s<>"]+', text_or_url)
         raw_url = urls[0].rstrip(".,;!?)>]\'\"") if urls else ""
 
-        is_twitter = "x.com/" in text_or_url or "twitter.com/" in text_or_url or "x.com/" in raw_url or "twitter.com/" in raw_url or bool(re.search(r'@[a-zA-Z0-9_]{3,}', text_or_url))
+        is_twitter = "x.com/" in text_or_url or "twitter.com/" in text_or_url or "x.com/" in raw_url or "twitter.com/" in raw_url or bool(re.search(r'@[a-zA-Z0-9_]{3,}', text_or_url)) or bool(re.search(r'\b[a-zA-Z0-9_]{3,}_(?:page|ku|sa|edu|univ|student|students)\b', text_or_url, re.I))
         if is_twitter:
             tw = self.fetch_twitter_post_or_profile(raw_url or text_or_url)
             if tw and (tw.get("text") or tw.get("bio")):
                 entity = f"{tw['name']} (@{tw['handle']})"
+                lead_photo = (tw.get("photos", [None])[0] if tw.get("photos") else None) or tw.get("banner") or tw.get("avatar")
                 items = [{
                     "title": f"آخر منشور من {tw['name']} (@{tw['handle']})",
                     "snippet": tw.get("text", ""),
                     "pub_date": tw.get("date", ""),
                     "link": tw.get("url", raw_url or f"https://x.com/{tw['handle']}"),
-                    "photo": tw.get("photos", [None])[0] if tw.get("photos") else None,
+                    "photo": lead_photo,
+                    "photos": tw.get("photos", []),
                     "video": tw.get("videos", [None])[0] if tw.get("videos") else None
                 }]
                 return entity, tw.get("url", raw_url), items
@@ -1558,9 +1639,9 @@ class StandaloneTelegramEducationalBot:
                     "snippet": article_text[:800],
                     "link": raw_url,
                     "pub_date": "",
-                    "photo": article_img
+                    "photo": article_img,
+                    "photos": [article_img] if article_img else []
                 }]
-
         return "", "", []
 
     def call_ai_merge_stories(self, story1: str, story2: str, target_univ: Optional[str] = None) -> Optional[str]:
@@ -1996,6 +2077,13 @@ class StandaloneTelegramEducationalBot:
                         continue
 
                 # 4. النشر في القنوات المستهدفة المخصصة واستخراج الروابط الرسمية النظيفة
+                curr_tok = self.get_current_token()
+                if not curr_tok or curr_tok in _revoked:
+                    logger.info("ℹ️ محرك النشر بانتظار إدخال توكن جديد ومصرح به من @BotFather لمتابعة النشر.")
+                    time.sleep(10)
+                    post_queue.task_done()
+                    continue
+
                 post_links = self.extract_external_links(rephrased, target_univ_name) or self.extract_external_links(raw_text, target_univ_name)
                 post_kb = None
                 if post_links:
@@ -2044,9 +2132,14 @@ class StandaloneTelegramEducationalBot:
                     )
 
                 # 6. النشر الصامت التام: لا تظهر أي رسائل في البوت إطلاقاً تلبية لطلب المشرف الصارم
-                logger.info(f"✅ تم النشر المباشر بنجاح في القنوات: {', '.join(success_targets)}")
+                if success_targets:
+                    logger.info(f"✅ تم النشر المباشر بنجاح في القنوات: {', '.join(success_targets)}")
                 if failed_targets:
-                    logger.warning(f"⚠️ فشل النشر في بعض القنوات: {failed_targets}")
+                    unauth = any("Unauthorized" in str(desc) for _, desc in failed_targets)
+                    if unauth:
+                        logger.info("ℹ️ لم يتم النشر لعدم توفر توكن مصرح به حالياً (401 Unauthorized).")
+                    else:
+                        logger.warning(f"⚠️ فشل النشر في بعض القنوات: {failed_targets}")
 
                 post_queue.task_done()
 
@@ -2170,26 +2263,35 @@ class StandaloneTelegramEducationalBot:
             else:
                 reply = f"بخصوص استفسارك عن: {user_query}\n\nتعتمد الأنظمة الجامعية الإعلانات الرسمية عبر بوابات الطلبة والتطبيقات المعتمدة."
 
-        # حفظ الرد لتمكين النشر الفوري في القناة إذا رغب المشرف
+        photo_url = None
+        if live_items and live_items[0].get("photo"):
+            photo_url = live_items[0].get("photo")
+
+        # حفظ الرد لتمكين النشر الفوري في القناة مع الصورة إذا رغب المشرف
         self.cached_forwarded_post[chat_id] = {
             "text": reply,
-            "photo": None,
+            "photo": photo_url,
             "channel": db.get_target_channels()[0] if db.get_target_channels() else "@jhdhhdcj"
         }
 
         kb = {
             "inline_keyboard": [
-                [{"text": "📢 نشر هذه الصياغة في قناتي (@jhdhhdcj)", "callback_data": "panel_test"}],
+                [{"text": "📢 نشر هذه الصياغة مع الصورة في قناتي (@jhdhhdcj)", "callback_data": "panel_test"}],
                 [{"text": "💬 طرح سؤال جديد", "callback_data": "panel_cancel"}]
             ]
         }
-        self.send_msg(chat_id, f"💡 **إجابة المساعد الأكاديمي الذكي (مدعومة بالزحف المباشر):**\n━━━━━━━━━━━━━━━━━━━\n\n{reply}", kb)
+        if photo_url:
+            self.send_photo(chat_id, photo_url, caption=f"💡 **إجابة المساعد الأكاديمي الذكي (مدعومة بالصورة المرفقة والزحف المباشر):**\n━━━━━━━━━━━━━━━━━━━\n\n{reply}", reply_markup=kb)
+        else:
+            self.send_msg(chat_id, f"💡 **إجابة المساعد الأكاديمي الذكي (مدعومة بالزحف المباشر):**\n━━━━━━━━━━━━━━━━━━━\n\n{reply}", kb)
 
     def answer_general_chat(self, chat_id: int, user_message: str):
-        """الرد على أحاديث المشرف العامة بذكاء واستدعاء محرك الزحف عند وجود روابط أو حسابات"""
+        """الرد على أحاديث المشرف العامة بذكاء واستدعاء محرك الزحف عند وجود روابط أو حسابات وإرسال الصور المرفقة"""
         entity, target_url, live_items = self.fetch_live_account_or_url_content(user_message)
         live_context = ""
+        photo_url = None
         if live_items:
+            photo_url = live_items[0].get("photo")
             live_context = f"\n\n🌐 نتائج الزحف الحي المباشر من ({entity}):\n"
             for i, res in enumerate(live_items, 1):
                 d_str = f" (التاريخ: {res['pub_date']})" if res.get('pub_date') else ""
@@ -2231,7 +2333,16 @@ class StandaloneTelegramEducationalBot:
             else:
                 reply = "أهلاً بك يا مشرفنا العزيز! 🌸\nأنا مستشارك الأكاديمي والذكي لمساعدتك في إدارة قنوات الجامعات وتحسين المحتوى ومنع أي هلوسة في التواريخ. كل شيء يعمل بانتظام، كيف تحب أن نساعدك الآن؟"
 
-        self.send_msg(chat_id, reply)
+        self.cached_forwarded_post[chat_id] = {
+            "text": reply,
+            "photo": photo_url,
+            "channel": db.get_target_channels()[0] if db.get_target_channels() else "@jhdhhdcj"
+        }
+
+        if photo_url:
+            self.send_photo(chat_id, photo_url, caption=reply)
+        else:
+            self.send_msg(chat_id, reply)
 
     # ----------------- مراقبة القنوات والمصادر (تليجرام + تويتر/X + RSS) -----------------
     def check_telegram_channel_scraper(self, src: Dict[str, Any], is_manual: bool = False, bound_univ: Optional[Dict[str, Any]] = None):
@@ -4081,16 +4192,20 @@ class StandaloneTelegramEducationalBot:
         threading.Thread(target=self.scheduled_posts_loop, daemon=True).start()
         self.start_telethon_userbot()
 
-        try:
-            welcome_text = f"""🚀 **تم تشغيل محرر المحتوى التعليمي بنجاح (النسخة V3.0)!**
+        curr_tok = self.get_current_token()
+        if curr_tok and curr_tok not in _revoked:
+            try:
+                welcome_text = f"""🚀 **تم تشغيل محرر المحتوى التعليمي بنجاح (النسخة V3.0)!**
 👑 المشرف: @{ADMIN_USERNAME} (`{ADMIN_ID}`)
 📢 قنوات النشر: `{', '.join(db.get_target_channels())}`
 💾 قاعدة البيانات: `SQLite3 Persistent DB`
 🛡 فاحص الصلاحيات الدوري: يعمل كل 30 دقيقة
 ⚙️ طابور المعالجة المستقل: نشط لحماية البوت من التجمد"""
-            self.send_msg(ADMIN_ID, welcome_text, self.get_main_reply_keyboard("admin"))
-        except Exception as e:
-            logger.warning(f"ملاحظة في إشعار البداية: {e}")
+                self.send_msg(ADMIN_ID, welcome_text, self.get_main_reply_keyboard("admin"))
+            except Exception:
+                pass
+        else:
+            logger.info("ℹ️ محرك البوت جاهز ويعمل بالخلفية. بانتظار توكن جديد من @BotFather للتفاعل المباشر.")
 
         offset = 0
         backoff_delay = 1
@@ -4104,8 +4219,18 @@ class StandaloneTelegramEducationalBot:
             logger.info("⚡️ البوت يعمل بنمط التناغم الكامل: الأوامر التفاعلية عبر Webhook + الساحب الآلي المتقدم والمراقب في الخلفية 24/7")
 
         conflict_logged = False
+        unauth_logged = False
         while self.running:
             try:
+                curr_tok = self.get_current_token()
+                if not curr_tok or curr_tok in _revoked:
+                    if not unauth_logged:
+                        logger.info("ℹ️ بانتظار إدخال توكن جديد للبوت من لوحة التحكم أو متغير البيئة BOT_TOKEN لبدء الاستماع...")
+                        unauth_logged = True
+                    time.sleep(15)
+                    continue
+                unauth_logged = False
+
                 # إذا كان الويب هوك نشطاً، نترك استقبال الرسائل للويب هوك ونبقي خيوط السحب والنشر نشطة
                 if has_active_webhook:
                     time.sleep(25)
@@ -4117,7 +4242,7 @@ class StandaloneTelegramEducationalBot:
 
                 res = self.tg_request(f"getUpdates?offset={offset}&timeout=25", timeout=35)
                 
-                # فحص خطأ 409 Conflict (Bots.Business أو منصة أخرى تتولى استلام التحديثات)
+                # فحص خطأ 409 Conflict (Bots.Business أو منصة أخرى تتولى استلام التحديثات) أو 401
                 if not res.get("ok"):
                     http_code = res.get("http_code") or res.get("error_code")
                     if http_code == 409:
@@ -4125,6 +4250,12 @@ class StandaloneTelegramEducationalBot:
                             logger.info("ℹ️ منصة Bots.Business تتولى استلام التحديثات والتفاعل مع المستخدمين. سيعمل محرك بايثون بنمط المراقبة والزحف والنشر التلقائي في الخلفية 24/7 دون أي تعارض.")
                             conflict_logged = True
                         time.sleep(45)
+                        continue
+                    elif http_code == 401:
+                        if not unauth_logged:
+                            logger.info("ℹ️ توكن التيليجرام غير مصرح به (401 Unauthorized). بانتظار توكن جديد.")
+                            unauth_logged = True
+                        time.sleep(15)
                         continue
                     elif http_code == 429:
                         retry_after = res.get("parameters", {}).get("retry_after", 10)

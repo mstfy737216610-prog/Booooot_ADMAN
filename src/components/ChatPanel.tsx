@@ -6,6 +6,9 @@ interface Message {
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
+  mediaUrl?: string | null;
+  mediaType?: 'photo' | 'video' | null;
+  photos?: string[];
 }
 
 interface ChatPanelProps {
@@ -58,6 +61,9 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ aiConfig }) => {
           role: 'assistant',
           content: data.reply,
           timestamp: new Date(),
+          mediaUrl: data.mediaUrl || null,
+          mediaType: data.mediaType || null,
+          photos: data.photos || []
         };
         setMessages((prev) => [...prev, botMsg]);
       } else {
@@ -135,7 +141,31 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ aiConfig }) => {
                     ? 'bg-slate-800 text-slate-200 rounded-tr-none'
                     : 'bg-indigo-600/90 text-white rounded-tl-none shadow-lg shadow-indigo-500/10'
                 }`}>
-                  {m.content}
+                  {m.mediaUrl && (
+                    <div className="mb-3 overflow-hidden rounded-xl border border-indigo-400/30 bg-black/40">
+                      {m.mediaType === 'video' ? (
+                        <video
+                          src={m.mediaUrl}
+                          controls
+                          className="max-h-64 w-full object-contain rounded-lg"
+                        />
+                      ) : (
+                        <a href={m.mediaUrl} target="_blank" rel="noopener noreferrer" className="block group">
+                          <img
+                            src={m.mediaUrl}
+                            alt="صورة المنشور المسحوبة"
+                            className="max-h-64 w-full object-cover rounded-lg group-hover:opacity-95 transition-all"
+                            onError={(e) => { (e.currentTarget as HTMLElement).style.display = 'none'; }}
+                          />
+                        </a>
+                      )}
+                      <div className="px-2 py-1 bg-slate-950/70 text-[10px] text-indigo-300 flex items-center justify-between">
+                        <span>📸 وسائط مرفقة مسحوبة تلقائياً من المصدر</span>
+                        <a href={m.mediaUrl} target="_blank" rel="noopener noreferrer" className="underline hover:text-white">عرض الحجم الكامل</a>
+                      </div>
+                    </div>
+                  )}
+                  <div className="whitespace-pre-wrap">{m.content}</div>
                 </div>
                 <span className="text-[10px] text-slate-500 block px-1">
                   {m.timestamp.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}

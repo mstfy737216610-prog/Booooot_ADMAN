@@ -140,22 +140,27 @@ app.post('/api/state', (req: Request, res: Response) => {
   }
 });
 
-const DEFAULT_FALLBACK_TOKEN = "8901693218:AAH0hoZdTq9qGaLYOhu_Cvxg9TEzTPAVADw";
+const REVOKED_TOKENS = [
+  "8901693218:AAEOQmHMZLy-xaPbTUMq1KGhDwp1l0wFWP4",
+  "8901693218:AAFUiQ62KQlfl6rtoarimpSpeoeCgA422Qg",
+  "8901693218:AAH0Ri7lpY2R6d1DQSrKZclRa7kuo1Jw-Gs",
+  "8901693218:AAH0hoZdTq9qGaLYOhu_Cvxg9TEzTPAVADw"
+];
 
 function getActiveBotToken(): string {
   try {
     const out = execSync(`python3 -c "import database as db; print(db.get_setting('bot_token', ''))"`, { timeout: 3000 }).toString().trim();
-    if (out && out.length > 20 && !out.includes('Error') && !out.includes('AAH0Ri7lpY2R6d1DQSrKZclRa7kuo1Jw-Gs')) {
+    if (out && out.length > 20 && !out.includes('Error') && !REVOKED_TOKENS.includes(out)) {
       return out;
     }
   } catch (e) {
     // fallback
   }
   const envTok = process.env.TELEGRAM_BOT_TOKEN || process.env.BOT_TOKEN;
-  if (envTok && envTok.length > 20 && !envTok.includes('AAH0Ri7lpY2R6d1DQSrKZclRa7kuo1Jw-Gs')) {
+  if (envTok && envTok.length > 20 && !REVOKED_TOKENS.includes(envTok.trim())) {
     return envTok.trim();
   }
-  return DEFAULT_FALLBACK_TOKEN;
+  return "";
 }
 
 function setActiveBotToken(token: string): void {
@@ -175,16 +180,26 @@ app.get('/api/bot/token', async (_req: Request, res: Response) => {
   try {
     const token = getActiveBotToken();
     let botInfo = null;
-    try {
-      const tgRes = await fetch(`https://api.telegram.org/bot${token}/getMe`);
-      const tgData = await tgRes.json();
-      if (tgData.ok) {
-        botInfo = tgData.result;
+    let isAuthorized = false;
+    let authError: string | null = null;
+
+    if (token) {
+      try {
+        const tgRes = await fetch(`https://api.telegram.org/bot${token}/getMe`);
+        const tgData = await tgRes.json();
+        if (tgData.ok) {
+          botInfo = tgData.result;
+          isAuthorized = true;
+        } else {
+          authError = tgData.description || 'التوكن غير مصرح به أو تم إلغاؤه (401 Unauthorized)';
+        }
+      } catch {
+        authError = 'تعذر الاتصال بخوادم تيليجرام';
       }
-    } catch {
-      // Telegram network check
+    } else {
+      authError = 'التوكن الافتراضي تم إلغاؤه من BotFather (401 Unauthorized)، يرجى إدخال التوكن الجديد الصادر من @BotFather';
     }
-    res.json({ success: true, token, botInfo });
+    res.json({ success: true, token, botInfo, isAuthorized, authError });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     res.status(500).json({ success: false, error: message });
@@ -524,7 +539,13 @@ function startPythonWorker() {
 
     pythonProcess.stderr.on('data', (d: Buffer) => {
       const s = d.toString().trim();
-      if (s && !s.includes('CertificateError')) console.warn(`[PythonBot] ${s}`);
+      if (s && !s.includes('CertificateError')) {
+        if (s.includes('401') || s.includes('Unauthorized')) {
+          console.log(`[PythonBot] ${s}`);
+        } else {
+          console.warn(`[PythonBot] ${s}`);
+        }
+      }
     });
 
     pythonProcess.on('close', (code: number | null) => {
@@ -543,8 +564,17 @@ interface ScrapedLiveInfo {
   url: string;
   sourceType: 'twitter' | 'web';
   entity: string;
-  items: Array<{ title: string; date?: string; snippet: string; link: string }>;
+  items: Array<{
+    title: string;
+    date?: string;
+    snippet: string;
+    link: string;
+    photo?: string;
+    photos?: string[];
+    video?: string;
+  }>;
   rawContent?: string;
+  leadPhoto?: string;
 }
 
 const TWITTER_BEARER = 'AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA';
@@ -553,10 +583,15 @@ interface TwitterScrapedResult {
   handle: string;
   name: string;
   bio: string;
+  avatarUrl?: string;
+  bannerUrl?: string;
   tweetId?: string;
   tweetText?: string;
   tweetDate?: string;
   tweetUrl?: string;
+  photos?: string[];
+  videos?: string[];
+  leadPhoto?: string;
 }
 
 async function fetchTwitterPostOrProfile(input: string): Promise<TwitterScrapedResult | null> {
@@ -574,14 +609,44 @@ async function fetchTwitterPostOrProfile(input: string): Promise<TwitterScrapedR
           const fxJson = await fxRes.json();
           const tw = fxJson.tweet;
           if (tw) {
+            const photos: string[] = [];
+            const videos: string[] = [];
+            if (tw.media) {
+              if (Array.isArray(tw.media.photos)) {
+                for (const p of tw.media.photos) {
+                  if (p?.url) photos.push(p.url);
+                }
+              }
+              if (Array.isArray(tw.media.videos)) {
+                for (const v of tw.media.videos) {
+                  if (v?.url) videos.push(v.url);
+                }
+              }
+              if (photos.length === 0 && Array.isArray(tw.media.all)) {
+                for (const x of tw.media.all) {
+                  if (x?.type === 'photo' && x?.url) photos.push(x.url);
+                }
+              }
+            }
+            const authorAvatar = tw.author?.avatar_url || '';
+            const authorBanner = tw.author?.banner_url || '';
+            if (photos.length === 0) {
+              if (authorBanner) photos.push(authorBanner);
+              else if (authorAvatar) photos.push(authorAvatar);
+            }
             return {
               handle: tw.author?.screen_name || '',
               name: tw.author?.name || '',
               bio: tw.author?.description || '',
+              avatarUrl: authorAvatar,
+              bannerUrl: authorBanner,
               tweetId: tw.id,
               tweetText: tw.text || '',
               tweetDate: tw.created_at || '',
-              tweetUrl: tw.url || `https://x.com/i/status/${tid}`
+              tweetUrl: tw.url || `https://x.com/i/status/${tid}`,
+              photos,
+              videos,
+              leadPhoto: photos[0] || undefined
             };
           }
         }
@@ -591,8 +656,17 @@ async function fetchTwitterPostOrProfile(input: string): Promise<TwitterScrapedR
     }
 
     // 2. Profile URL or Handle
+    let handle = '';
     const handleMatch = input.match(/(?:x\.com|twitter\.com)\/([a-zA-Z0-9_]+)/i) || input.match(/@([a-zA-Z0-9_]+)/);
-    let handle = handleMatch ? handleMatch[1] : '';
+    if (handleMatch) {
+      handle = handleMatch[1];
+    } else {
+      const clean = input.trim().replace(/^https?:\/\/(?:www\.)?(?:x|twitter)\.com\//i, '').replace(/^@/, '').split('/')[0].split('?')[0].trim();
+      if (/^[a-zA-Z0-9_]+$/.test(clean) && clean.length <= 30) {
+        handle = clean;
+      }
+    }
+
     if (handle.toLowerCase().match(/^(status|home|explore|search|notifications)$/)) {
       handle = '';
     }
@@ -604,6 +678,10 @@ async function fetchTwitterPostOrProfile(input: string): Promise<TwitterScrapedR
     let tweetText = '';
     let tweetDate = '';
     let tweetUrl = `https://x.com/${handle}`;
+    let avatarUrl = '';
+    let bannerUrl = '';
+    const photos: string[] = [];
+    const videos: string[] = [];
 
     // A. Profile via fxtwitter
     try {
@@ -616,6 +694,8 @@ async function fetchTwitterPostOrProfile(input: string): Promise<TwitterScrapedR
         if (fxData.user) {
           displayName = fxData.user.name || handle;
           bio = fxData.user.description || '';
+          avatarUrl = fxData.user.avatar_url || '';
+          bannerUrl = fxData.user.banner_url || '';
         }
       }
     } catch {}
@@ -649,6 +729,12 @@ async function fetchTwitterPostOrProfile(input: string): Promise<TwitterScrapedR
             if (legacy) {
               if (legacy.name) displayName = legacy.name;
               if (legacy.description) bio = legacy.description;
+              if (!bannerUrl && legacy.profile_banner_url) {
+                bannerUrl = legacy.profile_banner_url;
+              }
+              if (!avatarUrl && legacy.profile_image_url_https) {
+                avatarUrl = legacy.profile_image_url_https.replace('_normal', '_400x400');
+              }
               const pinned = legacy.pinned_tweet_ids_str || [];
               if (pinned.length > 0) {
                 tweetId = pinned[0];
@@ -675,6 +761,23 @@ async function fetchTwitterPostOrProfile(input: string): Promise<TwitterScrapedR
             tweetText = tw.text || '';
             tweetDate = tw.created_at || '';
             tweetUrl = tw.url || `https://x.com/${handle}/status/${tweetId}`;
+            if (tw.media) {
+              if (Array.isArray(tw.media.photos)) {
+                for (const p of tw.media.photos) {
+                  if (p?.url) photos.push(p.url);
+                }
+              }
+              if (Array.isArray(tw.media.videos)) {
+                for (const v of tw.media.videos) {
+                  if (v?.url) videos.push(v.url);
+                }
+              }
+              if (photos.length === 0 && Array.isArray(tw.media.all)) {
+                for (const x of tw.media.all) {
+                  if (x?.type === 'photo' && x?.url) photos.push(x.url);
+                }
+              }
+            }
           }
         }
       } catch (e) {
@@ -686,14 +789,24 @@ async function fetchTwitterPostOrProfile(input: string): Promise<TwitterScrapedR
       tweetText = `نبذة الحساب الرسمية:\n${bio}`;
     }
 
+    if (photos.length === 0) {
+      if (bannerUrl) photos.push(bannerUrl);
+      else if (avatarUrl) photos.push(avatarUrl);
+    }
+
     return {
       handle,
       name: displayName,
       bio,
+      avatarUrl,
+      bannerUrl,
       tweetId,
       tweetText,
       tweetDate,
-      tweetUrl
+      tweetUrl,
+      photos,
+      videos,
+      leadPhoto: photos[0] || undefined
     };
   } catch (err) {
     console.warn('fetchTwitterPostOrProfile error:', err);
@@ -710,13 +823,16 @@ async function fetchLiveContentForUrl(text: string): Promise<ScrapedLiveInfo | n
   if (isTwitter) {
     const tw = await fetchTwitterPostOrProfile(rawUrl || text);
     if (tw && (tw.tweetText || tw.bio)) {
-      const items: Array<{ title: string; date?: string; snippet: string; link: string }> = [];
+      const items: Array<{ title: string; date?: string; snippet: string; link: string; photo?: string; photos?: string[]; video?: string }> = [];
       if (tw.tweetText) {
         items.push({
           title: `آخر منشور من ${tw.name} (@${tw.handle})`,
           date: tw.tweetDate,
           snippet: tw.tweetText,
-          link: tw.tweetUrl || `https://x.com/${tw.handle}`
+          link: tw.tweetUrl || `https://x.com/${tw.handle}`,
+          photo: tw.leadPhoto,
+          photos: tw.photos,
+          video: tw.videos?.[0]
         });
       }
       return {
@@ -724,7 +840,8 @@ async function fetchLiveContentForUrl(text: string): Promise<ScrapedLiveInfo | n
         sourceType: 'twitter',
         entity: `${tw.name} (@${tw.handle})`,
         items,
-        rawContent: tw.tweetText || tw.bio
+        rawContent: tw.tweetText || tw.bio,
+        leadPhoto: tw.leadPhoto
       };
     }
   }
@@ -743,13 +860,41 @@ async function fetchLiveContentForUrl(text: string): Promise<ScrapedLiveInfo | n
         .replace(/<svg[^>]*>[\s\S]*?<\/svg>/gi, '');
       const titleMatch = cleanHtml.match(/<title[^>]*>(.*?)<\/title>/i);
       const title = titleMatch ? titleMatch[1].trim() : '';
+
+      // Extract lead image from OpenGraph, Twitter card, or article image
+      let leadImage = '';
+      const ogMatch = cleanHtml.match(/<meta[^>]+property=[\'"]og:image[\'"][^>]+content=[\'"]([^\'"]+)[\'"]/i) ||
+                      cleanHtml.match(/<meta[^>]+content=[\'"]([^\'"]+)[\'"][^>]+property=[\'"]og:image[\'"]/i) ||
+                      cleanHtml.match(/<meta[^>]+name=[\'"]twitter:image[\'"][^>]+content=[\'"]([^\'"]+)[\'"]/i);
+      if (ogMatch) {
+        leadImage = ogMatch[1].trim();
+      }
+      if (!leadImage) {
+        const imgMatch = cleanHtml.match(/<img[^>]+src=[\'"]([^\'"]+)[\'"]/i);
+        if (imgMatch && !imgMatch[1].includes('emoji') && !imgMatch[1].includes('icon') && !imgMatch[1].includes('transparent')) {
+          leadImage = imgMatch[1].trim();
+        }
+      }
+      if (leadImage) {
+        try {
+          leadImage = new URL(leadImage, rawUrl).href;
+        } catch {}
+      }
+
       const textOnly = cleanHtml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
       return {
         url: rawUrl,
         sourceType: 'web',
         entity: title || rawUrl,
         rawContent: textOnly.substring(0, 2500),
-        items: [{ title: title || 'المحتوى المسحوب من الرابط', snippet: textOnly.substring(0, 800), link: rawUrl }]
+        leadPhoto: leadImage || undefined,
+        items: [{
+          title: title || 'المحتوى المسحوب من الرابط',
+          snippet: textOnly.substring(0, 800),
+          link: rawUrl,
+          photo: leadImage || undefined,
+          photos: leadImage ? [leadImage] : []
+        }]
       };
     } catch (e) {
       console.warn('Live web fetch failed:', e);
@@ -1165,10 +1310,17 @@ app.post('/api/ai/chat', async (req: Request, res: Response) => {
     reply = generateIntelligentChatFallback(message, history, liveScraped);
   }
 
+  const leadPhoto = liveScraped?.leadPhoto || liveScraped?.items?.[0]?.photo || null;
+  const photos = liveScraped?.items?.[0]?.photos || (leadPhoto ? [leadPhoto] : []);
+  const leadVideo = liveScraped?.items?.[0]?.video || null;
+
   res.json({
     success: true,
     reply: reply.trim(),
-    modelUsed: usedModel
+    modelUsed: usedModel,
+    mediaUrl: leadVideo || leadPhoto,
+    mediaType: leadVideo ? 'video' : (leadPhoto ? 'photo' : null),
+    photos: photos
   });
 });
 
