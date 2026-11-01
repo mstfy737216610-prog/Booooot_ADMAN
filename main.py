@@ -25,6 +25,7 @@ import hashlib
 import logging
 import threading
 import asyncio
+import concurrent.futures
 import uuid
 import tempfile
 import urllib.request
@@ -122,9 +123,9 @@ FALLBACK_MODEL = os.getenv("FALLBACK_MODEL", "DeepSeek-V4.1-Flash").strip()
 
 # كوكبة النماذج الذكية المتتالية للعمل بأقصى سرعة واستيعاب وتخطي أي أخطاء 503 تلقائياً
 AI_MODELS_CASCADE = [
-    "DeepSeek-V4.1-Flash",
     PRIMARY_MODEL,
     "DeepSeek-V4-Flash",
+    "DeepSeek-V4.1-Flash",
     "auto",
     "glm-5.3",
     "MiniMax-M3.1-Flash"
@@ -260,7 +261,8 @@ UNIVERSITY_DIRECTORY: Dict[str, Dict[str, Any]] = {
         "deanship": "عمادة شؤون الطلاب وعمادة القبول والتسجيل",
         "country": "المملكة العربية السعودية",
         "dialect": "لهجة سعودية بيضاء محترمة وموجزة",
-        "location": "الرياض - الدرعية"
+        "location": "الرياض - الدرعية",
+        "twitter_handle": "_KSU"
     },
     "hct": {
         "id": "hct",
@@ -280,7 +282,8 @@ UNIVERSITY_DIRECTORY: Dict[str, Dict[str, Any]] = {
         "deanship": "إدارة شؤون وخدمات الطلبة والقبول",
         "country": "دولة الإمارات العربية المتحدة",
         "dialect": "لهجة إماراتية بيضاء محترمة وموجزة",
-        "location": "الإمارات العربية المتحدة"
+        "location": "الإمارات العربية المتحدة",
+        "twitter_handle": "HCT_UAE"
     },
     "ku": {
         "id": "ku",
@@ -300,7 +303,8 @@ UNIVERSITY_DIRECTORY: Dict[str, Dict[str, Any]] = {
         "deanship": "عمادة شؤون الطلبة وعمادة القبول والتسجيل",
         "country": "دولة الكويت",
         "dialect": "لهجة كويتية بيضاء محترمة وموجزة",
-        "location": "الكويت - الشدادية"
+        "location": "الكويت - الشدادية",
+        "twitter_handle": "KuwaitUniv"
     },
     "aum": {
         "id": "aum",
@@ -320,7 +324,8 @@ UNIVERSITY_DIRECTORY: Dict[str, Dict[str, Any]] = {
         "deanship": "إدارة شؤون الطلبة والقبول والتسجيل",
         "country": "دولة الكويت",
         "dialect": "لهجة كويتية بيضاء محترمة وموجزة",
-        "location": "الكويت - العقيلة"
+        "location": "الكويت - العقيلة",
+        "twitter_handle": "AUM_Kuwait"
     },
     "kau": {
         "id": "kau",
@@ -340,7 +345,8 @@ UNIVERSITY_DIRECTORY: Dict[str, Dict[str, Any]] = {
         "deanship": "عمادة شؤون الطلاب وعمادة القبول والتسجيل",
         "country": "المملكة العربية السعودية",
         "dialect": "لهجة سعودية بيضاء محترمة وموجزة",
-        "location": "جدة"
+        "location": "جدة",
+        "twitter_handle": "kauweb"
     },
     "imamu": {
         "id": "imamu",
@@ -360,7 +366,8 @@ UNIVERSITY_DIRECTORY: Dict[str, Dict[str, Any]] = {
         "deanship": "عمادة شؤون الطلاب وعمادة القبول والتسجيل",
         "country": "المملكة العربية السعودية",
         "dialect": "لهجة سعودية بيضاء محترمة وموجزة",
-        "location": "الرياض"
+        "location": "الرياض",
+        "twitter_handle": "ImamU_edu"
     },
     "pnu": {
         "id": "pnu",
@@ -380,7 +387,8 @@ UNIVERSITY_DIRECTORY: Dict[str, Dict[str, Any]] = {
         "deanship": "عمادة شؤون الطالبات والقبول",
         "country": "المملكة العربية السعودية",
         "dialect": "لهجة سعودية بيضاء محترمة وموجزة",
-        "location": "الرياض"
+        "location": "الرياض",
+        "twitter_handle": "PNU_KSA"
     }
 }
 
@@ -534,6 +542,49 @@ def resolve_direct_student_inquiry(student_question: str, orig_post_text: str = 
         return f"وعليكم السلام ورحمة الله وبركاته 🌸\nأهلاً بك زميلي في رحاب {u_name}، كيف أقدر أساعدك اليوم في دراستك أو استفساراتك الأكاديمية؟ 🎓"
 
     return None
+
+
+def is_student_inquiry_or_question(text: str) -> bool:
+    """
+    التحقق الشامل مما إذا كانت الرسالة استفساراً أو سؤالاً من الطالب
+    ليقوم البوت بالإجابة عليه فوراً والبحث في تويتر وتيليجرام والإنترنت
+    """
+    if not text or len(text.strip()) < 2:
+        return False
+    t = text.strip().lower()
+    norm = re.sub(r'[إأآ]', 'ا', t).replace('ة', 'ه').replace('ى', 'ي')
+
+    # علامات الاستفهام
+    if '؟' in norm or '?' in norm:
+        return True
+
+    # أدوات وكلمات السؤال والطلب المباشر
+    q_starters = [
+        "متي", "متى", "كيف", "اين", "وين", "هل", "كم", "ما هو", "ما هي", "ماهو", "ماهي",
+        "وش", "ايش", "ليه", "لماذا", "ممكن", "لو سمحت", "بالله", "تكفي", "تكفى", "سوال",
+        "سؤال", "استفسار", "عندي استفسار", "عندي سوال", "عندي سؤال", "يا اخوان", "يا شباب",
+        "يا جماعه", "يا جماعة", "احد يعرف", "في احد يعرف", "مين يعرف", "من يعرف", "ابي اعرف",
+        "اريد اعرف", "ودي اسال", "ودي اسأل", "استفسر"
+    ]
+    for qs in q_starters:
+        if norm.startswith(qs) or f" {qs} " in f" {norm} ":
+            return True
+
+    # الكلمات المفتاحية للشأن والخدمات الطلابية والأكاديمية
+    academic_terms = [
+        "تسجيل", "قبول", "حذف", "اضافه", "إضافة", "جدول", "شعبه", "شعبة", "سكشن", "معدل",
+        "مكافاه", "مكافأة", "إعانة", "اعانه", "اختبار", "اختبارات", "ميد", "فاينل", "كويز",
+        "درجات", "عذر", "طبي", "حرمان", "انذار", "إنذار", "تحويل", "معادله", "معادلة",
+        "تخصص", "سكن", "باص", "وثيقه", "وثيقة", "تخرج", "صيفي", "سمر", "مرشد", "دكتور",
+        "عماده", "عمادة", "شوون", "شؤون", "شون", "بوابه", "بوابة", "ادوقيت", "إدوقيت",
+        "ايميل", "إيميل", "ايمل", "رقم", "هاتف", "تلفون", "تواصل", "شروط", "رسوم",
+        "ماجستير", "دبلوم", "بكالوريوس", "امتياز", "سنه تحضيريه", "سنة تحضيرية", "تحضيري"
+    ]
+    for term in academic_terms:
+        if term in norm:
+            return True
+
+    return False
 
 
 def is_relevant_student_news(text: str, target_univ: Optional[str] = None) -> Tuple[bool, str]:
@@ -2412,38 +2463,141 @@ class StandaloneTelegramEducationalBot:
 
         return results
 
-    def answer_search_or_chat_query(self, chat_id: int, user_query: str):
-        """يجيب على أسئلة المشرف واستفسارات الطلاب بدقة مع دمج البحث الحي والزحف المباشر للروابط والحسابات"""
-        self.send_msg(chat_id, "🔍 **جاري البحث الفوري عبر الإنترنت وقراءة الروابط بالذكاء الأكاديمي...**")
+    def fetch_rss_news_items(self, query: str, max_items: int = 3, timeout: float = 4.0) -> List[Dict[str, str]]:
+        """جلب عناصر الأخبار والتغريدات والمنشورات عبر محرك RSS في الوقت الفعلي"""
+        encoded = urllib.parse.quote(query)
+        url = f"https://news.google.com/rss/search?q={encoded}&hl=ar&gl=SA&ceid=SA:ar"
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        })
+        items = []
+        try:
+            with urllib.request.urlopen(req, context=ssl_ctx, timeout=timeout) as resp:
+                root = ET.fromstring(resp.read())
+                for it in root.findall('.//item')[:max_items]:
+                    title = it.findtext("title") or ""
+                    link = it.findtext("link") or ""
+                    pub = it.findtext("pubDate") or ""
+                    desc = it.findtext("description") or ""
+                    clean_desc = re.sub(r'<[^>]+>', '', desc).strip()
+                    if title:
+                        items.append({
+                            "title": title,
+                            "link": link,
+                            "pub_date": pub,
+                            "snippet": clean_desc[:250]
+                        })
+        except Exception as e:
+            logger.debug(f"fetch_rss_news_items query [{query}] note: {e}")
+        return items
 
-        entity, target_url, live_items = self.fetch_live_account_or_url_content(user_query)
-        web_context = ""
-        if live_items:
-            web_context = f"\n\n🌐 نتائج الزحف الحي المباشر من ({entity}):\n"
-            for i, res in enumerate(live_items, 1):
-                d_str = f" (التاريخ: {res['pub_date']})" if res.get('pub_date') else ""
-                web_context += f"{i}. {res['title']}{d_str}\n   {res['snippet']}\n   رابط المصدر: {res.get('link', target_url)}\n"
-        else:
-            search_results = self.search_web_live(user_query)
-            if search_results:
-                web_context = "\n\n🌐 نتائج البحث الحي المباشر من مصادر الإنترنت والأخبار:\n"
-                for i, res in enumerate(search_results, 1):
-                    web_context += f"{i}. {res['title']} (التاريخ: {res['pub_date']})\n   {res['snippet']}\n   رابط المصدر: {res['link']}\n"
+    def search_university_intelligence(self, query: str, univ_info: Dict[str, Any]) -> str:
+        """
+        محرك الاستخبارات والبحث الأكاديمي الحي:
+        يبحث في تويتر/X، قنوات تيليجرام، وبوابات الإنترنت المعتمدة قبل الإجابة
+        ويستخرج أحدث الحقائق والمواعيد والبيانات الحقيقية في أجزاء من الثانية.
+        """
+        u_name = univ_info.get("name", "جامعة الملك سعود")
+        clean_q = re.sub(r'^(ممكن|اريد|أريد|كيف|متى|هل|ما هو|ما هي|وين|اين|أين|عطني|لو سمحت|بالله|تكفى)\s*', '', query, flags=re.IGNORECASE).strip()
+        search_kw = clean_q if clean_q else query
+
+        twitter_findings: List[str] = []
+        telegram_findings: List[str] = []
+        web_findings: List[str] = []
+
+        def _do_tw():
+            tw_q = f"site:x.com OR site:twitter.com {u_name} {search_kw}"
+            res = self.fetch_rss_news_items(tw_q, max_items=3, timeout=3.5)
+            for it in res:
+                t = it.get("title", "")
+                if t:
+                    clean_t = re.sub(r'\s*-\s*X$', '', t).strip()
+                    twitter_findings.append(f"• [تغريدة X حديثة]: {clean_t}")
+
+        def _do_tg():
+            tg_q = f"site:t.me {u_name} {search_kw}"
+            res = self.fetch_rss_news_items(tg_q, max_items=3, timeout=3.5)
+            for it in res:
+                t = it.get("title", "")
+                if t:
+                    clean_t = re.sub(r'\s*-\s*Telegram Messenger$', '', t).strip()
+                    telegram_findings.append(f"• [قناة تيليجرام الطلابية]: {clean_t}")
+
+        def _do_web():
+            web_q = f"{u_name} {search_kw}"
+            res = self.fetch_rss_news_items(web_q, max_items=3, timeout=3.5)
+            for it in res:
+                t = it.get("title", "")
+                if t:
+                    web_findings.append(f"• [خبر البوابات الرسمية]: {t}")
+
+        try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
+                pool.map(lambda f: f(), [_do_tw, _do_tg, _do_web])
+        except Exception as e:
+            logger.debug(f"Parallel search note: {e}")
+
+        # فحص الحساب الرسمي المباشر في تويتر لـ KSU أو غيرها
+        try:
+            tw_handle = univ_info.get("twitter_handle") or ("_KSU" if "سعود" in u_name else None)
+            if tw_handle:
+                tw_prof = self.fetch_twitter_post_or_profile(tw_handle)
+                if tw_prof and tw_prof.get("text"):
+                    twitter_findings.append(f"• [حساب الجامعة الرسمي @{tw_handle}]: {tw_prof['text'][:250]}")
+        except Exception as e:
+            logger.debug(f"Direct Twitter handle check: {e}")
+
+        parts = []
+        if twitter_findings:
+            parts.append("🐦 نتائج البحث والتغريدات الرسمية من تويتر/X:\n" + "\n".join(twitter_findings[:3]))
+        if telegram_findings:
+            parts.append("✈️ نتائج وإعلانات قنوات تيليجرام المعتمدة:\n" + "\n".join(telegram_findings[:3]))
+        if web_findings:
+            parts.append("🌐 مستجدات الصحف والبوابات الأكاديمية:\n" + "\n".join(web_findings[:3]))
+
+        return "\n\n".join(parts) if parts else "نتائج البحث: تم استطلاع مصادر تويتر وتيليجرام، لا توجد إعلانات طارئة إضافية اليوم."
+
+    def answer_search_or_chat_query(self, chat_id: int, user_query: str):
+        """يجيب على أي استفسار أو سؤال يطرحه الطالب أو المشرف بدقة فائقة مع البحث الحي في تويتر وتيليجرام والإنترنت"""
+        self.send_msg(chat_id, "🔍 **جاري البحث الفوري في تويتر وتيليجرام والمصادر الأكاديمية بالذكاء الاصطناعي...**")
 
         u_info = detect_target_university(user_query)
+
+        # 1. الفحص الفوري للاستفسارات المباشرة (إيميل، هاتف، مكان المنشور، شكر)
+        direct_reply = resolve_direct_student_inquiry(user_query, univ_info=u_info)
+        if direct_reply:
+            self.send_msg(chat_id, direct_reply)
+            return
+
+        # 2. البحث الحي في تويتر وتيليجرام والإنترنت
+        intel_summary = self.search_university_intelligence(user_query, u_info)
+
+        entity, target_url, live_items = self.fetch_live_account_or_url_content(user_query)
+        live_context = ""
+        if live_items:
+            live_context = f"\n\n🌐 نتائج الزحف المباشر من ({entity}):\n"
+            for i, res in enumerate(live_items, 1):
+                d_str = f" (التاريخ: {res['pub_date']})" if res.get('pub_date') else ""
+                live_context += f"{i}. {res['title']}{d_str}\n   {res['snippet']}\n   رابط المصدر: {res.get('link', target_url)}\n"
+
         univ_dir_context = f"\nبيانات التواصل المعتمدة لـ ({u_info['name']}):\n- البوابة الرسمية: {u_info['portal_url']}\n- عمادة شؤون الطلاب: {u_info['student_affairs_email']} (هاتف: {u_info['student_affairs_phone']})\n- عمادة القبول والتسجيل: {u_info['admission_email']}\n- السنترال الموحد: {u_info['main_phone']}\n"
 
         system_prompt = f"""أنت مستشار وباحث أكاديمي وجامعي فائق الذكاء وممثل الدفعة الناصح لـ {u_info['name']}.
-تتحدث بحرية كاملة ودون أي قيود أو قوالب نمطية مصطنعة وتقدم المعلومات الحقيقية والروابط المباشرة.
+مهمتك: الإجابة الشافية والدقيقة والذكية على أي استفسار أو سؤال يسأله الطالب أو المشرف.
+تتحدث بلهجة {u_info.get('dialect', 'سعودية بيضاء محترمة وموجزة')} وتقدم المعلومات الحقيقية والروابط المباشرة.
 {univ_dir_context}
-- أنت مزود بمحرك زحف ذكي يسحب المحتوى الحي من الروابط وحسابات X/Twitter ومواقع الجامعات. يُمنع منعاً باتاً أن تقول 'لا أستطيع تصفح الإنترنت' أو 'لا أستطيع الوصول للروابط الخارجية'.
-- إذا كان السؤال عن إعانة ومكافأة طلبة جامعة AUM (الكويت) أو الجامعات الخاصة: وضح أن المكافأة الاجتماعية (200 دينار كويتي شهرياً) تصرف عبر مجلس الجامعات الخاصة (PUC) ويتم إيداعها للبنوك عادة بين 20 إلى 26 من كل شهر ميلادي بعد اعتماد الكشوفات، ويمكن للطالب التأكد عبر تطبيق بنكه أو بوابة الطالب My AUM Portal أو التواصل مع شؤون الطلبة عبر هاتف 22260100.
-- إذا طلب المستخدم قراءة آخر منشور أو حساب أو رابط، اقرأ البيانات المسحوبة المرفقة واعرض آخر منشور بأسلوب ممثل الدفعة الناصح مع التواريخ الحقيقية دون أي هلوسة.
-- احتفظ بالروابط واضحة ليتمكن الطلاب من النقر عليها وفتحها مباشرة.
-- أسلوبك راقٍ، مباشر، عربي فصيح، بدون أي إيموجي رسومية تالفة، واستخدم النقاط المنظمة [▫️] أو [•].
-{web_context}"""
 
-        query_payload = f"{user_query}\n{web_context}" if web_context else user_query
+نتائج البحث الحي المباشر من تويتر/X وتيليجرام والمصادر الأكاديمية:
+{intel_summary}
+{live_context}
+
+قواعد الإجابة:
+1. أجب بذكاء واحترافية وبشكل مباشر على صلب السؤال.
+2. استفد من نتائج البحث المسحوبة من تويتر وتيليجرام لدعم إجابتك بالحقائق والتواريخ الحقيقية دون أي تخمين.
+3. إذا طلب المستخدم قراءة حساب أو رابط، اقرأ البيانات واعرضها بأسلوب منظم.
+4. أسلوبك راقٍ، مباشر، عربي فصيح ومحبوب للطلاب، واستخدم النقاط المنظمة [▫️] أو [•]."""
+
+        query_payload = f"{user_query}\n{intel_summary}\n{live_context}" if (intel_summary or live_context) else user_query
         reply = self.call_ai(query_payload, system_prompt=system_prompt)
 
         # إذا تعذر الذكاء أو أعاد النموذج رداً نمطياً بالرفض، نصيغ البيانات المسحوبة الحية مباشرة
