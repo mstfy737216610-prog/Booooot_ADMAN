@@ -1309,11 +1309,14 @@ class StandaloneTelegramEducationalBot:
 
     # ----------------- لوحات المفاتيح والأزرار -----------------
     def get_main_reply_keyboard(self, user_role: str = "user") -> Dict[str, Any]:
+        is_google_enabled = db.is_google_news_enabled()
+        google_btn_text = "🛑 إيقاف بحث جوجل" if is_google_enabled else "🟢 تفعيل بحث جوجل"
         kb = [
             [{"text": "🏛️ إدارة الجامعات وقنوات النشر"}, {"text": "➕ إضافة جامعة وقناة نشر"}],
-            [{"text": "🔄 فحص وسحب أخبار الجامعات"}, {"text": "🌐 بحث أخبار جوجل للجامعة"}],
+            [{"text": "🧠 تعليمات وتدريب البوت"}, {"text": "🐦 سحب وفحص حسابات تويتر"}],
+            [{"text": "🔄 فحص وسحب أخبار الجامعات"}, {"text": google_btn_text}],
             [{"text": "📝 صياغة ونشر خبر فوري"}, {"text": "🎯 إعلان خدماتي البديل"}],
-            [{"text": "🔄 مزامنة جيت هاب (Git Sync)"}, {"text": "💬 محادثة وبحث الذكاء"}],
+            [{"text": "💬 محادثة وبحث الذكاء"}, {"text": "🔄 مزامنة جيت هاب (Git Sync)"}],
             [{"text": "📊 تقارير القنوات"}, {"text": "⏸ إيقاف / استئناف"}],
             [{"text": "👥 إدارة المستخدمين"}, {"text": "👤 حسابي والاشتراك"}],
             [{"text": "📱 ربط رقم هاتفي (تحقق)"}, {"text": "🧪 تجربة الصياغة الفورية"}]
@@ -1339,14 +1342,21 @@ class StandaloneTelegramEducationalBot:
         univs = db.get_university_projects()
         is_paused = db.get_setting("is_paused", "0") == "1"
         pause_btn_text = "▶️ استئناف النشر" if is_paused else "⏸ إيقاف مؤقت"
+        is_google_enabled = db.is_google_news_enabled()
+        google_btn_text = "🛑 إيقاف بحث جوجل" if is_google_enabled else "🟢 تفعيل بحث جوجل"
+
         buttons = [
             [
                 {"text": f"🏛️ الجامعات وقنواتها ({len(univs)})", "callback_data": "panel_universities"},
                 {"text": "➕ إضافة جامعة جديدة", "callback_data": "panel_add_university"}
             ],
             [
+                {"text": "🧠 تعليمات وتدريب البوت", "callback_data": "panel_instructions"},
+                {"text": "🐦 فحص حسابات تويتر المتصلة", "callback_data": "panel_crawl_twitter"}
+            ],
+            [
                 {"text": "🔄 فحص وسحب أخبار الجامعات", "callback_data": "panel_crawl"},
-                {"text": "🌐 بحث أخبار جوجل", "callback_data": "panel_gnews"}
+                {"text": google_btn_text, "callback_data": "panel_toggle_google_search"}
             ],
             [
                 {"text": "📝 صياغة ونشر خبر فوري", "callback_data": "panel_new_post"},
@@ -1774,6 +1784,14 @@ class StandaloneTelegramEducationalBot:
             
             active_system_prompt += f"\n\n🚨 المنشور موجه لطلاب: ({target_univ}). {dialect_instruction} التزم بالحقائق الواردة فقط ولا تخترع أي تفاصيل."
 
+            # استدعاء المعرفة المستفادة وهوية الجامعة المستخلصة بعد فحص المصادر
+            all_u = db.get_university_projects()
+            matched_u = next((u for u in all_u if u["name"] == target_univ or target_univ in u["name"]), None)
+            if matched_u:
+                k = db.get_university_knowledge(matched_u["id"])
+                if k and k.get("knowledge_summary"):
+                    active_system_prompt += f"\n\n🧠 الهوية الأكاديمية المستخلصة بعد فحص مصادر الجامعة وتخزينها:\n{k['knowledge_summary']}"
+
         instruction_addon = f"توجيهات إضافية من المشرف: {custom_instruction}\n\n" if custom_instruction else ""
         user_prompt = f"{instruction_addon}[توجيه سياقي ذكي: {ctx_guide}]\n\nالمحتوى المطلوب تحليله وصياغته:\n{clean_input}"
 
@@ -1859,63 +1877,8 @@ class StandaloneTelegramEducationalBot:
             except Exception:
                 continue
 
-        # صياغة بديلة إنسانية عفوية كزميل ناصح بحسب السياق في حال تعذر الذكاء
-        clean_lines = [l.strip() for l in clean_input.split("\n") if l.strip() and not l.startswith("@") and "t.me/" not in l]
-        text_lines = [l for l in clean_lines if not l.startswith("http://") and not l.startswith("https://") and l not in ["•", "-", "*", "📌", "🎓"]]
-        if not text_lines:
-            return None
-
-        # إذا كان دعاء أو جمعة
-        if is_prayer_or_motivational or ctx == "friday_prayer":
-            full_msg = "\n".join(text_lines[:6])
-            tag = f"#{target_univ.replace(' ', '_')}" if target_univ else "#مجتمع_الطلاب"
-            return f"🤍 {full_msg}\n\nاللهم صلّ وسلم على نبينا محمد.. وفالكم التوفيق والخير دائماً 🤲\n{tag}"
-
-        first_line = text_lines[0]
-        first_line = re.sub(r'^[•\-\*#📌📢✨🎓▫️🚨]\s*', '', first_line).strip()
-        title = first_line[:85] + "..." if len(first_line) > 90 else first_line
-
-        body_lines = [l for l in text_lines[1:10] if len(l) > 3]
-        clean_bullets = []
-        for bl in body_lines:
-            bl_text = re.sub(r'^[•\-\*▫️]\s*', '', bl).strip()
-            # إبراز التواريخ والأوقات بالخط العريض تلقائياً
-            bl_text = re.sub(r'(\d{1,2}[:/]\d{1,2}(?:[:/]\d{2,4})?|\d{1,4}/\d{1,2}/\d{1,4}|\b(?:الأحد|الإثنين|الثلاثاء|الأربعاء|الخميس|الجمعة|السبت)\b|\b(?:صباحاً|مساءً|م|ص)\b)', r'<b>\1</b>', bl_text)
-            clean_bullets.append(f"▫️ {bl_text}")
-        bullets = "\n".join(clean_bullets)
-
-        links_block = ""
-        if ext_links:
-            links_block = "\n\n🔗 <b>رابط البوابة الإلكترونية المعتمدة:</b>\n" + "\n".join(ext_links)
-
-        tag = f"#{target_univ.replace(' ', '_')}" if target_univ else "#شؤون_الطلاب"
-
-        if ctx == "registration":
-            header = f"تذكير بخصوص تسجيل المقررات - {target_univ} ⏰" if target_univ else "تذكير بخصوص تسجيل المقررات ⏰"
-            footer = "يا شباب ويا بنات.. كلموا أدفايزراتكم ورتبوا جداولكم قبل يقفل السستم، وفالكم التوفيق والتساهيل 🤲"
-        elif ctx == "summer_term":
-            header = f"بخصوص السمر (الفصل الصيفي) - {target_univ} ☀️📚" if target_univ else "بخصوص السمر (الفصل الصيفي) ☀️📚"
-            footer = "رتبوا جداولكم من بدري وشيكوا على الشعب، بالتوفيق للجميع 🤝"
-        elif ctx == "exams":
-            header = f"تذكير بموعد الاختبار - {target_univ} 📝" if target_univ else "تذكير بموعد الاختبار 📝"
-            footer = "توكلوا على الله ولا تنسون أذكاركم وأدعيتكم، وفالكم أعلى القريدات والدرجات 🤲✨"
-        elif ctx == "graduation":
-            header = f"ألف ألف مبروك التخرج يا فخرنا 🎓✨"
-            footer = "المتخرجين يثبتون وجودهم برياكشن قلب ❤️👇 وعقبال أعلى المناصب والوظائف"
-        elif ctx == "student_project":
-            header = "فزعتكم لزميلكم في استبيان التخرج 🤝"
-            footer = "تعبئة الرابط ما تاخذ دقيقة وبتفرجون كربته، جزاكم الله خير 🤍"
-        elif ctx == "charity_volunteering":
-            header = "فرصة عمل خير وتطوع لطلابنا 🌱"
-            footer = "ربي يكتب أجر الجميع ويسعدكم 🤲"
-        else:
-            header = f"تنويه هام: {title}"
-            footer = "دعواتنا لكم بالتوفيق والنجاح الدائم 🤲\nشاركوا التنبيه مع زملائكم الطلاب 🤝"
-
-        if bullets:
-            return f"📌 <b>{header}</b>\n\n{bullets}{links_block}\n\n{footer}\n\n{tag} #مواعيد"
-        else:
-            return f"📌 <b>{header}</b>{links_block}\n\n{footer}\n\n{tag}"
+        logger.info("🛡️ تعذر صياغة المنشور بالذكاء الاصطناعي المعتمد، تم استبعاد الخبر تماماً لحماية القناة من أي قوالب عشوائية أو غير دقيقة.")
+        return None
 
     def call_ai_for_comment(self, comment_text: str, original_post: str = "", target_univ: Optional[str] = None) -> Optional[str]:
         """توليد رد أكاديمي ذكي وفوري على تعليقات واستفسارات الطلاب تحت منشورات القناة بأقصى طاقة استيعابية"""
@@ -3756,6 +3719,216 @@ class StandaloneTelegramEducationalBot:
 • المصادر المراقبة: `{len(srcs)}`
 • قاعدة البيانات: `SQLite3 Persistent Engine`"""
         self.send_msg(chat_id, text)
+
+    def show_instructions_training_panel(self, chat_id: int):
+        """لوحة تعليمات وتدريب البوت المنفصلة تماماً عن المحادثة الفورية"""
+        custom_instructions = db.get_setting("custom_instructions", "")
+        all_knowledge = db.get_all_university_knowledge()
+        is_google_enabled = db.is_google_news_enabled()
+        google_badge = "🟢 بحث جوجل مفعّل" if is_google_enabled else "🔴 بحث جوجل معطّل (الاعتماد التام على تويتر)"
+
+        univ_k_texts = []
+        for k in all_knowledge:
+            univ_k_texts.append(f"• **{k['univ_name']}**: تم استخلاص الهوية وتخزينها ({k['updated_at'][:10]})")
+        knowledge_desc = "\n".join(univ_k_texts) if univ_k_texts else "⚠️ لم يتم بعد فحص وتعلّم المصادر (اضغط زر الفحص أدناه)"
+
+        text = f"""🧠 **لوحة تعليمات وتدريب البوت الأكاديمي المستقلة:**
+━━━━━━━━━━━━━━━━━━━━━━━━
+🎯 **حالة المحركات الحالية:**
+• محرك بحث تويتر والحسابات المتصلة: 🟢 نشط ومفضل
+• محرك بحث جوجل (Google News): {google_badge}
+
+📝 **التعليمات والقواعد السلوكية الحالية المسجلة:**
+────────────────────────
+{custom_instructions or '(لا توجد تعليمات مخصصة مسجلة حالياً - البوت يعمل بالهوية الأكاديمية الافتراضية)'}
+────────────────────────
+
+📚 **المعرفة والهوية المستفادة من مصادر الجامعات:**
+{knowledge_desc}
+━━━━━━━━━━━━━━━━━━━━━━━━
+👇 **اختر الإجراء المطلوب أو أرسل توجيهك وقواعدك كتابةً الآن (مثال: `لا تنشر أي خبر غير طلابي` أو `ركز على مواعيد القبول والتسجيل`):**"""
+
+        google_toggle_btn = "🛑 إيقاف البحث في جوجل" if is_google_enabled else "🟢 تفعيل البحث في جوجل"
+        kb = {
+            "inline_keyboard": [
+                [
+                    {"text": "➕ إضافة قاعدة / تعليمات جديدة", "callback_data": "train_add_rule"},
+                    {"text": "🔍 فحص المصادر وتعلّم هوية الجامعة", "callback_data": "train_learn_sources"}
+                ],
+                [
+                    {"text": google_toggle_btn, "callback_data": "panel_toggle_google_search"},
+                    {"text": "🐦 فحص وسحب حسابات تويتر المتصلة", "callback_data": "panel_crawl_twitter"}
+                ],
+                [
+                    {"text": "🧹 مسح وتصفير التعليمات", "callback_data": "train_reset_rules"},
+                    {"text": "🔙 اللوحة الرئيسية", "callback_data": "panel_start"}
+                ]
+            ]
+        }
+        self.send_msg(chat_id, text, kb)
+
+    def learn_university_identity_from_sources(self, univ_id: str, chat_id: Optional[int] = None) -> Optional[str]:
+        """فحص مصادر الجامعة وتعلّم هويتها الأكاديمية ونوعية المنشورات المطلوبة وتخزينها في قاعدة البيانات"""
+        univ = db.get_university_by_id(univ_id)
+        if not univ:
+            return None
+
+        univ_name = univ["name"]
+        if chat_id:
+            self.send_msg(chat_id, f"🔍 **جاري فحص مصادر {univ_name} (حسابات تويتر + قنوات تيليجرام) واستخلاص الهوية الأكاديمية وتخزينها...**")
+
+        sample_texts = []
+        for handle in univ.get("twitter_sources", []):
+            try:
+                tw = self.fetch_twitter_post_or_profile(handle)
+                if tw and tw.get("text"):
+                    sample_texts.append(f"تغريدة من @{handle}: {tw.get('text')}")
+                if tw and tw.get("bio"):
+                    sample_texts.append(f"نبذة حساب @{handle}: {tw.get('bio')}")
+            except Exception:
+                pass
+
+        for tg in univ.get("telegram_sources", []):
+            try:
+                ch_name = tg.replace("@", "").strip()
+                url = f"https://t.me/s/{ch_name}"
+                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
+                with urllib.request.urlopen(req, context=ssl_ctx, timeout=7) as r:
+                    html_raw = r.read().decode("utf-8", errors="ignore")
+                    matches = re.findall(r'class=[\'"][^\'"]*tgme_widget_message_text[^\'"]*[\'"][^>]*>(.*?)</div>', html_raw)
+                    for m in matches[-4:]:
+                        clean_m = re.sub(r'<[^>]+>', '', m).strip()
+                        if len(clean_m) > 15:
+                            sample_texts.append(f"منشور تيليجرام من {tg}: {clean_m}")
+            except Exception:
+                pass
+
+        if not sample_texts:
+            fallback_knowledge = f"الجامعة: {univ_name}. التركيز على: مواعيد تسجيل المقررات، جداول الاختبارات، شروط القبول، المكافأة الطلابية، والتخرج. مخاطبة الطلاب كزميل ناصح وممثل دفعة واستبعاد أي إعلانات فقدان أو وظائف إدارية وعمالية."
+            db.save_university_knowledge(univ_id, univ_name, fallback_knowledge, json.dumps(["تسجيل", "قبول", "اختبارات", "مكافأة"]))
+            if chat_id:
+                self.send_msg(chat_id, f"✅ **تم اعتماد وتخزين هوية {univ_name} بنجاح!**\n\n📌 **الهوية المعتمدة:**\n{fallback_knowledge}")
+            return fallback_knowledge
+
+        combined_samples = "\n---\n".join(sample_texts[:8])
+        learn_prompt = f"""أنت مستشار أكاديمي خبير في تحليل محتوى الجامعات وهويتها الطلابية.
+أمامك عينة من المنشورات والتغريدات الحقيقية المسحوبة من المصادر الرسمية لـ ({univ_name}):
+{combined_samples}
+
+المطلوب استخلاص وحفظ هوية أكاديمية واضحة ودقيقة في نقاط موجزة:
+1. المصطلحات والأسماء الرسمية المستخدمة في الجامعة (العمادات، البوابات، الكليات، نظام المقررات).
+2. نوعية الأخبار والمنشورات الهامة التي يجب أن يركز عليها البوت ويتميز بها (مواعيد التسجيل، جداول الفاينل، إيداع الإعانة/المكافأة، حفلات التخرج).
+3. المحتوى المحظور تجنبه (إعلانات الفقدان، التوظيف الإداري، المقالات التقنية العامة غير الطلابية، والتبرعات القديمة).
+4. الروح والأسلوب اللائق بممثل دفعة ناصح ومحب لطلاب هذه الجامعة."""
+
+        gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
+        learned_summary = ""
+        if gemini_key:
+            try:
+                g_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key={gemini_key}"
+                g_payload = {
+                    "contents": [{"parts": [{"text": learn_prompt}]}],
+                    "generationConfig": {"temperature": 0.2, "maxOutputTokens": 800}
+                }
+                g_req = urllib.request.Request(g_url, data=json.dumps(g_payload).encode("utf-8"), headers={"Content-Type": "application/json"})
+                with urllib.request.urlopen(g_req, context=ssl_ctx, timeout=12) as g_resp:
+                    g_data = json.loads(g_resp.read().decode("utf-8"))
+                    cands = g_data.get("candidates", [])
+                    if cands:
+                        parts = cands[0].get("content", {}).get("parts", [])
+                        if parts and "text" in parts[0]:
+                            learned_summary = parts[0]["text"].strip()
+            except Exception as e:
+                logger.warning(f"ملاحظة في تعلّم الهوية: {e}")
+
+        if not learned_summary:
+            learned_summary = f"الجامعة: {univ_name}. التركيز الحصري على: مواعيد تسجيل المقررات، جداول الاختبارات، القبول، المكافأة الطلابية، والتخرج. مخاطبة الطلاب بأسلوب ممثل الدفعة الناصح واستبعاد أي إعلانات فقدان أو توظيف عمالي."
+
+        db.save_university_knowledge(univ_id, univ_name, learned_summary, json.dumps(["تسجيل", "قبول", "اختبارات", "مكافأة", "تخرج"]), json.dumps(univ.get("twitter_sources", [])))
+        logger.info(f"✅ [Machine Learning] تم فحص مصادر {univ_name} وتخزين هويتها الأكاديمية بنجاح.")
+
+        if chat_id:
+            text_result = f"🎓 **تم بنجاح فحص المصادر وتعلّم هوية {univ_name} وتخزينها في قاعدة البيانات:**\n━━━━━━━━━━━━━━━━━━━━━━━━\n{learned_summary}\n━━━━━━━━━━━━━━━━━━━━━━━━\n💡 *تم حفظ هذه المعرفة الدائمة وسيتم تطبيقها في كافة المنشورات القادمة.*"
+            self.send_msg(chat_id, text_result)
+
+        return learned_summary
+
+    def learn_all_universities_identity_job(self, chat_id: Optional[int] = None):
+        univs = db.get_university_projects()
+        if not univs:
+            if chat_id:
+                self.send_msg(chat_id, "⚠️ لا توجد مشاريع جامعات مسجلة حالياً لفحص مصادرها.")
+            return
+
+        if chat_id:
+            self.send_msg(chat_id, f"🔍 **جاري فحص مصادر وتعلّم هوية ({len(univs)}) جامعة بدقة وتخزينها...**")
+
+        for u in univs:
+            self.learn_university_identity_from_sources(u["id"], chat_id)
+
+    def crawl_university_twitter_network(self, univ: Dict[str, Any], is_manual: bool = False):
+        """يبحث في حسابات تويتر/X المتصلة بالجامعة وينشر تغريداتها وصورها بالذكاء بدلاً من جوجل"""
+        tw_sources = univ.get("twitter_sources", [])
+        if not tw_sources:
+            return
+        
+        target_ch = univ.get("target_channel") or "@jhdhhdcj"
+        univ_name = univ.get("name")
+
+        logger.info(f"🐦 [Twitter Network] فحص ({len(tw_sources)}) حسابات تويتر متصلة بـ {univ_name}...")
+        for handle_raw in tw_sources:
+            handle = handle_raw.replace("https://x.com/", "").replace("https://twitter.com/", "").lstrip("@").split("/")[0].strip()
+            if not handle:
+                continue
+
+            try:
+                tw = self.fetch_twitter_post_or_profile(handle)
+                if not tw or not tw.get("text") or len(tw.get("text", "").strip()) < 10:
+                    continue
+
+                tweet_text = tw.get("text", "").strip()
+                tweet_id = str(tw.get("tweet_id") or hashlib.md5(tweet_text[:80].encode("utf-8")).hexdigest())
+
+                # فحص الفلترة للشأن الطلابي الحقيقي
+                is_rel, rel_reason = is_relevant_student_news(tweet_text, univ_name)
+                if not is_rel:
+                    logger.info(f"🛡️ [فلترة تويتر] استبعاد تغريدة غير طلابية من @{handle} ({rel_reason}): {tweet_text[:40]}")
+                    continue
+
+                p_hash = hashlib.md5((tweet_text[:80] + tweet_id).encode("utf-8")).hexdigest()
+                if db.is_post_seen(tweet_id, p_hash):
+                    continue
+
+                db.mark_post_seen(tweet_id, p_hash, f"tw_{handle}")
+
+                photos = tw.get("photos", [])
+                photo_url = photos[0] if photos else None
+                videos = tw.get("videos", [])
+                video_url = videos[0] if videos else None
+                media_group = [{"type": "photo", "media": u} for u in photos] if len(photos) > 1 else None
+
+                logger.info(f"⚡️ [Twitter Network] التقاط تغريدة طلابية مميزة من @{handle} موجهة إلى {target_ch} ({univ_name})")
+                post_queue.put({
+                    "type": "twitter_post",
+                    "text": tweet_text,
+                    "photo": photo_url,
+                    "video": video_url,
+                    "media_group": media_group,
+                    "media_type": "video" if video_url else ("photo" if photo_url else "text"),
+                    "targets": [target_ch],
+                    "target_univ": univ_name,
+                    "user_id": None
+                })
+            except Exception as e:
+                logger.debug(f"خطأ في سحب حساب تويتر @{handle}: {e}")
+
+    def crawl_all_university_twitter_job(self, chat_id: Optional[int] = None):
+        univs = db.get_university_projects()
+        if chat_id:
+            self.send_msg(chat_id, f"🐦 **جاري فحص وسحب التغريدات من حسابات تويتر المتصلة بـ ({len(univs)}) جامعة...**")
+        for u in univs:
+            if u.get("enabled"):
+                self.crawl_university_twitter_network(u, is_manual=True)
 
     def process_add_source(self, chat_id: int, input_text: str):
         target = input_text.strip()

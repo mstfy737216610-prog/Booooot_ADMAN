@@ -157,15 +157,27 @@ def init_db():
                 telegram_sources TEXT DEFAULT '[]',
                 twitter_sources TEXT DEFAULT '[]',
                 google_news_query TEXT,
-                google_news_enabled INTEGER DEFAULT 1,
+                google_news_enabled INTEGER DEFAULT 0,
                 keywords TEXT DEFAULT '[]',
                 enabled INTEGER DEFAULT 1,
                 created_at TEXT
             )
             """)
 
+            # 9. جدول المعرفة المستفادة وهوية الجامعات المستخلصة من المصادر (Learned Knowledge Base)
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS university_knowledge (
+                univ_id TEXT PRIMARY KEY,
+                univ_name TEXT NOT NULL,
+                knowledge_summary TEXT NOT NULL,
+                learned_topics TEXT DEFAULT '[]',
+                learned_accounts TEXT DEFAULT '[]',
+                updated_at TEXT
+            )
+            """)
+
             conn.commit()
-            logger.info("✅ تم تهيئة جداول قاعدة البيانات SQLite بنجاح.")
+            logger.info("✅ تم تهيئة جداول قاعدة البيانات SQLite بنجاح بما فيها جدول المعرفة المستفادة.")
 
             # هجرة البيانات من ملفات JSON إن وجدت وقاعدة البيانات جديدة
             migrate_from_json(conn)
@@ -988,6 +1000,84 @@ def toggle_university_status(univ_id: str) -> Optional[bool]:
             return bool(new_state)
         finally:
             conn.close()
+
+
+# ----------------- إدارة المعرفة المستفادة من المصادر وهوية الجامعات -----------------
+
+def save_university_knowledge(univ_id: str, univ_name: str, knowledge_summary: str, learned_topics: str = "[]", learned_accounts: str = "[]") -> bool:
+    """حفظ المعرفة المستفادة وهوية الجامعة المستخلصة بعد فحص مصادرها في قاعدة البيانات الدائمة"""
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            now_str = datetime.utcnow().isoformat()
+            cursor.execute("""
+                INSERT OR REPLACE INTO university_knowledge
+                (univ_id, univ_name, knowledge_summary, learned_topics, learned_accounts, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (univ_id, univ_name, knowledge_summary, learned_topics, learned_accounts, now_str))
+            conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"خطأ حفظ المعرفة المستفادة لـ {univ_name}: {e}")
+            return False
+        finally:
+            conn.close()
+
+
+def get_university_knowledge(univ_id: str) -> Optional[Dict[str, Any]]:
+    """استرجاع المعرفة المستفادة وهوية جامعة محددة"""
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM university_knowledge WHERE univ_id = ?", (univ_id,))
+            r = cursor.fetchone()
+            return dict(r) if r else None
+        finally:
+            conn.close()
+
+
+def get_all_university_knowledge() -> List[Dict[str, Any]]:
+    """استرجاع كافة المعارف المستفادة للجامعات"""
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM university_knowledge ORDER BY updated_at DESC")
+            return [dict(r) for r in cursor.fetchall()]
+        finally:
+            conn.close()
+
+
+# ----------------- التحكم في محرك بحث جوجل (Google News Engine Toggle) -----------------
+
+def is_google_news_enabled() -> bool:
+    """التحقق هل البحث في أخبار جوجل مفعل أم موقف تماماً بطلب المشرف"""
+    return get_setting("google_news_enabled", "0") == "1"
+
+
+def set_google_news_enabled(enabled: bool):
+    """إيقاف أو تفعيل البحث في أخبار جوجل بالكامل"""
+    val = "1" if enabled else "0"
+    set_setting("google_news_enabled", val)
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("UPDATE university_projects SET google_news_enabled = ?", (1 if enabled else 0,))
+            conn.commit()
+            sync_to_json_files()
+        finally:
+            conn.close()
+
+
+def toggle_google_news_enabled() -> bool:
+    """تبديل حالة بحث جوجل (إيقاف / تشغيل) وإرجاع الحالة الجديدة"""
+    current = is_google_news_enabled()
+    new_state = not current
+    set_google_news_enabled(new_state)
+    return new_state
 
 
 def find_university_for_post(source: str, text: str = "") -> Optional[Dict[str, Any]]:
