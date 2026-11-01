@@ -33,6 +33,7 @@ import urllib.error
 import xml.etree.ElementTree as ET
 import html
 from datetime import datetime, timedelta
+import email.utils
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from typing import Dict, Any, Optional, List, Tuple
 
@@ -189,6 +190,35 @@ IRRELEVANT_POLITICAL_KEYWORDS = [
     "انفجار سيارة", "حريق مروع في", "مقتل شخص وإصابة", "أرباح شركة تسلا", "أرباح إنفيديا"
 ]
 
+# حظر إعلانات الفقدان الشخصية، والوظائف الإدارية والعمالية، والعلاقات العامة والتبرعات، ونصوص أشرطة المواقع
+IRRELEVANT_CLASSIFIEDS_KEYWORDS = [
+    # 1. إعلانات الفقدان للوثائق والشهادات والبطاقات الشخصية
+    "إعلان فقدان", "فقدان وثيقة", "فقدان شهادة", "فقدان بطاقة", "فقدت وثيقة",
+    "شهادة البكالوريوس للمواطن", "شهادة البكالوريوس للمواطنة", "فقدان رخصة",
+    "فقدان شيك", "إعلان عن فقدان", "فقدان وثيقة تخرج", "فقدان شهادة تخرج",
+    "يرجى ممن يجدها تسليمها", "إخلاء مسؤولية عن فقدان", "فقدان كشف درجات",
+    "فقدان وثيقة تخرج أصلية", "وثيقة تخرج أصلية للمواطن", "وثيقة تخرج أصلية للمواطنة",
+
+    # 2. إعلانات التوظيف الإداري والعمالي ومنصات مسار وجدارات والمسابقات الحكومية
+    "وظائف شاغرة", "وظائف خالية", "منصة مسار", "منصة جدارات", "مسار للتوظيف",
+    "شغل وظائف", "وظائف إدارية", "وظائف صحية", "أعضاء هيئة التدريس", "توظيف الكوادر",
+    "طرح وظائف", "وظيفة شاغرة", "التعاقد مع معلمين", "وظائف حراس أمن", "سائقين",
+    "طرح وظائف إدارية", "وظائف أعضاء هيئة تدريس", "المسابقة الوظيفية",
+
+    # 3. التبرعات الحكومية والعلاقات العامة والتصنيفات الدعائية العامة القديمة
+    "صندوق الاستجابة الطارئة", "تساهم بمليون", "مساهمة بمليون", "مليوني دينار",
+    "Circle of Influence", "نخبة الأعضاء المؤثرين", "تصنيف QS", "تصنيف شنغهاي",
+    "قفزت مركزاً", "تقفز مركزاً", "مراتب التصنيف العالمي", "قائمة فوربس",
+
+    # 4. قوالب وتفاصيل مواقع الويب والنافيجيشن المسحوب خطأ
+    "Orientation Page", "Banner Links", "My AUM Portal", "Virtual Tour",
+    "Learning Excellence", "Cultural Center Library", "رئيسية الصحيفة",
+    "Home -", "الصفحة الرئيسية", "3 characters minimum", "All rights reserved",
+    "Student Links", "Career Center", "Campus Life News and Events",
+    "An Oasis of Learning", "A campus that stretches over", "AACSB Assurance of Learning",
+    "Navigate to", "Cookie Policy", "Terms of Use"
+]
+
 STUDENT_AFFINITY_KEYWORDS = [
     "طالب", "طلبة", "طالبات", "جامع", "كلي", "دراس", "محاضر", "اختبار", "امتحان",
     "فاينل", "كويز", "سكشن", "شعب", "تسجيل", "قبول", "معدل", "تخرج", "أدفايزر",
@@ -197,28 +227,47 @@ STUDENT_AFFINITY_KEYWORDS = [
     "منشور", "تغريد", "حساب", "aum", "ksu", "hct", "kuwait", "كويت", "وظيفتي", "معرض", "ريادة"
 ]
 
+POSITIVE_ACADEMIC_KEYWORDS = [
+    "تسجيل", "قبول", "مقرر", "مقررات", "شعب", "شعبة", "سكشن", "سكاشن", "اختبار",
+    "اختبارات", "فاينل", "ميدتيرم", "كويز", "درجات", "معدل", "مرشد", "أدفايزر",
+    "مكافأة", "إعانة", "تخرج", "حفل تخرج", "صيفي", "سمر", "تقويم جامعي",
+    "تقويم أكاديمي", "طالب", "طلبة", "طالبات", "محاضرة", "محاضرات", "جدول", "جداول",
+    "عمادة القبول", "شؤون الطلاب", "شؤون الطلبة", "استبيان", "بحث تخرج", "مشروع تخرج",
+    "دوام", "إجازة", "تعليق الدراسة", "عن بعد", "حذف وإضافة", "سحب وإضافة", "اللهم صل",
+    "سورة الكهف", "جمعة مباركة", "بالتوفيق", "دعواتنا", "وظيفتي", "معرض الفرص"
+]
+
 
 def is_relevant_student_news(text: str, target_univ: Optional[str] = None) -> Tuple[bool, str]:
     """
-    فحص صارم لعزل وحظر أي أخبار سياسية أو اقتصادية أو حشو إعلامي عام
-    وضمان أن المنشور موجه حصراً للشأن الطلابي والأكاديمي والجامعي
+    فحص صارم لعزل وحظر:
+    1. إعلانات الفقدان (وثائق وشهادات التخرج الشخصية)
+    2. إعلانات التوظيف الإداري والوظائف الحكومية والمسابقات
+    3. الأخبار السياسية والاقتصادية العامة والتبرعات القديمة
+    4. نصوص قوائم المواقع والـ Navigation والـ Boilerplate
+    وضمان أن المنشور موجه حصراً ومباشرة للحياة الأكاديمية والطلابية الحقيقية
     """
     if not text or len(text.strip()) < 5:
         return False, "نص فارغ"
 
-    # 1. إذا كان المنشور يحمل كلمات سياسية أو اقتصادية عامة
+    lower_text = text.lower()
+
+    # 1. حظر إعلانات الفقدان والوظائف الإدارية والنافيجيشن والتبرعات المؤسسية
+    for kw in IRRELEVANT_CLASSIFIEDS_KEYWORDS:
+        if kw.lower() in lower_text:
+            return False, f"إعلان فقدان / توظيف إداري / محتوى مؤسسي غير طلابي ({kw})"
+
+    # 2. إذا كان المنشور يحمل كلمات سياسية أو اقتصادية عامة
     for kw in IRRELEVANT_POLITICAL_KEYWORDS:
-        if kw in text:
-            # نتأكد أنه لا يتحدث عن قسم أكاديمي ككلية العلوم السياسية أو الاقتصاد
-            has_student_context = any(sk in text for sk in ["كلية", "قسم", "طالب", "طلبة", "اختبار", "تسجيل", "محاضرة"])
+        if kw.lower() in lower_text:
+            has_student_context = any(sk in lower_text for sk in ["كلية", "قسم", "طالب", "طلبة", "اختبار", "تسجيل", "محاضرة"])
             if not has_student_context:
                 return False, f"خبر سياسي/اقتصادي عام ({kw})"
 
-    # 2. فحص إذا كان المحتوى طويلاً ولا يحمل أي صلة بالحياة الطلابية
-    if len(text) > 80:
-        has_affinity = any(sk in text for sk in STUDENT_AFFINITY_KEYWORDS)
-        if not has_affinity and not target_univ:
-            return False, "محتوى خارجي غير مرتبط بالحياة الطلابية والجامعية"
+    # 3. فحص إلزامي: هل يحتوي الخبر على موضوع أكاديمي أو طلابي حقيقي؟
+    has_pos_academic = any(pk in lower_text for pk in POSITIVE_ACADEMIC_KEYWORDS)
+    if not has_pos_academic:
+        return False, "الخبر لا يمس الشأن الأكاديمي أو الطلابي المباشر"
 
     return True, "محتوى طلابي معتمد"
 
@@ -319,7 +368,7 @@ OFFICIAL_UNIVERSITY_PORTALS = {
 def clean_and_resolve_url(raw_url: str, target_univ_name: Optional[str] = None) -> str:
     """
     تنظيف واختصار الروابط ومصادر النشر:
-    1. فك روابط Google News RSS واستخراج الرابط الأصلي أو توفير بوابة الجامعة الرسمية.
+    1. فك روابط Google News RSS واستخراج الرابط الأصلي المباشر فقط (بدون تحويلها لبوابات رئيسية تؤدي لسحب القوائم).
     2. حذف كافة بارامترات التعقب والتجسس (UTM parameters, oc, ved, gclid, etc.).
     3. إعادة رابط مختصر وأنيق وموثوق.
     """
@@ -348,12 +397,8 @@ def clean_and_resolve_url(raw_url: str, target_univ_name: Optional[str] = None) 
             except Exception:
                 pass
 
-        # إذا تعذر فك الرابط وبقي خاماً من جوجل نيوز، نستبدله ببوابة الجامعة الرسمية
+        # إذا تعذر فك الرابط وبقي خاماً من جوجل نيوز، لا نستبدله بالصفحة الرئيسية للموقع لمنع سحب قوائم النافبار
         if "news.google.com" in clean_u or "google.com" in clean_u:
-            if target_univ_name:
-                for k, v in OFFICIAL_UNIVERSITY_PORTALS.items():
-                    if k.lower() in target_univ_name.lower():
-                        return v
             return ""
 
     # 2. تنظيف بارامترات التعقب (UTM parameters & trackers)
@@ -389,47 +434,6 @@ class StandaloneTelegramEducationalBot:
         self.telethon_client: Optional[Any] = None
         self.telethon_loop: Optional[asyncio.AbstractEventLoop] = None
         self.running = True
-
-    def extract_web_article(self, url: str) -> str:
-        """سحب محتوى المقال الكامل من الرابط المصدر وتحليل النص الحقيقي بدقة (Smart Scraper)"""
-        if not url or not url.startswith("http"):
-            return ""
-        try:
-            req = urllib.request.Request(url, headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
-            })
-            with urllib.request.urlopen(req, context=ssl_ctx, timeout=12) as resp:
-                raw_html = resp.read().decode("utf-8", errors="ignore")
-                
-                # استخراج النصوص الجوهرية فقط وتجاهل ضجيج الجافاسكريبت والستايلات
-                content_parts = []
-                # 1. استخراج عنوان الصفحة
-                title_m = re.search(r'<title>(.*?)</title>', raw_html, re.IGNORECASE | re.DOTALL)
-                if title_m:
-                    content_parts.append(f"العنوان الأساسي: {html.unescape(title_m.group(1).strip())}")
-                
-                # 2. استخراج الفقرات (p)
-                paragraphs = re.findall(r'<p[^>]*>(.*?)</p>', raw_html, re.IGNORECASE | re.DOTALL)
-                for p in paragraphs:
-                    p_clean = re.sub(r'<[^>]+>', '', p).strip()
-                    if len(p_clean) > 40: # تجاهل الروابط القصيرة أو النصوص غير المفيدة
-                        content_parts.append(html.unescape(p_clean))
-                
-                # 3. استخراج العناوين (h1, h2, h3)
-                headers = re.findall(r'<h[1-3][^>]*>(.*?)</h[1-3]>', raw_html, re.IGNORECASE | re.DOTALL)
-                for h in headers:
-                    h_clean = re.sub(r'<[^>]+>', '', h).strip()
-                    if len(h_clean) > 10:
-                        content_parts.append(f"قسم: {html.unescape(h_clean)}")
-                
-                full_text = "\n".join(content_parts)
-                # حذف الفراغات الزائدة والأسطر الفارغة المتكررة
-                full_text = re.sub(r'\n+', '\n', full_text).strip()
-                return full_text[:10000] # سقف لضمان استقرار المعالجة
-        except Exception as e:
-            logger.debug(f"⚠️ فشل محرك السحب الذكي للرابط {url}: {e}")
-            return ""
 
 
     def get_current_token(self) -> str:
@@ -1404,10 +1408,17 @@ class StandaloneTelegramEducationalBot:
         return valid
 
     def extract_web_article(self, url: str) -> Tuple[str, Optional[str]]:
-        """سحب وقراءة المقال أو محتوى الصفحة من الرابط المباشر مع استخراج الصورة المرفقة الحقيقية"""
+        """سحب وقراءة المقال أو محتوى الصفحة من الرابط المباشر مع استخراج الصورة المرفقة الحقيقية واستبعاد الصفحات الرئيسية"""
         if not url or not url.startswith("http"):
             return "", None
         try:
+            parsed = urllib.parse.urlparse(url)
+            clean_path = parsed.path.rstrip("/")
+            # حظر سحب الصفحات الرئيسية وبوابات الدخول لتفادي سحب أشرطة التنقل والمينو
+            if clean_path in ["", "/ar", "/en", "/home", "/index.html", "/index.php", "/ar/home", "/en/home", "/portal"]:
+                logger.info(f"🛡️ [Web Scraper] تم استبعاد الصفحة الرئيسية للموقع لتفادي سحب المينو: {url}")
+                return "", None
+
             req = urllib.request.Request(url, headers={
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
             })
@@ -1425,7 +1436,6 @@ class StandaloneTelegramEducationalBot:
                     img_url = self.clean_media_url(urllib.parse.urljoin(url, raw_img), base_url=url)
 
                 if not img_url:
-                    # البحث داخل نص المقال عن صورة حقيقية
                     article_imgs = re.findall(r'<img[^>]+src=[\'"]([^\'"]+)[\'"]', html_raw, re.I)
                     for aim in article_imgs:
                         aim_clean = aim.strip()
@@ -1442,8 +1452,19 @@ class StandaloneTelegramEducationalBot:
                 title_m = re.search(r'<title[^>]*>(.*?)</title>', clean_html, re.IGNORECASE)
                 title = title_m.group(1).strip() if title_m else ""
 
+                # استبعاد الصفحات التي عنوانها مجرد صفحة رئيسية أو بوابة ترحيب
+                if any(h in title.lower() for h in ["home -", "صفحة رئيسية", "الصفحة الرئيسية", "homepage", "welcome to", "american university of the middle east (aum)"]):
+                    logger.info(f"🛡️ [Web Scraper] تم استبعاد صفحة رئيسية: {title}")
+                    return "", None
+
                 text = re.sub(r'<[^>]+>', ' ', clean_html)
                 text = re.sub(r'\s+', ' ', text).strip()
+
+                # استبعاد إذا كان النص عبارة عن مينو وأشرطة تنقل
+                if any(nav in text for nav in ["Orientation Page", "Banner Links", "Cultural Center Library", "Student Links", "Relations AUM Insights"]):
+                    logger.info("🛡️ [Web Scraper] تم استبعاد النص لأنه شريط تنقل ومينو موقع.")
+                    return "", None
+
                 if title:
                     return f"عنوان المقال: {title}\nالمحتوى: {text[:2200]}", img_url
                 return text[:2200], img_url
@@ -2032,20 +2053,17 @@ class StandaloneTelegramEducationalBot:
                 first_line = (raw_text.split("\n")[0] if raw_text else "")[:90]
                 is_dup, past_story, score, reason = db.check_smart_duplicate(first_line, raw_text, target_univ=target_univ_name, hours=24)
 
-                if is_dup and reason == "identical":
-                    logger.info(f"🛡️ [منع التكرار الذكي] تم تخطي المنشور (تطابق {score*100:.1f}%) لوجود خبر مماثل نُشر خلال الـ 24 ساعة الماضية: {first_line[:40]}")
+                if is_dup:
+                    logger.info(f"🛡️ [منع التكرار الذكي] تم تخطي المنشور ({reason} تطابق {score*100:.1f}%) لوجود خبر مماثل نُشر خلال الـ 24 ساعة الماضية: {first_line[:40]}")
                     post_queue.task_done()
                     continue
 
-                # 4. تفعيل محرك السحب الذكي (Smart Scraper) للروابط المكتشفة
+                # 4. تفعيل محرك السحب الذكي (Smart Scraper) للروابط المكتشفة لاستخراج الصور الحقيقية فقط
                 ext_links = self.extract_external_links(raw_text, target_univ_name)
-                web_context = ""
                 if ext_links:
-                    logger.info(f"🌐 [Smart Scraper] جاري سحب محتوى الرابط المصدر: {ext_links[0]}...")
+                    logger.info(f"🌐 [Smart Scraper] جاري فحص الرابط المصدر: {ext_links[0]}...")
                     web_context, web_img = self.extract_web_article(ext_links[0])
-                    if web_context:
-                        raw_text = f"المحتوى المسحوب من الموقع:\n{web_context}\n\nنص الخبر الأصلي:\n{raw_text}"
-                        logger.info(f"✅ تم دمج {len(web_context)} حرف من محتوى الموقع لزيادة دقة التحليل.")
+                    # ملاحظة جوهرية: لا نقوم بحشو محتوى الموقع في raw_text لتفادي تسريب أشرطة التنقل والمينو
                     if web_img and not photo and not video and not media_group:
                         photo = web_img
                         has_media_item = True
@@ -2053,28 +2071,15 @@ class StandaloneTelegramEducationalBot:
 
                 custom_instructions = db.get_setting("custom_instructions", "")
 
-                # 4. دمج الأخبار المماثلة بالذكاء الاصطناعي (AI News Synthesis / Multi-Source Merging)
-                if is_dup and reason == "similar_topic" and past_story:
-                    logger.info(f"🔄 [الدمج الذكي بالذكاء الاصطناعي] تم رصد تفاصيل جديدة لنفس الفعالية المنشورة خلال 24 ساعة (تشابه {score*100:.1f}%). دمج المحتوى في منشور واحد شامل...")
-                    merged_text = self.call_ai_merge_stories(past_story.get("clean_text", ""), raw_text, target_univ=target_univ_name)
-                    rephrased = merged_text if merged_text else self.call_ai(raw_text, custom_instructions, target_univ=target_univ_name)
-                else:
-                    rephrased = self.call_ai(raw_text, custom_instructions, target_univ=target_univ_name)
+                # صياغة الخبر بالذكاء الاصطناعي حصراً وفق سياق ونبرة ممثل الدفعة الناصح
+                rephrased = self.call_ai(raw_text, custom_instructions, target_univ=target_univ_name)
 
-                # إذا تعذر الـ AI أو كان المنشور عبارة عن صورة/جدول بمفرده، نصيغ كابشن أخوي عفوي ولا نسقط الوسائط إطلاقاً
+                # إذا قرر الذكاء الاصطناعي أو مصفاة الشأن الطلابي استبعاد الخبر (منتهي الصلاحية، إعلان، أو غير طلابي)
+                # نسقط المنشور فوراً وبشكل نهائي ولا ننشر قوالب عشوائية تالفة
                 if not rephrased:
-
-                    if has_media_item or (raw_text and len(raw_text.strip()) > 3):
-                        clean_t = self.clean_text_from_sources(raw_text).strip()
-                        univ_tag = f"#{target_univ_name.replace(' ', '_')}" if target_univ_name else "#شؤون_الطلاب"
-                        if clean_t:
-                            rephrased = f"{clean_t}\n\nفالكم التوفيق والتساهيل يا ربعنا 🤲\n\n{univ_tag}"
-                        else:
-                            rephrased = f"📌 <b>مرفق أعلاه الجدول والتفاصيل المعتمدة كاملة لطلاب {target_univ_name or 'الجامعة'}</b>، يرجى مراجعته بدقة.\n\nدعواتنا لكم بالتوفيق دائماً 🤲\n\n{univ_tag}"
-                    else:
-                        logger.info(f"🛡️ تم تخطي منشور فارغ بدون أي نص أو وسائط.")
-                        post_queue.task_done()
-                        continue
+                    logger.info(f"🛡️ تم استبعاد المنشور من النشر لأن الذكاء الاصطناعي أو مصفاة الشأن الطلابي قررت عدم نشره: {first_line[:40]}")
+                    post_queue.task_done()
+                    continue
 
                 # 4. النشر في القنوات المستهدفة المخصصة واستخراج الروابط الرسمية النظيفة
                 curr_tok = self.get_current_token()
@@ -2636,66 +2641,8 @@ class StandaloneTelegramEducationalBot:
                                     "user_id": None
                                 })
                                 return
-        except Exception:
-            pass
-
-        # الاستراتيجية 2: استعلام الأخبار الرسمية وإعلانات الحساب عبر محرك الأخبار الذكي
-        try:
-            q = urllib.parse.quote(f'"{handle}" OR "{univ_name}" ("تويتر" OR "أعلنت" OR "مواعيد" OR "قبول" OR "تسجيل" OR "حساب")')
-            url = f"https://news.google.com/rss/search?q={q}&hl=ar&gl=SA&ceid=SA:ar"
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
-            with urllib.request.urlopen(req, context=ssl_ctx, timeout=12) as resp:
-                root = ET.fromstring(resp.read())
-                items = root.findall(".//item")
-                if not items:
-                    return
-
-                for it in items[:6]:
-                    t = it.findtext("title") or ""
-                    l = it.findtext("link") or ""
-                    d = it.findtext("description") or ""
-
-                    clean_title = re.sub(r'\s*-\s*[^-]+$', '', t).strip()
-                    clean_desc = re.sub(r'<[^>]+>', '', d).strip()
-                    full_text = f"{clean_title}\n{clean_desc}".strip()
-                    photo_url = self.extract_image_from_xml_item(it, d)
-
-                    # استبعاد الإعلانات التجارية والممولة والخدمات المدفوعة فقط
-                    if any(kw in full_text for kw in AD_KEYWORDS):
-                        logger.info(f"🛡️ استبعاد إعلان منافس/خدمات طلابية من أخبار تويتر: {clean_title[:40]}")
-                        continue
-
-                    # فلترة الشأن الطلابي والجامعي الحقيقي (استبعاد السياسة والاقتصاد العام)
-                    is_rel, rel_reason = is_relevant_student_news(full_text, univ_name)
-                    if not is_rel:
-                        logger.info(f"🛡️ [فلترة تويتر] تم استبعاد خبر غير طلابي ({rel_reason}): {clean_title[:40]}")
-                        continue
-
-                    # منع التكرار الصارم
-                    norm_t = re.sub(r'[^\w\s]', '', clean_title)
-                    norm_t = re.sub(r'\s+', ' ', norm_t).strip().lower()
-                    story_hash = f"tw_{hashlib.sha256(norm_t.encode('utf-8')).hexdigest()[:24]}"
-
-                    if db.is_post_seen(story_hash, story_hash):
-                        continue
-
-                    db.mark_post_seen(story_hash, story_hash, src.get("target"))
-                    db.update_source_last_id(src.get("target"), story_hash)
-
-                    logger.info(f"⚡️ [Twitter/X News] خبر جديد لـ @{handle} ({univ_name}) موجه إلى {target_ch} (صورة: {'نعم' if photo_url else 'لا'})")
-                    post_queue.put({
-                        "type": "twitter_post",
-                        "text": f"{full_text}\n\n{l}",
-                        "photo": photo_url,
-                        "targets": [target_ch],
-                        "target_univ": univ_name,
-                        "user_id": None
-                    })
-
-                    if not is_manual:
-                        break
         except Exception as e:
-            logger.debug(f"خطأ في سحب تويتر/X للحساب {handle}: {e}")
+            logger.debug(f"Twitter mirror scrape note for @{handle}: {e}")
 
     def check_rss_feed(self, src: Dict[str, Any], is_manual: bool = False):
         """يسحب الأخبار من روابط RSS مع استخراج الصور المرفقة الحقيقية"""
@@ -2779,7 +2726,9 @@ class StandaloneTelegramEducationalBot:
 
             try:
                 clean_q = re.sub(r'[\'"]', '', q).strip()
-                encoded_q = urllib.parse.quote(clean_q)
+                # حصر البحث في الشؤون الأكاديمية والطلابية فقط للجامعة
+                academic_q = f'"{clean_q}" ("مواعيد التسجيل" OR "جداول الاختبارات" OR "القبول والتسجيل" OR "التقويم الأكاديمي" OR "مكافأة الطلبة" OR "حفل التخرج")'
+                encoded_q = urllib.parse.quote(academic_q)
                 url = f"https://news.google.com/rss/search?q={encoded_q}&hl=ar&gl=SA&ceid=SA:ar"
                 req = urllib.request.Request(url, headers={
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
@@ -2790,8 +2739,18 @@ class StandaloneTelegramEducationalBot:
                     if not items:
                         continue
 
-                    # فحص أحدث 5 أخبار
+                    # فحص أحدث 5 أخبار مع فحص تاريخ النشر خلال آخر 48 ساعة فقط
                     for it in items[:5]:
+                        pub_str = it.findtext("pubDate") or ""
+                        if pub_str:
+                            try:
+                                pub_dt = email.utils.parsedate_to_datetime(pub_str)
+                                # إذا كان الخبر أقدم من 48 ساعة نتخطاه فوراً لمنع استدعاء أخبار وتبرعات قديمة
+                                if datetime.now(pub_dt.tzinfo) - pub_dt > timedelta(hours=48):
+                                    continue
+                            except Exception:
+                                pass
+
                         title = it.findtext("title") or ""
                         link = it.findtext("link") or ""
                         desc = it.findtext("description") or ""
@@ -3134,7 +3093,16 @@ class StandaloneTelegramEducationalBot:
             if msg["forward_origin"].get("type") == "channel":
                 fwd_chat = msg["forward_origin"].get("chat")
 
-        if fwd_chat or msg.get("forward_date"):
+        # 3. النشر المباشر عند توجيه منشور من قناة رسمية بواسطة المشرف حصراً
+        fwd_chat = msg.get("forward_from_chat")
+        if not fwd_chat and "forward_origin" in msg and isinstance(msg["forward_origin"], dict):
+            if msg["forward_origin"].get("type") == "channel":
+                fwd_chat = msg["forward_origin"].get("chat")
+
+        is_admin_user = self.is_admin(chat_id)
+        is_official_channel_fwd = bool(fwd_chat and isinstance(fwd_chat, dict) and fwd_chat.get("type") == "channel")
+
+        if is_admin_user and is_official_channel_fwd:
             clean_fwd_text = text.strip()
             univs = db.get_university_projects()
             target_univ = None
@@ -3181,7 +3149,7 @@ class StandaloneTelegramEducationalBot:
                 "user_id": None
             })
             media_desc = "فيديو" if video_id else ("صورة" if photo_id else ("مستند" if document_id else "نص"))
-            logger.info(f"⚡ [نشر مباشر صامت] تم استلام منشور موجه ({media_desc}) وإرساله حصراً للقناة: {target_channels[0]} (الجامعة: {target_univ or 'عامة'})")
+            logger.info(f"⚡ [نشر مباشر صامت للمشرف] تم استلام منشور موجه ({media_desc}) وإرساله حصراً للقناة: {target_channels[0]} (الجامعة: {target_univ or 'عامة'})")
             return
 
         clean_text = text.strip()
@@ -4063,10 +4031,12 @@ class StandaloneTelegramEducationalBot:
         self.send_msg(chat_id, text, {"inline_keyboard": buttons})
 
     def check_google_news_single_university(self, target_univ: Dict[str, Any], is_manual: bool = False):
-        """فحص وسحب أخبار جوجل لجامعة محددة حصراً وتوجيهها لقناتها الهدف"""
+        """فحص وسحب أخبار جوجل لجامعة محددة حصراً وتوجيهها لقناتها الهدف مع فلترة الشأن الطلابي والتواريخ"""
         try:
             q_str = target_univ.get("google_news_query") or target_univ["name"]
-            encoded_q = urllib.parse.quote(q_str)
+            clean_q = re.sub(r'[\'"]', '', q_str).strip()
+            academic_q = f'"{clean_q}" ("مواعيد التسجيل" OR "جداول الاختبارات" OR "القبول والتسجيل" OR "التقويم الأكاديمي" OR "مكافأة الطلبة" OR "حفل التخرج")'
+            encoded_q = urllib.parse.quote(academic_q)
             target_ch = target_univ["target_channel"]
 
             urls = [
@@ -4081,6 +4051,16 @@ class StandaloneTelegramEducationalBot:
                         root = ET.fromstring(resp.read())
                         items = root.findall(".//item")
                         for it in items[:6]:
+                            pub_str = it.findtext("pubDate") or ""
+                            if pub_str:
+                                try:
+                                    pub_dt = email.utils.parsedate_to_datetime(pub_str)
+                                    # استبعاد الأخبار التي مضى عليها أكثر من 48 ساعة
+                                    if datetime.now(pub_dt.tzinfo) - pub_dt > timedelta(hours=48):
+                                        continue
+                                except Exception:
+                                    pass
+
                             title = it.findtext("title") or ""
                             link = it.findtext("link") or ""
                             desc = it.findtext("description") or ""
@@ -4088,6 +4068,12 @@ class StandaloneTelegramEducationalBot:
                             clean_title = re.sub(r'\s*-\s*[^-]+$', '', title).strip()
                             full_text = f"{clean_title}\n{clean_desc}".strip()
                             photo_url = self.extract_image_from_xml_item(it, desc)
+
+                            # فلترة الشأن الطلابي الأكاديمي واستبعاد إعلانات الفقدان والوظائف الإدارية
+                            is_rel, rel_reason = is_relevant_student_news(full_text, target_univ.get("name"))
+                            if not is_rel:
+                                logger.info(f"🛡️ [Google News الحصري] استبعاد خبر غير طلابي لـ {target_univ['name']} ({rel_reason}): {clean_title[:40]}")
+                                continue
 
                             # منع التكرار الصارم
                             norm_clean = re.sub(r'[^\w\s]', '', clean_title)

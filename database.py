@@ -1038,13 +1038,8 @@ def find_university_for_post(source: str, text: str = "") -> Optional[Dict[str, 
             scored_projects.sort(key=lambda x: x[0], reverse=True)
             return scored_projects[0][1]
 
-    # 3. توجيه المنشور للجامعة النشطة الأولى فقط إذا لم يكن هناك تعارض صريح
-    if active_projects:
-        return active_projects[0]
-
-    target_chs = get_target_channels()
-    default_ch = target_chs[0] if target_chs else "@jhdhhdcj"
-    return {"name": "أخبار الجامعة", "target_channel": default_ch, "enabled": True}
+    # 3. إذا لم يطابق المصدر أو النص أياً من الجامعات، لا ننسب الخبر لأي جامعة عشوائياً
+    return None
 
 
 # ----------------- المزامنة مع ملفات JSON ومستودع GitHub -----------------
