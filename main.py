@@ -150,29 +150,32 @@ SYSTEM_PROMPT_REPHRASE = """# الدور: ممثل الدفعة والزميل �
 أنت لست آلة تنسخ بيانات جامعية جافة بقوالب صماء ميتة، بل أنت ممثل الدفعة والزميل المقرب المحبوب والناصح الأمين.
 تقف مع زملائك الطلاب والطالبات في كل موقف ولحظة:
 - في ضغط الاختبارات والفاينل: تهدئ روعهم، تذكرهم بالتوكل على الله والأذكار والدعاء، وتبث فيهم العزيمة والأمل وفالهم الـ A+.
-- في فترات التسجيل وجداول المقررات: تحثهم على مراجعة الأدفايزر وحل تعليق السكاشن قبل إغلاق النظام بأسلوب أخوي حريص.
-- في إعلانات التخرج والنتائج: تشاركهم الفرحة الغامرة والفخر بالجهد المبارك والدعاء لهم بأفضل الوظائف والمستقبل الزاهر.
-- في مواسم الصيفي (السمر): تشرح الشروط بوضوح وتشجعهم على إنجاز متطلباتهم بتفاؤل.
-- في الأيام الهادئة ويوم الجمعة: تبث روحاً إيمانية دافئة، والصلاة على النبي ﷺ، وتذكير بسورة الكهف، ونصائح دراسية ذكية لتنظيم الوقت.
+- في فترات التسجيل وجداول المقررات: تلخص المواعيد والشروط المذكورة حصراً بدقة تامة دون اختلاق أي موعد أو نسبة أو يوم لم يرد في الخبر المصدري.
+- في إعلانات التخرج والنتائج: تشاركهم الفرحة والتهنئة بالجهد المبارك والدعاء لهم بالتوفيق.
+- في مواسم الصيفي (السمر): تشرح الشروط المعلنة رسمياً بوضوح واختصار.
+- في الأيام الهادئة ويوم الجمعة: تذكير أخوي خفيف بالأذكار والصلاة على النبي ﷺ ودعوات التوفيق دون إزعاج.
 
-## 🚫 ضوابط حاسمة لمنع التوليد الوهمي (Zero Hallucination Rules):
-1. **منع اختلاق التواريخ والمواعيد منعاً باتاً:**
-   - يمنع منعاً كلياً تأليف أو تخمين أي تاريخ أو موعد أو ساعة أو يوم أو نسبة أو اسم شخص لم يُذكر حرفياً في النص المصدري المرفق.
-   - إذا لم يحتوي الخبر المصدري على تاريخ محدد، لا تذكر أي تاريخ على الإطلاق!
+## 🚫 ضوابط حاسمة وصارمة لمنع التوليد الوهمي (Zero Hallucination Rules):
+1. **منع اختلاق التواريخ والأسماء والمواعيد منعاً كلياً:**
+   - يمنع منعاً باتاً اختراع أي موعد، ساعة، تاريخ، يوم أسبوع، أو نسبة غير موجودة حرفياً في النص المصدري.
+   - يمنع منعاً باتاً اختلاق أو ذكر أي أسماء وهمية (مثل: أبو محمد، الأدفايزر، العميد، الدكتور) ما لم تكن مذكورة نصاً في الخبر.
+   - إذا لم يحتوي الخبر المصدري على تاريخ أو موعد، لا تذكر أي تاريخ على الإطلاق!
 2. **عزل الجامعات والسياق واللهجات التام:**
-   - لكل جامعة مسارها وقناتها المستقلة حصرياً؛ يمنع منعاً باتاً خلط أخبار جامعة مع جامعة أخرى أو دمج مصطلحاتها.
-   - التزم بلهجة وثقافة البلد المخصص للجامعة (لهجة سعودية بيضاء للجامعات السعودية، إماراتية بيضاء للجامعات الإماراتية، كويتية بيضاء للجامعات الكويتية، وأسلوب خليجي أخوي ناصح دائماً).
-3. **حظر الروابط والعبارات الوهمية:**
-   - يمنع منعاً باتاً طباعة عبارات مثل [الرابط هنا] أو روابط تجريبية كـ example.com. لا تضع إلا الروابط الحقيقية المستخرجة من النص المصدري.
+   - لكل جامعة مسارها وقناتها المستقلة حصرياً؛ يمنع منعاً باتاً خلط أخبار جامعة مع جامعة أخرى (مثل: خلط كليات التقنية العليا HCT مع جامعة الملك سعود KSU).
+   - التزم بلهجة وثقافة البلد المخصص للجامعة (لهجة سعودية بيضاء للجامعات السعودية، إماراتية بيضاء للجامعات الإماراتية، كويتية بيضاء للجامعات الكويتية).
+3. **حظر الروابط والعبارات الوهمية والمقالات الإنشائية:**
+   - يمنع منعاً باتاً طباعة عبارات مثل [الرابط هنا] أو روابط تجريبية مثل edu.example.com أو example.com.
+   - إذا لم يتوفر رابط حقيقي في الخبر المصدري، يُلغى سطر الرابط تماماً ولا يُكتب أي رابط.
+   - اجعل المنشور مختصراً، مباشراً، ودقيقاً ينقل الفائدة الحقيقية للطالب دون حشو إنشائي طويل.
 4. **كسر الروبوتية والقوالب الباردة:**
    - يمنع البدء بـ "🚨 تنبيه لطلاب..." أو أي قالب ثابت مكرر. نوع بداياتك بما يناسب الحدث!
    - يمنع استخدام القوالب الإدارية الجافة: (يسعدنا الرد على استفساراتكم في التعليقات / إعلان وتحديث رسمي / نود إفادتكم).
    - ادخل في صلب الموضوع مباشرة بأسلوب ممثل الدفعة الناصح والمبسط.
 
 ## 🔤 التنسيق والتنظيم الإلزامي:
-- أبرز المواعيد الرسمية، الساعات، النسب، والقاعات بالخط العريض <b>...</b> لتسهيل القراءة السريعة.
-- استخدم النقاط المنظمة [▫️] لسرد الخطوات والشروط الأكاديمية بوضوح تام.
-- اختم دائماً بدعوات صادقة ولمسة أخوية تلامس قلب الطالب."""
+- أبرز المواعيد والنسب والشروط الحقيقية المذكورة فقط بالخط العريض <b>...</b> لتسهيل القراءة.
+- استخدم النقاط المنظمة [▫️] لسرد الخطوات الأكاديمية بوضوح تام.
+- اختم دائماً بدعوات طيبة ولمسة أخوية تلامس قلب الطالب."""
 
 
 
@@ -1311,15 +1314,18 @@ class StandaloneTelegramEducationalBot:
     def get_main_reply_keyboard(self, user_role: str = "user") -> Dict[str, Any]:
         is_google_enabled = db.is_google_news_enabled()
         google_btn_text = "🛑 إيقاف بحث جوجل" if is_google_enabled else "🟢 تفعيل بحث جوجل"
+        is_tw_enabled = db.is_twitter_search_enabled()
+        twitter_btn_text = "🛑 إيقاف بحث تويتر" if is_tw_enabled else "🐦 تفعيل بحث تويتر"
+
         kb = [
             [{"text": "🏛️ إدارة الجامعات وقنوات النشر"}, {"text": "➕ إضافة جامعة وقناة نشر"}],
             [{"text": "🧠 تعليمات وتدريب البوت"}, {"text": "🐦 سحب وفحص حسابات تويتر"}],
-            [{"text": "🔄 فحص وسحب أخبار الجامعات"}, {"text": google_btn_text}],
-            [{"text": "📝 صياغة ونشر خبر فوري"}, {"text": "🎯 إعلان خدماتي البديل"}],
-            [{"text": "💬 محادثة وبحث الذكاء"}, {"text": "🔄 مزامنة جيت هاب (Git Sync)"}],
-            [{"text": "📊 تقارير القنوات"}, {"text": "⏸ إيقاف / استئناف"}],
-            [{"text": "👥 إدارة المستخدمين"}, {"text": "👤 حسابي والاشتراك"}],
-            [{"text": "📱 ربط رقم هاتفي (تحقق)"}, {"text": "🧪 تجربة الصياغة الفورية"}]
+            [{"text": twitter_btn_text}, {"text": google_btn_text}],
+            [{"text": "🔄 فحص وسحب أخبار الجامعات"}, {"text": "📝 صياغة ونشر خبر فوري"}],
+            [{"text": "🎯 إعلان خدماتي البديل"}, {"text": "💬 محادثة وبحث الذكاء"}],
+            [{"text": "🔄 مزامنة جيت هاب (Git Sync)"}, {"text": "📊 تقارير القنوات"}],
+            [{"text": "⏸ إيقاف / استئناف"}, {"text": "👥 إدارة المستخدمين"}],
+            [{"text": "👤 حسابي والاشتراك"}, {"text": "🧪 تجربة الصياغة الفورية"}]
         ]
         return {
             "keyboard": kb,
@@ -1344,6 +1350,8 @@ class StandaloneTelegramEducationalBot:
         pause_btn_text = "▶️ استئناف النشر" if is_paused else "⏸ إيقاف مؤقت"
         is_google_enabled = db.is_google_news_enabled()
         google_btn_text = "🛑 إيقاف بحث جوجل" if is_google_enabled else "🟢 تفعيل بحث جوجل"
+        is_tw_enabled = db.is_twitter_search_enabled()
+        twitter_btn_text = "🛑 إيقاف بحث تويتر" if is_tw_enabled else "🐦 تفعيل بحث تويتر"
 
         buttons = [
             [
@@ -1351,28 +1359,31 @@ class StandaloneTelegramEducationalBot:
                 {"text": "➕ إضافة جامعة جديدة", "callback_data": "panel_add_university"}
             ],
             [
-                {"text": "🧠 تعليمات وتدريب البوت", "callback_data": "panel_instructions"},
-                {"text": "🐦 فحص حسابات تويتر المتصلة", "callback_data": "panel_crawl_twitter"}
-            ],
-            [
-                {"text": "🔄 فحص وسحب أخبار الجامعات", "callback_data": "panel_crawl"},
+                {"text": twitter_btn_text, "callback_data": "panel_toggle_twitter_search"},
                 {"text": google_btn_text, "callback_data": "panel_toggle_google_search"}
             ],
             [
-                {"text": "📝 صياغة ونشر خبر فوري", "callback_data": "panel_new_post"},
-                {"text": "🎯 إعلان خدماتي البديل", "callback_data": "panel_ad"}
+                {"text": "🐦 فحص حسابات تويتر المتصلة", "callback_data": "panel_crawl_twitter"},
+                {"text": "🔄 فحص وسحب أخبار الجامعات", "callback_data": "panel_crawl"}
             ],
             [
-                {"text": "📊 حالة النظام والتقارير", "callback_data": "panel_stats"},
+                {"text": "🧠 تعليمات وتدريب البوت", "callback_data": "panel_instructions"},
+                {"text": "📝 صياغة ونشر خبر فوري", "callback_data": "panel_new_post"}
+            ],
+            [
+                {"text": "🎯 إعلان خدماتي البديل", "callback_data": "panel_ad"},
                 {"text": pause_btn_text, "callback_data": "panel_toggle_pause"}
             ],
             [
-                {"text": "👥 إدارة المستخدمين", "callback_data": "panel_users"},
-                {"text": "🧪 تجربة الصياغة المباشرة", "callback_data": "panel_test"}
+                {"text": "📊 حالة النظام والتقارير", "callback_data": "panel_stats"},
+                {"text": "👥 إدارة المستخدمين", "callback_data": "panel_users"}
             ],
             [
-                {"text": "📞 الدعم الفني (@M_S_F_G)", "url": "https://t.me/M_S_F_G"},
+                {"text": "🧪 تجربة الصياغة المباشرة", "callback_data": "panel_test"},
                 {"text": "🔄 تحديث اللوحة", "callback_data": "panel_start"}
+            ],
+            [
+                {"text": "📞 الدعم الفني (@M_S_F_G)", "url": "https://t.me/M_S_F_G"}
             ]
         ]
         return {"inline_keyboard": buttons}
@@ -1749,14 +1760,14 @@ class StandaloneTelegramEducationalBot:
         is_prayer_or_motivational = (ctx in ["friday_prayer", "graduation"]) or any(w in clean_input for w in ["اللهم", "يا رب", "بالتوفيق", "دعواتنا", "أجمل التهاني", "مبارك التخرج", "صباح الخير", "جمعة مباركة", "إجازة سعيدة", "فالكم التوفيق"])
 
         context_hints = {
-            "registration": "المحتوى يخص تسجيل المقررات أو الأدفايزر. خاطب الطلاب كزميل ناصح وحثهم يكلمون أدفايزراتهم يسجلون لهم المادة أو يفتحون السكاشن قبل يقفل السستم، مع إبراز المواعيد والروابط بـ <b>...</b>.",
-            "summer_term": "المحتوى يخص الفصل الصيفي (السمر). صغ المنشور بأسلوب واضح ومحفز للسمر والشروط ومواعيد تنزيل المقررات.",
-            "exams": "المحتوى يخص الاختبارات أو الفاينل. هدأ الطلاب واذكرهم بالأذكار والأدعية والصلاة على النبي ﷺ والتوكل على الله وفالهم الـ A+ وأعلى القريدات، وأبرز التواريخ والقاعات بـ <b>...</b>.",
-            "graduation": "المحتوى يخص التخرج والنتائج. بارك لهم بحرارة وفرحة واطلب من المتخرجين يحطون قلب بالرياكشنات ❤️🎓 وعقبال الوظائف.",
-            "friday_prayer": "المحتوى إيماني أو يوم الجمعة. صغه بروح أخوية دافئة مع الصلاة على النبي ﷺ والتذكير بسورة الكهف وساعة الاستجابة والدعاء للأهل والزملاء.",
-            "student_project": "المحتوى استبيان أو مشروع تخرج لزميل. اطلب فزعة ودعم الزملاء لملء الرابط بأسلوب أخوي جميل.",
+            "registration": "المحتوى يخص القبول أو تسجيل المقررات. التزم حرفياً بالمواعيد والشروط المذكورة فقط في النص المصدر دون أي زيادة أو تأليف مواعيد أو ذكر أي شخص لم يرد في النص، وأبرز المواعيد بـ <b>...</b>.",
+            "summer_term": "المحتوى يخص الفصل الصيفي (السمر). صغ المنشور بأسلوب واضح ومباشر للشروط ومواعيد المقررات المذكورة فقط.",
+            "exams": "المحتوى يخص الاختبارات أو الفاينل. هدأ الطلاب واذكرهم بالأذكار والأدعية والصلاة على النبي ﷺ والتوكل على الله وفالهم الـ A+، وأبرز التواريخ والقاعات المذكورة بـ <b>...</b>.",
+            "graduation": "المحتوى يخص التخرج والنتائج. بارك لهم بالجهد والدعاء لهم بالتوفيق والنجاح.",
+            "friday_prayer": "المحتوى إيماني أو يوم الجمعة. صغه بروح أخوية دافئة مع الصلاة على النبي ﷺ والتذكير بسورة الكهف وساعة الاستجابة ودعوات الخير للجميع.",
+            "student_project": "المحتوى استبيان أو مشروع تخرج لزميل. اطلب دعم الزملاء لتعبئة الرابط المرفق فقط.",
             "charity_volunteering": "المحتوى عمل خيري أو تطوع أو تبرع. شجع الطلاب على الخير والمشاركة واحتساب الأجر.",
-            "general_academic": "تحديث أو إعلان أكاديمي مهم. ادخل في صلب الموضوع مباشرة بأسلوب ممثل دفعة ناصح ومحب بدون أي قوالب مكررة أو 'تنبيه لطلاب'."
+            "general_academic": "تحديث أو إعلان أكاديمي مهم. ادخل في صلب الموضوع مباشرة بأسلوب دقيق ومختصر ينقل الفائدة الحقيقية دون قوالب مكررة أو تضخيم."
         }
         ctx_guide = context_hints.get(ctx, context_hints["general_academic"])
 
@@ -2676,6 +2687,10 @@ class StandaloneTelegramEducationalBot:
 
     def check_google_news_for_universities(self, is_manual: bool = False):
         """يبحث في أخبار جوجل الرسمية لكل جامعة على حدة وينشرها في قناة تلك الجامعة حصراً"""
+        if not db.is_google_news_enabled() and not is_manual:
+            logger.info("🛑 [Google News] جلب الأخبار من جوجل موقوف تماماً بأمر المشرف.")
+            return
+
         univs = db.get_university_projects()
         logger.info(f"🌐 [Google News] فحص أخبار جوجل الأكاديمية لـ ({len(univs)}) جامعة...")
         for univ in univs:
@@ -2805,8 +2820,14 @@ class StandaloneTelegramEducationalBot:
                         self.check_twitter_feed(s, is_manual=False)
 
                 loop_counter += 1
-                # كل 3 دقائق نفحص أخبار جوجل الأكاديمية لكل الجامعات
-                if loop_counter % 4 == 0:
+                # فحص شبكة تويتر/X والبحث بالكلمات المفتاحية لكل الجامعات عند التفعيل
+                if loop_counter % 2 == 0 and db.is_twitter_search_enabled():
+                    for univ in active_univs:
+                        if univ.get("enabled"):
+                            self.crawl_university_twitter_network(univ, is_manual=False)
+
+                # فحص أخبار جوجل الأكاديمية للجامعات فقط إذا كان الخيار مفعلاً
+                if loop_counter % 4 == 0 and db.is_google_news_enabled():
                     self.check_google_news_for_universities(is_manual=False)
 
             except Exception as e:
@@ -2955,12 +2976,103 @@ class StandaloneTelegramEducationalBot:
             except Exception as e:
                 logger.error(f"خطأ في نشر المنشورات المجدولة: {e}")
 
-    def reply_to_channel_comment(self, chat_id: int, message_id: int, student_question: str, orig_post_text: str):
-        """يرد على استفسارات الطلاب في تعليقات القناة بذكاء ولغة أكاديمية واضحة ومباشرة"""
+    def call_ai_for_comment(self, student_question: str, orig_post_text: str = "", group_chat_id: Optional[int] = None) -> Optional[str]:
+        """
+        الرد الأكاديمي الحصري والدقيق على تعليقات واستفسارات الطلاب في مجموعات النقاش:
+        - رد موجز جداً (1 إلى 2 سطر).
+        - مقيد حصراً بالحقائق والتفاصيل المذكورة في نص المنشور الأصلي.
+        - يمنع منعاً باتاً اختراع أي موعد، رابط، أو معلومة غير موجودة في المنشور.
+        - عزل تام للجامعات واللهجات: السعودية للسعودية، الإماراتية للإماراتية، الكويتية للكويت.
+        """
+        if not student_question or len(student_question.strip()) < 2:
+            return None
+
+        # تحديد الجامعة المستهدفة من نص المنشور الأصلي لعزل اللهجة وسياق النقاش
+        target_univ = None
+        all_univs = db.get_university_projects()
+        if orig_post_text:
+            matched = db.find_university_for_post("", orig_post_text)
+            if matched:
+                target_univ = matched.get("name")
+        if not target_univ and all_univs:
+            target_univ = all_univs[0].get("name")
+
+        dialect_note = "تحدث بلهجة خليجية بيضاء مهذبة وودية."
+        if target_univ:
+            if "سعود" in target_univ or "KSU" in target_univ.upper():
+                dialect_note = "تحدث بلهجة سعودية بيضاء محترمة وموجزة."
+            elif "تقنية" in target_univ or "HCT" in target_univ.upper() or "إمارات" in target_univ:
+                dialect_note = "تحدث بلهجة إماراتية بيضاء محترمة وموجزة."
+            elif "كويت" in target_univ or "aum" in target_univ.lower():
+                dialect_note = "تحدث بلهجة كويتية بيضاء محترمة وموجزة."
+
+        post_context = f"نص المنشور الأصلي المعتمد للقناة:\n{orig_post_text[:1200]}\n" if orig_post_text else "لا يوجد نص منشور مرفق."
+
+        system_instruction = f"""أنت ممثل الدفعة ومساعد الطلاب الأكاديمي الرسمي.
+مهمتك: الرد على استفسار الطالب حول المنشور المرفق بدقة وإيجاز شديدين (سطر إلى سطرين كحد أقصى).
+{dialect_note}
+
+ضوابط صارمة لا تقبل الاستثناء (Strict Anti-Hallucination):
+1. أجب فقط استناداً إلى الحقائق والتواريخ والشروط المذكورة حرفياً في نص المنشور المرفق أعلاه.
+2. يمنع منعاً باتاً اختراع أو تخمين أي موعد أو رابط أو اسم شخص أو شرط غير موجود نصاً في المنشور.
+3. إذا كان سؤال الطالب عن معلومة غير موجودة في المنشور، أجب باختصار وأدب: 'هذه التفاصيل غير مذكورة في الإعلان الرسمي، يرجى مراجعة البوابة المعتمدة أو عمادة القبول والتسجيل.'
+4. يمنع منعاً باتاً وضع روابط وهمية أو عبارات مثل [الرابط هنا]."""
+
+        payload = {
+            "model": PRIMARY_MODEL,
+            "messages": [
+                {"role": "system", "content": system_instruction},
+                {"role": "user", "content": f"{post_context}\nسؤال الطالب: {student_question}\nالمطلوب: إجابة مباشرة ومختصرة في سطر إلى سطرين دون أي اختلاق:"}
+            ],
+            "temperature": 0.1,
+            "max_tokens": 150
+        }
+
+        headers = {
+            "Authorization": f"Bearer {AI_API_KEY}",
+            "Content-Type": "application/json",
+            "User-Agent": "TelegramEducationalBot/3.0"
+        }
         try:
-            ai_reply = self.call_ai_for_comment(student_question, orig_post_text)
+            req = urllib.request.Request(f"{AI_BASE_URL}/chat/completions", data=json.dumps(payload).encode("utf-8"), headers=headers)
+            with urllib.request.urlopen(req, context=ssl_ctx, timeout=8) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                if "choices" in data and len(data["choices"]) > 0:
+                    reply_text = data["choices"][0]["message"]["content"].strip()
+                    reply_text = re.sub(r'\[?(?:الرابط هنا|رابط البوابة|اضغط هنا)\]?', '', reply_text)
+                    reply_text = re.sub(r'https?://(?:www\.)?example\.com\S*', '', reply_text).strip()
+                    return reply_text
+        except Exception as e:
+            logger.debug(f"call_ai_for_comment error: {e}")
+
+        # Fallback Gemini
+        gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
+        if gemini_key:
+            try:
+                g_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key={gemini_key}"
+                g_payload = {
+                    "contents": [{"parts": [{"text": f"{system_instruction}\n\n{post_context}\nسؤال الطالب: {student_question}"}]}],
+                    "generationConfig": {"temperature": 0.1, "maxOutputTokens": 150}
+                }
+                g_req = urllib.request.Request(g_url, data=json.dumps(g_payload).encode("utf-8"), headers={"Content-Type": "application/json"})
+                with urllib.request.urlopen(g_req, context=ssl_ctx, timeout=6) as g_resp:
+                    g_data = json.loads(g_resp.read().decode("utf-8"))
+                    cands = g_data.get("candidates", [])
+                    if cands:
+                        p = cands[0].get("content", {}).get("parts", [])
+                        if p and "text" in p[0]:
+                            return p[0]["text"].strip()
+            except Exception:
+                pass
+
+        return None
+
+    def reply_to_channel_comment(self, chat_id: int, message_id: int, student_question: str, orig_post_text: str):
+        """يرد على استفسارات الطلاب في تعليقات القناة بدقة وعزل تام وموجز جداً"""
+        try:
+            ai_reply = self.call_ai_for_comment(student_question, orig_post_text, group_chat_id=chat_id)
             if not ai_reply:
-                ai_reply = "أهلاً بك عزيزي الطالب 🎓\nنشكر تواصلك، بخصوص استفسارك يرجى مراجعة التفاصيل والمواعيد الموضحة في المنشور أعلاه أو زيارة البوابة الرسمية للجامعة للاطلاع على الدليل الأكاديمي المحدث."
+                ai_reply = "أهلاً بك زميلي الطالب 🎓\nنشكر استفسارك، بخصوص ذلك يرجى الاطلاع على التفاصيل الموضحة نصاً في المنشور الرسمي أعلاه أو عبر بوابة الجامعة المعتمدة."
             self.send_msg(chat_id, ai_reply, reply_to_message_id=message_id)
         except Exception as e:
             logger.debug(f"خطأ في الرد على تعليق القناة: {e}")
@@ -3301,6 +3413,22 @@ class StandaloneTelegramEducationalBot:
             self.start_add_university_wizard(chat_id)
             return
 
+        if clean_text in ["🛑 إيقاف بحث جوجل", "🟢 تفعيل بحث جوجل", "/toggle_gnews", "/toggle_google"]:
+            new_st = db.toggle_google_news_enabled()
+            st_txt = "🟢 **تم تفعيل جلب الأخبار من جوجل نيوز بنجاح!**" if new_st else "🛑 **تم إيقاف جلب الأخبار من جوجل نيوز تماماً!**\nسيعتمد البوت حصراً على تويتر وتيليجرام والمصادر الموثقة."
+            self.send_msg(chat_id, st_txt, self.get_main_reply_keyboard(user_data.get("role", "user")))
+            return
+
+        if clean_text in ["🛑 إيقاف بحث تويتر", "🐦 تفعيل بحث تويتر", "/toggle_twitter"]:
+            new_st = db.toggle_twitter_search_enabled()
+            st_txt = "🐦 **تم تفعيل البحث وجلب الأخبار من تويتر/X بنجاح!**" if new_st else "🛑 **تم إيقاف البحث وجلب الأخبار من تويتر/X.**"
+            self.send_msg(chat_id, st_txt, self.get_main_reply_keyboard(user_data.get("role", "user")))
+            return
+
+        if clean_text in ["🐦 سحب وفحص حسابات تويتر", "/crawl_twitter", "تويتر"]:
+            self.crawl_all_university_twitter_job(chat_id)
+            return
+
         if clean_text in ["🌐 بحث أخبار جوجل للجامعة", "/google_news", "أخبار جوجل"]:
             self.trigger_google_news_search(chat_id)
             return
@@ -3539,6 +3667,21 @@ class StandaloneTelegramEducationalBot:
 
         elif data == "panel_crawl":
             self.trigger_manual_crawl(chat_id)
+
+        elif data == "panel_crawl_twitter":
+            self.crawl_all_university_twitter_job(chat_id)
+
+        elif data == "panel_toggle_google_search":
+            new_st = db.toggle_google_news_enabled()
+            st_txt = "🟢 تم تفعيل جلب الأخبار من جوجل نيوز بنجاح!" if new_st else "🛑 تم إيقاف جلب الأخبار من جوجل نيوز بالكامل! سيعتمد البوت على تويتر وتيليجرام فقط."
+            self.send_msg(chat_id, st_txt)
+            self.show_welcome_panel(chat_id, user_data)
+
+        elif data == "panel_toggle_twitter_search":
+            new_st = db.toggle_twitter_search_enabled()
+            st_txt = "🐦 تم تفعيل البحث وجلب الأخبار من تويتر/X بنجاح!" if new_st else "🛑 تم إيقاف البحث وجلب الأخبار من تويتر/X."
+            self.send_msg(chat_id, st_txt)
+            self.show_welcome_panel(chat_id, user_data)
 
         elif data == "panel_gnews":
             self.trigger_google_news_search(chat_id)

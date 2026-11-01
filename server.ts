@@ -473,6 +473,70 @@ app.post('/api/university/post', async (req: Request, res: Response) => {
   }
 });
 
+// 5.6 Source Toggles (Google News vs Twitter Search)
+app.get('/api/settings/source-toggles', (_req: Request, res: Response) => {
+  execFile('python3', ['-c', `
+import database as db
+import json
+print(json.dumps(db.get_source_toggles()))
+`], { cwd: __dirname }, (err, stdout) => {
+    if (err || !stdout) {
+      let gnews = false;
+      let twitter = true;
+      try {
+        if (fs.existsSync(STATE_FILE)) {
+          const s = JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8'));
+          gnews = s.google_news_enabled ?? false;
+          twitter = s.twitter_search_enabled ?? true;
+        }
+      } catch {}
+      res.json({ google_news_enabled: gnews, twitter_search_enabled: twitter });
+      return;
+    }
+    try {
+      const parsed = JSON.parse(stdout.trim());
+      res.json(parsed);
+    } catch {
+      res.json({ google_news_enabled: false, twitter_search_enabled: true });
+    }
+  });
+});
+
+app.post('/api/settings/toggle-source', (req: Request, res: Response) => {
+  const { source, enabled } = req.body;
+  if (!source) {
+    res.status(400).json({ error: "Source is required ('google_news' or 'twitter')" });
+    return;
+  }
+  const isEn = Boolean(enabled);
+  const pyCode = source === 'google_news'
+    ? `import database as db; db.set_google_news_enabled(${isEn ? 'True' : 'False'}); print(db.is_google_news_enabled())`
+    : `import database as db; db.set_twitter_search_enabled(${isEn ? 'True' : 'False'}); print(db.is_twitter_search_enabled())`;
+
+  execFile('python3', ['-c', pyCode], { cwd: __dirname }, (err) => {
+    if (err) {
+      res.status(500).json({ error: String(err) });
+      return;
+    }
+    try {
+      if (fs.existsSync(STATE_FILE)) {
+        const s = JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8'));
+        if (source === 'google_news') s.google_news_enabled = isEn;
+        if (source === 'twitter') s.twitter_search_enabled = isEn;
+        fs.writeFileSync(STATE_FILE, JSON.stringify(s, null, 2), 'utf-8');
+      }
+    } catch {}
+    res.json({
+      success: true,
+      source,
+      enabled: isEn,
+      message: source === 'google_news'
+        ? (isEn ? "تم تفعيل جلب أخبار جوجل بنجاح" : "تم إيقاف جلب أخبار جوجل بالكامل")
+        : (isEn ? "تم تفعيل البحث وسحب الأخبار من تويتر/X" : "تم إيقاف البحث في تويتر")
+    });
+  });
+});
+
 
 let pythonProcess: any = null;
 let isRestartingWorker = false;
@@ -1065,7 +1129,7 @@ async function callGemini(systemPrompt: string, userContent: string, useSearch: 
         contents: userContent,
         config: {
           systemInstruction: systemPrompt || undefined,
-          temperature: 0.2,
+          temperature: 0.1,
           tools: useSearch ? [{ googleSearch: {} }] : undefined
         },
       }),
@@ -1121,29 +1185,29 @@ app.post('/api/ai/rephrase', async (req: Request, res: Response) => {
     liveContext = `\n\n🌐 [محتوى الرابط المباشر المسحوب من الموقع (${liveScraped.entity})]:\n${liveScraped.rawContent}`;
   }
 
-  const defaultSystemPrompt = `# الدور: ممثل الدفعة والمستشار الطلابي الخليجي المقرّب (إنسان حقيقي وزميل ناصح ومحب لزملائه، ولست روبوتاً آلياً)
+  const defaultSystemPrompt = `# الدور: ممثل الدفعة والزميل الأكاديمي الناصح وصوت الطالب الحقيقي (إنسان حقيقي ورفيق لزملائه)
 ## الهوية والروح الحقيقية:
-أنت لست آلة تنسخ بيانات جامعية جافة بقوالب صماء ميتة، بل أنت ممثل الدفعة والزميل المحبوب والناصح الأمين. تتحدث مع إخوانك وزملائك في قنوات الكلية وقروبات الدفعة بأسلوب خليجي دافئ، عفوي، أخوي، مفعم بالروح والمشاعر الصادقة وقريب جداً لقلب الطالب.
+أنت لست آلة تنسخ بيانات جامعية جافة، بل أنت ممثل الدفعة والزميل المقرب المحبوب والناصح الأمين. تنقل الأخبار الجامعية بمصداقية وأمانة مطلقة وبأسلوب أخوي راقٍ.
 
-## 🚫 محرمات قطعية (قواعد كسر الروبوتية والتكرار الأعمى):
-1. يمنع منعاً باتاً البدء بـ "🚨 تنبيه لطلاب..." أو أي قالب ثابت مشابه. نوع بداياتك دائماً بحسب الموضوع والحدث!
-2. يمنع استخدام القوالب الإدارية الباردة والمبتذلة: (أبرز التفاصيل والتعليمات الأكاديمية / يسعدنا الرد على استفساراتكم في التعليقات / إعلان وتحديث رسمي / نود إفادتكم / يرجى الاطلاع على).
-3. يمنع تكرار نفس العبارات في كل منشور؛ الذكاء يكمن في فهم "متى" تضع كل عبارة بحسب سياقها الصحيح دون حشو!
-4. يمنع منعاً باتاً أن تقول "لا أستطيع قراءة الروابط" أو "لا يمكنني تصفح الإنترنت" حيث أن محرك الزحف يزودك بالبيانات الحية المباشرة.
-
-## 🧠 الذكاء السياقي الحقيقي (Context-Aware Persona):
-1. 📚 التسجيل والمواد والأدفايزر: حث الطلاب على التواصل مع أدفايزراتهم يسجلون لهم المادة أو يفتحون السكاشن قبل يقفل السستم.
-2. ☀️ الفصل الصيفي (السمر): استخدم مصطلح "السمر" أو "الفصل الصيفي" بروح خفيفة ومرتبة.
-3. 📝 مواسم الاختبارات والفاينل: هدوء، أدعية صادقة، تذكير بالأذكار والصلاة على النبي ﷺ والتوكل على الله وفالهم الـ A+ وأعلى القريدات.
-4. 🎓 التخرج والنتائج: فرحة غامرة وفخر، واطلب من المتخرجين يحطون قلب بالرياكشنات ❤️🎓.
-5. 🤍 يوم الجمعة والنفحات الإيمانية: بروح هادئة مع الصلاة على النبي ﷺ وسورة الكهف وساعة الاستجابة ودعوات الخير.
-6. 🤝 مشاريع واستبيانات الزملاء: فزعة ودعم أخوي لتعبئة الاستبيان ومساعدة الزميل.
-7. 🌱 التوعية والعمل الخيري والتطوع: تشجيع على التبرع بالدم والساعات التطوعية واحتساب الأجر.
+## 🚫 ضوابط حاسمة وصارمة لمنع التوليد الوهمي (Zero Hallucination Rules):
+1. **منع اختلاق التواريخ والمواعيد منعاً كلياً:**
+   - يمنع منعاً باتاً اختراع أي موعد، ساعة، تاريخ، أو نسبة غير موجودة حرفياً في النص المصدري المرفق.
+   - يمنع منعاً باتاً اختلاق أو ذكر أي أسماء وهمية (مثل: أبو محمد، الأدفايزر، العميد، الدكتور) ما لم تكن مذكورة نصاً في الخبر.
+   - إذا لم يحتوي الخبر المصدري على تاريخ أو موعد محدد، لا تذكر أي تاريخ على الإطلاق!
+2. **عزل الجامعات والسياق واللهجات التام:**
+   - لكل جامعة مسارها وقناتها المستقلة حصرياً؛ يمنع خلط أخبار جامعة مع أخرى (مثل خلط كليات التقنية العليا HCT مع جامعة الملك سعود KSU).
+   - التزم بلهجة وثقافة البلد المخصص للجامعة (لهجة سعودية بيضاء للجامعات السعودية، إماراتية بيضاء للجامعات الإماراتية، كويتية بيضاء للجامعات الكويتية).
+3. **حظر الروابط والعبارات الوهمية والمقالات الإنشائية:**
+   - يمنع منعاً باتاً طباعة عبارات مثل [الرابط هنا] أو روابط تجريبية مثل edu.example.com أو example.com.
+   - إذا لم يتوفر رابط حقيقي في الخبر المصدري، يُلغى سطر الرابط تماماً ولا يُكتب أي رابط.
+   - اجعل المنشور مختصراً، مباشراً، ودقيقاً ينقل الفائدة الحقيقية للطالب دون حشو إنشائي طويل.
+4. **كسر الروبوتية والقوالب الباردة:**
+   - يمنع البدء بـ "🚨 تنبيه لطلاب..." أو أي قالب نمطي مكرر. ادخل في صلب الموضوع مباشرة.
 
 ## 🔤 التنسيق والتنظيم الإلزامي:
-- أبرز المواعيد والتواريخ والأوقات وأسماء القاعات والمواد والنسب بخط عريض <b>...</b> لتسهيل القراءة السريعة.
-- احتفظ بروابط البوابات الرسمية والاستمارات كاملة بسطر مستقل (🔗 <b>رابط البوابة / التقديم:</b> [الرابط]).
-- احذف أي معرفات قنوات خارجية ترويجية (@channel أو t.me).`;
+- أبرز المواعيد والنسب والشروط الحقيقية المذكورة فقط بالخط العريض <b>...</b> لتسهيل القراءة.
+- استخدم النقاط المنظمة [▫️] لسرد الخطوات الأكاديمية بوضوح تام.
+- اختم دائماً بدعوات طيبة ولمسة أخوية تلامس قلب الطالب.`;
 
   const finalSystemPrompt = `${systemPrompt || defaultSystemPrompt}\n${liveContext ? '⚠️ تم سحب المحتوى الحي بنجاح. اقرأه واعرض آخر منشور بأسلوب ممثل الدفعة الناصح دون أي هلوسة.' : ''}`;
   const userContent = customInstructions
@@ -1167,7 +1231,7 @@ app.post('/api/ai/rephrase', async (req: Request, res: Response) => {
           { role: 'system', content: finalSystemPrompt },
           { role: 'user', content: userContent }
         ],
-        temperature: 0.2,
+        temperature: 0.1,
         max_tokens: 1000
       };
       const data = await callAICurl(apiBase, apiKey, payload, 7);

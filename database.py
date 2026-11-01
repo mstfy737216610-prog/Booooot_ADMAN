@@ -1053,7 +1053,7 @@ def get_all_university_knowledge() -> List[Dict[str, Any]]:
 # ----------------- التحكم في محرك بحث جوجل (Google News Engine Toggle) -----------------
 
 def is_google_news_enabled() -> bool:
-    """التحقق هل البحث في أخبار جوجل مفعل أم موقف تماماً بطلب المشرف"""
+    """التحقق هل البحث في أخبار جوجل مفعل أم موقف تماماً بطلب المشرف (افتراضياً: معطل لمنع جلب المقالات العامة)"""
     return get_setting("google_news_enabled", "0") == "1"
 
 
@@ -1078,6 +1078,35 @@ def toggle_google_news_enabled() -> bool:
     new_state = not current
     set_google_news_enabled(new_state)
     return new_state
+
+
+def is_twitter_search_enabled() -> bool:
+    """التحقق هل البحث في تويتر/X بالكلمات المفتاحية والحسابات مفعل (افتراضياً: مفعل بدلاً من جوجل)"""
+    return get_setting("twitter_search_enabled", "1") == "1"
+
+
+def set_twitter_search_enabled(enabled: bool):
+    """تفعيل أو إيقاف البحث وسحب الأخبار من تويتر/X"""
+    val = "1" if enabled else "0"
+    set_setting("twitter_search_enabled", val)
+    sync_to_json_files()
+
+
+def toggle_twitter_search_enabled() -> bool:
+    """تبديل حالة بحث تويتر/X وإرجاع الحالة الجديدة"""
+    current = is_twitter_search_enabled()
+    new_state = not current
+    set_twitter_search_enabled(new_state)
+    return new_state
+
+
+def get_source_toggles() -> Dict[str, bool]:
+    """استرجاع إعدادات تشغيل مصادر الأخبار الحالية"""
+    return {
+        "google_news_enabled": is_google_news_enabled(),
+        "twitter_search_enabled": is_twitter_search_enabled()
+    }
+
 
 
 def find_university_for_post(source: str, text: str = "") -> Optional[Dict[str, Any]]:

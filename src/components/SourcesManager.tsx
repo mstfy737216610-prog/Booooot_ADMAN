@@ -86,9 +86,57 @@ export const SourcesManager: React.FC<Props> = ({
     enabled: true,
   });
 
+  // Source Toggles: Google News vs Twitter Search
+  const [sourceToggles, setSourceToggles] = useState<{ google_news_enabled: boolean; twitter_search_enabled: boolean }>({
+    google_news_enabled: false,
+    twitter_search_enabled: true,
+  });
+  const [isTogglingSource, setIsTogglingSource] = useState(false);
+
   const showNotice = (msg: string) => {
     setActionNotice(msg);
     setTimeout(() => setActionNotice(null), 3500);
+  };
+
+  const fetchSourceToggles = async () => {
+    try {
+      const res = await fetch('/api/settings/source-toggles');
+      if (res.ok) {
+        const data = await res.json();
+        setSourceToggles({
+          google_news_enabled: Boolean(data.google_news_enabled),
+          twitter_search_enabled: Boolean(data.twitter_search_enabled),
+        });
+      }
+    } catch (e) {
+      console.warn('Failed to fetch source toggles', e);
+    }
+  };
+
+  const handleToggleSource = async (source: 'google_news' | 'twitter') => {
+    setIsTogglingSource(true);
+    const newEnabled = source === 'google_news' ? !sourceToggles.google_news_enabled : !sourceToggles.twitter_search_enabled;
+    try {
+      const res = await fetch('/api/settings/toggle-source', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source, enabled: newEnabled }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSourceToggles((prev) => ({
+          ...prev,
+          [source === 'google_news' ? 'google_news_enabled' : 'twitter_search_enabled']: newEnabled,
+        }));
+        showNotice(data.message || 'تم تحديث حالة المصدر بنجاح');
+      } else {
+        showNotice(data.error || 'تعذر تعديل حالة المصدر');
+      }
+    } catch {
+      showNotice('حدث خطأ أثناء تعديل إعدادات المصدر');
+    } finally {
+      setIsTogglingSource(false);
+    }
   };
 
   // Fetch universities
@@ -111,6 +159,7 @@ export const SourcesManager: React.FC<Props> = ({
 
   useEffect(() => {
     fetchUniversities();
+    fetchSourceToggles();
   }, []);
 
   // University Toggle
@@ -432,6 +481,109 @@ export const SourcesManager: React.FC<Props> = ({
             <span>@admiuin_bot (بوت التحكم)</span>
             <ExternalLink className="w-3 h-3 text-slate-400" />
           </a>
+        </div>
+      </div>
+
+      {/* Primary Source Toggles: Google News vs Twitter/X */}
+      <div className="bg-slate-950/70 border border-slate-800 rounded-2xl p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Radio className="w-4 h-4 text-sky-400" />
+            <h3 className="text-sm font-bold text-white">إدارة وضبط مصادر الأخبار الرئيسية (تويتر / X وجوجل نيوز)</h3>
+          </div>
+          <span className="text-[11px] text-slate-400">تحديث فوري ينعكس على البوت ومحرك النشر</span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+          {/* Twitter / X Source Card */}
+          <div className={`p-3.5 rounded-xl border transition-all ${
+            sourceToggles.twitter_search_enabled
+              ? 'bg-sky-950/30 border-sky-600/40 shadow-lg shadow-sky-950/50'
+              : 'bg-slate-900/60 border-slate-800 opacity-75'
+          }`}>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className={`p-2 rounded-lg ${
+                  sourceToggles.twitter_search_enabled ? 'bg-sky-500/20 text-sky-400 border border-sky-500/30' : 'bg-slate-800 text-slate-400'
+                }`}>
+                  <Twitter className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-bold text-white">البحث في تويتر / X الأكاديمي</span>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                      sourceToggles.twitter_search_enabled
+                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                        : 'bg-slate-800 text-slate-400 border border-slate-700'
+                    }`}>
+                      {sourceToggles.twitter_search_enabled ? '🟢 مفعل (المصدر الموصى به)' : '🛑 معطل'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    سحب التغريدات بالكلمات المفتاحية والحسابات الرسمية لكل جامعة ونشر تذكيرات موثقة عند عدم وجود أخبار.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                disabled={isTogglingSource}
+                onClick={() => handleToggleSource('twitter')}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
+                  sourceToggles.twitter_search_enabled
+                    ? 'bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40'
+                    : 'bg-sky-600 hover:bg-sky-500 text-white shadow-lg shadow-sky-600/30'
+                }`}
+              >
+                {sourceToggles.twitter_search_enabled ? '🛑 إيقاف تويتر' : '🐦 تفعيل تويتر'}
+              </button>
+            </div>
+          </div>
+
+          {/* Google News Source Card */}
+          <div className={`p-3.5 rounded-xl border transition-all ${
+            sourceToggles.google_news_enabled
+              ? 'bg-emerald-950/30 border-emerald-600/40 shadow-lg shadow-emerald-950/50'
+              : 'bg-slate-900/60 border-slate-800'
+          }`}>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className={`p-2 rounded-lg ${
+                  sourceToggles.google_news_enabled ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'
+                }`}>
+                  <Globe className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-bold text-white">جلب الأخبار من جوجل نيوز</span>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                      sourceToggles.google_news_enabled
+                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                        : 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                    }`}>
+                      {sourceToggles.google_news_enabled ? '🟢 مفعّل' : '🛑 معطل (تم إيقافه)'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    {sourceToggles.google_news_enabled
+                      ? 'يبحث في مقالات وصحف جوجل نيوز للجامعة.'
+                      : 'تم إيقافه بطلبك لتجنب سحب المقالات الإنشائية أو الأخبار غير الطلابية.'}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                disabled={isTogglingSource}
+                onClick={() => handleToggleSource('google_news')}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
+                  sourceToggles.google_news_enabled
+                    ? 'bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40'
+                    : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/30'
+                }`}
+              >
+                {sourceToggles.google_news_enabled ? '🛑 إيقاف جلب جوجل' : '🟢 تفعيل جلب جوجل'}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
