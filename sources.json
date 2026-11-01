@@ -1,7 +1,7 @@
 {
   "_info": "Telegram University Educational AutoForwarder Watchlist (Synced from SQLite)",
   "version": "3.1.0",
-  "lastUpdated": "2026-11-01T22:22:29.540960",
+  "lastUpdated": "2026-11-01T22:54:11.541758",
   "target_channels": [
     "@jhdhhdcj"
   ],
@@ -89,7 +89,7 @@
       "priority": "high",
       "rule": "official",
       "enabled": true,
-      "lastPostId": "Next_Plus_BOT0/128"
+      "lastPostId": "Next_Plus_BOT0/134"
     },
     {
       "id": "src_tw_95430",
