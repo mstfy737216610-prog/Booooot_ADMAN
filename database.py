@@ -182,6 +182,16 @@ def init_db():
             # هجرة البيانات من ملفات JSON إن وجدت وقاعدة البيانات جديدة
             migrate_from_json(conn)
 
+            # تنظيف أي معرفات قنوات غير صالحة سابقة من قاعدة البيانات لضمان عدم رمي 400 Bad Request
+            try:
+                cursor.execute("SELECT id, channel_id FROM target_channels WHERE status != 'deleted'")
+                for r in cursor.fetchall():
+                    if not is_valid_telegram_channel(r["channel_id"]):
+                        cursor.execute("UPDATE target_channels SET status = 'deleted' WHERE id = ?", (r["id"],))
+                conn.commit()
+            except Exception:
+                pass
+
         except Exception as e:
             logger.error(f"❌ خطأ في تهيئة قاعدة البيانات: {e}")
         finally:
@@ -441,6 +451,25 @@ def increment_setting(key: str, amount: int = 1) -> int:
 
 # ----------------- وظائف قنوات النشر وإحصائياتها -----------------
 
+def is_valid_telegram_channel(channel_id: str) -> bool:
+    """
+    التحقق الصارم من صحة معرف أو رابط قناة تيليجرام:
+    - رقم المعرف الرقمي: مثل -100123456789 أو -12345678
+    - اسم المستخدم: يبدأ بـ @ ويتبعه من 3 إلى 32 حرفاً أو رقماً إنجليزياً أو شرطة سفلية
+    استبعاد الأخطاء الإملائية مثل '@' المفردة أو الحروف العربية '@مصط' التي تسبب 400 Bad Request
+    """
+    if not channel_id or not isinstance(channel_id, str):
+        return False
+    ch = channel_id.strip()
+    if not ch or ch == "@":
+        return False
+    if re.match(r"^-?\d{5,20}$", ch):
+        return True
+    if re.match(r"^@[a-zA-Z0-9_]{3,32}$", ch):
+        return True
+    return False
+
+
 def get_target_channels() -> List[str]:
     with _db_lock:
         conn = get_db_connection()
@@ -448,7 +477,7 @@ def get_target_channels() -> List[str]:
             cursor = conn.cursor()
             cursor.execute("SELECT channel_id FROM target_channels WHERE status != 'deleted'")
             rows = cursor.fetchall()
-            chs = [r["channel_id"] for r in rows]
+            chs = [r["channel_id"] for r in rows if is_valid_telegram_channel(r["channel_id"])]
             return chs if chs else ["@jhdhhdcj"]
         finally:
             conn.close()
@@ -460,19 +489,25 @@ def get_target_channels_detailed() -> List[Dict[str, Any]]:
         try:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM target_channels WHERE status != 'deleted' ORDER BY created_at ASC")
-            return [dict(r) for r in cursor.fetchall()]
+            rows = cursor.fetchall()
+            return [dict(r) for r in rows if is_valid_telegram_channel(r["channel_id"])]
         finally:
             conn.close()
 
 
 def add_target_channel(channel_id: str, title: str = "", added_by: int = 7607633343) -> bool:
+    if not channel_id:
+        return False
     with _db_lock:
         conn = get_db_connection()
         try:
             cursor = conn.cursor()
             clean_ch = channel_id.strip()
-            if not clean_ch.startswith("@") and not clean_ch.startswith("-100"):
+            if not clean_ch.startswith("@") and not clean_ch.startswith("-"):
                 clean_ch = "@" + clean_ch
+            if not is_valid_telegram_channel(clean_ch):
+                logger.warning(f"⚠️ تم رفض إضافة القناة '{channel_id}' لأن المعرف غير صالح في تيليجرام (يجب أن يكون بالإنجليزية من 3 إلى 32 رمزاً أو رقم شات سالب).")
+                return False
             now_str = datetime.utcnow().isoformat()
             cursor.execute("""
                 INSERT INTO target_channels (channel_id, title, status, added_by, created_at)

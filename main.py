@@ -228,7 +228,8 @@ STUDENT_AFFINITY_KEYWORDS = [
     "فاينل", "كويز", "سكشن", "شعب", "تسجيل", "قبول", "معدل", "تخرج",
     "مرشد", "سمر", "صيفي", "قاعة", "دكتور", "عماد", "مكافأة", "سكن", "باص",
     "استبيان", "مشروع تخرج", "بحث تخرج", "أذكار", "جمعة", "اللهم صل", "تطوع", "تبرع بالدم",
-    "منشور", "تغريد", "حساب", "aum", "ksu", "hct", "kuwait", "كويت", "وظيفتي", "معرض", "ريادة"
+    "منشور", "تغريد", "حساب", "aum", "ksu", "hct", "kuwait", "كويت", "وظيفتي", "معرض", "ريادة",
+    "حفل", "اليوم الوطني", "يوم التأسيس", "فعالي", "ملتقى", "نادي", "نشاط", "ورش", "مسابق", "هاكاثون", "بطول", "صدق", "خير"
 ]
 
 POSITIVE_ACADEMIC_KEYWORDS = [
@@ -238,7 +239,12 @@ POSITIVE_ACADEMIC_KEYWORDS = [
     "تقويم أكاديمي", "طالب", "طلبة", "طالبات", "محاضرة", "محاضرات", "جدول", "جداول",
     "عمادة القبول", "شؤون الطلاب", "شؤون الطلبة", "استبيان", "بحث تخرج", "مشروع تخرج",
     "دوام", "إجازة", "تعليق الدراسة", "عن بعد", "حذف وإضافة", "سحب وإضافة", "اللهم صل",
-    "سورة الكهف", "جمعة مباركة", "بالتوفيق", "دعواتنا", "وظيفتي", "معرض الفرص"
+    "سورة الكهف", "جمعة مباركة", "بالتوفيق", "دعواتنا", "وظيفتي", "معرض الفرص",
+    "حفل", "احتفال", "اليوم الوطني", "يوم التأسيس", "فعالية", "فعاليات", "ملتقى", "مؤتمر",
+    "نادي", "أنشطة", "نشاط", "ورشة", "ورشة عمل", "دورة", "دورة تدريبية", "مبادرة", "معرض",
+    "تكريم", "مسابقة", "بطولة", "تطوع", "ساعات تطوعية", "أندية طلابية", "يوم المهنة",
+    "ملتقى الخريجين", "هاكاثون", "موهبة", "ابتكار", "ريادة", "صدقة", "أعمال خيرية", "تبرع",
+    "توعية", "مجلس طلابي", "اتحاد الطلبة"
 ]
 
 # ----------------- الدليل الأكاديمي المعتمد وبيانات التواصل الرسمية للجامعات -----------------
@@ -436,8 +442,15 @@ def detect_target_university(text: str = "", orig_post_text: str = "", group_cha
 
 def resolve_direct_student_inquiry(student_question: str, orig_post_text: str = "", univ_info: Dict[str, Any] = None) -> Optional[str]:
     """
-    التحليل الفوري الصارم لاستفسارات الطلاب المتكررة (إيميل، هاتف، مكان المنشور، روابط، شكر)
-    لإعطاء إجابات حقيقية موثقة ومباشرة دون أي تأليف، هلوسة، أو ردود آلية مكررة.
+    التحليل الفوري الصارم لاستفسارات الطلاب المتكررة:
+    - إيميل شؤون الطلاب وعمادة القبول والتسجيل
+    - هواتف وسنترال الجامعة المعتمد
+    - الاستفسار عن تقديم الأعذار الطبية (الطبية)
+    - الاستئذان للسؤال والتحية المبدئية
+    - الحذف والإضافة والأدفايزر
+    - المكافآت والإعانات
+    - مكان المنشورات والروابط المعتمدة
+    لإعطاء إجابات حقيقية موثقة ومباشرة وفورية دون قوالب روبوتية صماء.
     """
     if not student_question:
         return None
@@ -449,17 +462,45 @@ def resolve_direct_student_inquiry(student_question: str, orig_post_text: str = 
     norm_q = re.sub(r'[إأآ]', 'ا', q)
     norm_q = norm_q.replace('ة', 'ه').replace('ى', 'ي')
 
-    # 1. الاستفسار عن الإيميل والبريد الإلكتروني
+    u_name = univ_info.get("name", "الجامعة")
+    portal = univ_info.get("portal_url", "https://ksu.edu.sa")
+    edugate = univ_info.get("edugate_url", portal)
+    sa_email = univ_info.get("student_affairs_email", "sa@ksu.edu.sa")
+    adm_email = univ_info.get("admission_email", "darss@ksu.edu.sa")
+    sa_phone = univ_info.get("student_affairs_phone") or univ_info.get("main_phone", "0114677777")
+    main_phone = univ_info.get("main_phone", "0114677777")
+    deanship = univ_info.get("deanship", "عمادة شؤون الطلاب والقبول والتسجيل")
+
+    # 1. الاستئذان للسؤال أو التحية المصحوبة بطلب استفسار
+    # يغطي: "السلام عليكم ممكن سؤال", "ممكن سؤال", "عندي سؤال", "اقدر اسال", "ممكن استفسار"
+    question_starters = ["ممكن سوال", "ممكن سؤال", "عندي سوال", "عندي سؤال", "اقدر اسال", "اقدر اسأل", "ممكن استفسر", "عندي استفسار", "ابي اسال", "اريد اسال", "ودي اسال"]
+    if any(k in norm_q for k in question_starters) and len(norm_q.split()) <= 7:
+        return (
+            f"وعليكم السلام ورحمة الله وبركاته 🌸\n"
+            f"أهلاً بك زميلي في رحاب {u_name} 🎓 تفضل اطرح سؤالك مباشرة وسأجيبك بكل سرور وأوضح لك كافة التفاصيل المعتمدة! ✨"
+        )
+
+    # 2. الاستفسار عن تقديم الأعذار الطبية (الطبية)
+    # يغطي: "اريد استفر عن كيف هل اقدر اقدم طبية", "اقدم طبيه", "عذر طبي", "تقرير طبي", "مرضيه", "اعذار طبيه"
+    medical_keys = ["طبيه", "طبية", "عذر طبي", "تقرير طبي", "مرضيه", "مرضية", "اعذار طبيه", "أعذار طبية", "تقديم طبيه", "اقدم طبيه", "اقدم عذر", "عذر غياب"]
+    if any(k in norm_q for k in medical_keys):
+        return (
+            f"أهلاً بك زميلي الطالب 🎓\n"
+            f"إليك طريقة تقديم العذر الطبي (الطبية) المعتمدة في {u_name}:\n\n"
+            f"1️⃣ ادخل على البوابة الإلكترونية للخدمات الذاتية للطالب:\n"
+            f"🔗 {edugate}\n"
+            f"2️⃣ اختر (الخدمات الأكاديمية) ثم (الأعذار الطبية / الغياب بعذر).\n"
+            f"3️⃣ ارفع التقرير الطبي المعتمد أو الإجازة المرضية الصادرة من جهة صحية رسمية.\n"
+            f"⚠️ تنبيه مهم: يجب تقديم العذر خلال المدة النظامية المحددة (عادة خلال 5 إلى 7 أيام من تاريخ انتهاء الإجازة).\n\n"
+            f"لأي مساعدة تواصل مباشرة مع عمادة شؤون الطلاب: `{sa_email}` وفالك العافية والتوفيق! 🌸"
+        )
+
+    # 3. الاستفسار عن الإيميل والبريد الإلكتروني
     # يغطي: "السلام عليكم ممكن ايميل شؤون الطلاب", "انا اريد الايمل", "ممكن ايميل القبول", "وين الايميل"
     email_keys = ["ايميل", "ايمل", "بريد", "email", "ميل"]
     if any(k in norm_q for k in email_keys):
         is_adm = any(w in norm_q for w in ["قبول", "تسجيل", "تقديم"])
         is_sa = any(w in norm_q for w in ["شوون", "شون", "طلاب", "طلبه"])
-
-        sa_email = univ_info.get("student_affairs_email", "sa@ksu.edu.sa")
-        adm_email = univ_info.get("admission_email", "darss@ksu.edu.sa")
-        u_name = univ_info.get("name", "جامعة الملك سعود")
-        portal = univ_info.get("portal_url", "https://ksu.edu.sa")
 
         if is_adm and not is_sa:
             return (
@@ -487,17 +528,11 @@ def resolve_direct_student_inquiry(student_question: str, orig_post_text: str = 
                 f"بالتوفيق لك وفالك التميز والدرجات العالية! 🌸"
             )
 
-    # 2. الاستفسار عن أرقام الهواتف والتواصل
+    # 4. الاستفسار عن أرقام الهواتف والتواصل
     # يغطي: "اريد رقم شؤن الطلاب", "ممكن رقم الجامعة", "هاتف القبول", "رقمهم", "تلفونهم"
     phone_keys = ["رقم", "تلفون", "هاتف", "جوال", "اتصال", "تواصل", "phone", "سنترال"]
     not_course = not any(w in norm_q for w in ["شعبه", "شعبة", "مقرر", "قاعه", "قاعة"])
     if any(k in norm_q for k in phone_keys) and not_course:
-        sa_phone = univ_info.get("student_affairs_phone") or univ_info.get("main_phone", "0114677777")
-        main_phone = univ_info.get("main_phone", "0114677777")
-        u_name = univ_info.get("name", "جامعة الملك سعود")
-        deanship = univ_info.get("deanship", "عمادة شؤون الطلاب")
-        portal = univ_info.get("portal_url", "https://ksu.edu.sa")
-
         return (
             f"أهلاً بك زميلي الطالب 🎓\n"
             f"إليك أرقام الاتصال الرسمية المعتمدة لـ {u_name}:\n"
@@ -508,8 +543,30 @@ def resolve_direct_student_inquiry(student_question: str, orig_post_text: str = 
             f"فريقنا دائماً في خدمتك يا بطل، بالتوفيق! 🌸"
         )
 
-    # 3. الاستفسار عن مكان المنشور أو الروابط
-    # يغطي: "اين المنشور", "وين المنشور", "اين الرابط", "وين الرابط", "اين البوست", "وين احصل"
+    # 5. الاستفسار عن الحذف والإضافة وتعديل المقررات والجدول
+    add_drop_keys = ["حذف واضافه", "حذف واضافة", "حذف واضافت", "تعديل جدول", "تنزيل مواد", "تنزيل المقررات", "تسجيل المقررات", "فتح شعب", "فتح شعبة", "فتح سكشن"]
+    if any(k in norm_q for k in add_drop_keys):
+        return (
+            f"أهلاً زميلي الطالب 🎓\n"
+            f"بخصوص الحذف والإضافة وتعديل الجداول في {u_name}:\n"
+            f"▫️ العمليات تتم إلكترونياً عبر بوابة الطالب: {edugate}\n"
+            f"▫️ يُرجى الالتزام بفترات التسجيل المحددة في التقويم الأكاديمي.\n"
+            f"▫️ إذا كانت الشعبة مغلقة، تواصل مع مرشدك الأكاديمي (الأدفايزر) أو رئيس القسم لطلب تسجيل استثنائي.\n\n"
+            f"📩 عمادة القبول والتسجيل: `{adm_email}` 🌸"
+        )
+
+    # 6. الاستفسار عن المكافأة والإعانة الطلابية
+    allowance_keys = ["مكافاه", "مكافأة", "اعانه", "إعانة", "نزول المكافاه", "نزول المكافأة", "المكافات", "المكافآت", "متى تنزل المكافاه", "متى تنزل المكافأة", "تاخر المكافاه"]
+    if any(k in norm_q for k in allowance_keys):
+        return (
+            f"أهلاً زميلي الطالب 🎓\n"
+            f"بخصوص المكافأة الطلابية لـ {u_name}:\n"
+            f"▫️ تصرف المكافآت والإعانات شهرياً وفق مسيرات الصرف المعتمدة من العمادة.\n"
+            f"▫️ يمكنك متابعة حالة الصرف والتحويل البنكي عبر بوابة الخدمات الذاتية: {edugate}\n"
+            f"▫️ لأي استفسار يخص الحساب البنكي أو مسيرات الصرف، يمكنك مراجعة قسم المكافآت بشؤون الطلاب: `{sa_email}` 🌸"
+        )
+
+    # 7. الاستفسار عن مكان المنشور أو الروابط
     post_loc_keys = [
         "اين المنشور", "وين المنشور", "اين البوست", "وين البوست",
         "اين الخبر", "وين الخبر", "وين الرابط", "اين الرابط",
@@ -518,27 +575,21 @@ def resolve_direct_student_inquiry(student_question: str, orig_post_text: str = 
     ]
     if any(k in norm_q for k in post_loc_keys):
         target_ch = univ_info.get("channel") or "@jhdhhdcj"
-        u_name = univ_info.get("name", "جامعة الملك سعود")
-        portal = univ_info.get("portal_url", "https://ksu.edu.sa")
-        edugate = univ_info.get("edugate_url", "https://edugate.ksu.edu.sa")
-
         return (
             f"أهلاً بك زميلي الطالب 🎓\n"
             f"📌 كافة المنشورات والقرارات الأكاديمية الرسمية تجدها منشورة أولاً بأول في قناتنا المعتمدة:\n"
             f"👉 {target_ch}\n\n"
             f"🔗 بوابة الجامعة الرسمية: {portal}\n"
             f"💻 بوابة الخدمات الأكاديمية الذاتية: {edugate}\n\n"
-            f"إذا كنت تسأل عن خبر أو موضوع محدد، اذكره وسأجيبك بتفاصيله الدقيقة فوراً 🌸"
+            f"إذا كنت تسأل عن موضوع أو موعد محدد، اذكره وسأجيبك بتفاصيله الدقيقة فوراً 🌸"
         )
 
-    # 4. الشكر والامتنان والثناء
-    # يغطي: "شكرا", "مشكور", "يعطيك العافيه", "تسلم", "جزاك الله خير", "ما قصرت"
+    # 7. الشكر والامتنان والثناء
     if re.search(r"^(?:شكرا|شكراً|مشكور|مشكورة|تسلم|تسلمين|يعطيك العافيه|يعطيك العافية|جزاك الله خير|الله يسعدك|ما قصرت|الله يعطيك العافيه)", norm_q):
         return "العفو زميلي العزيز 🌸 بخدمتكم دائماً وفالك التوفيق والدرجات العالية يا رب! 🎓✨"
 
-    # 5. التحية والسلام المفرد بدون سؤال مركب
+    # 8. التحية والسلام المفرد
     if re.search(r"^(?:السلام عليكم|سلام عليكم|مرحبا|مرحباً|صباح الخير|مساء الخير|أهلاً|اهلا)$", norm_q):
-        u_name = univ_info.get("name", "جامعة الملك سعود")
         return f"وعليكم السلام ورحمة الله وبركاته 🌸\nأهلاً بك زميلي في رحاب {u_name}، كيف أقدر أساعدك اليوم في دراستك أو استفساراتك الأكاديمية؟ 🎓"
 
     return None
@@ -631,6 +682,8 @@ def detect_student_context(text: str) -> str:
     - friday_prayer: يوم الجمعة، الصلاة على النبي ﷺ، سورة الكهف، الأدعية
     - student_project: استبيانات ومشاريع تخرج الزملاء
     - charity_volunteering: التبرع بالدم، العمل الخيري، التطوع
+    - national_celebrations: اليوم الوطني، يوم التأسيس، الاحتفالات والمناسبات الوطنية
+    - campus_activities: ورش العمل، الملتقيات، معارض الفرص، المسابقات، أندية الطلاب
     - general_academic: تنبيهات أكاديمية ومواعيد عامة
     """
     t = text.lower()
@@ -640,6 +693,9 @@ def detect_student_context(text: str) -> str:
 
     if any(k in t for k in ["جمعة مباركة", "يوم الجمعة", "سورة الكهف", "اللهم صل", "الصلاة على النبي", "ساعة الاستجابة"]):
         return "friday_prayer"
+
+    if any(k in t for k in ["اليوم الوطني", "يوم التأسيس", "العيد الوطني", "احتفال وطني", "حفل اليوم الوطني", "يوم العلم"]):
+        return "national_celebrations"
 
     if any(k in t for k in ["تخرج", "خريج", "خريجين", "خريجات", "حفل التخرج", "وثائق التخرج", "مرتبة الشرف", "مبروك التخرج"]):
         return "graduation"
@@ -655,6 +711,9 @@ def detect_student_context(text: str) -> str:
 
     if any(k in t for k in ["تبرع بالدم", "بنك الدم", "ساعات تطوع", "عمل تطوعي", "حملة خيرية", "كسوة"]):
         return "charity_volunteering"
+
+    if any(k in t for k in ["فعالية", "فعاليات", "ملتقى", "ورشة", "ورشة عمل", "دورة تدريبية", "مسابقة", "هاكاثون", "معرض الفرص", "يوم المهنة", "نادي طلابي", "أندية طلابية", "نشاط طلابي"]):
+        return "campus_activities"
 
     return "general_academic"
 
@@ -914,12 +973,13 @@ class StandaloneTelegramEducationalBot:
         if "emoji" in url or "telegram.org/img" in url or "website_icon" in url or "favicon" in url:
             return None
 
-        # تشفير المسار إذا كان يحتوي على فراغات أو أحرف خاصة
-        if " " in url:
+        # تشفير المسار والاستعلام بشكل قياسي لضمان عدم رفض تيليجرام لأي أحرف خاصة أو عربية
+        if url.startswith("http://") or url.startswith("https://"):
             try:
                 parts = urllib.parse.urlsplit(url)
-                quoted_path = urllib.parse.quote(parts.path)
-                url = urllib.parse.urlunsplit((parts.scheme, parts.netloc, quoted_path, parts.query, parts.fragment))
+                quoted_path = urllib.parse.quote(urllib.parse.unquote(parts.path), safe="/:@&+$,-_.!~*'()")
+                quoted_query = urllib.parse.quote(urllib.parse.unquote(parts.query), safe="=&?:/@+$,-_.!~*'()")
+                url = urllib.parse.urlunsplit((parts.scheme, parts.netloc, quoted_path, quoted_query, parts.fragment))
             except Exception:
                 pass
         return url
@@ -1085,7 +1145,16 @@ class StandaloneTelegramEducationalBot:
                 return res
 
             err_desc = str(res.get("description", "")).lower()
-            is_url_fetch_error = "failed to get http url content" in err_desc or "wrong_file_identifier" in err_desc or "wrong file identifier" in err_desc or "wrong_type" in err_desc
+            is_url_fetch_error = any(phrase in err_desc for phrase in [
+                "failed to get http url content",
+                "wrong_file_identifier",
+                "wrong file identifier",
+                "wrong remote file identifier",
+                "wrong character in the string",
+                "wrong_type",
+                "wrong persistent file id",
+                "can't parse"
+            ])
 
             # محاولة 2: بدون parse_mode بنص عادي فقط إذا كان الخطأ متعلقاً بالتنسيق
             if not is_url_fetch_error and lead_caption and parse_mode:
@@ -1097,7 +1166,7 @@ class StandaloneTelegramEducationalBot:
                         self.send_msg(chat_id, remainder, reply_markup=reply_markup, parse_mode=parse_mode)
                     return res
 
-            # محاولة 3: تحميل الصورة محلياً ورفعها كـ Multipart لضمان تجاوز حظر خوادم الـ CDN
+            # محاولة 3: تحميل الصورة محلياً ورفعها كـ Multipart لضمان تجاوز حظر خوادم الـ CDN أو تعذر جلب الرابط من تيليجرام
             temp_file = self.download_remote_media_to_temp(clean_p, ".jpg")
             if temp_file and os.path.isfile(temp_file):
                 local_res = self.send_photo(chat_id, temp_file, caption=caption, reply_markup=reply_markup, parse_mode=parse_mode)
@@ -1108,7 +1177,14 @@ class StandaloneTelegramEducationalBot:
                 if local_res.get("ok"):
                     return local_res
 
-            # محاولة 4: إرسال الصورة برابطها فارغة ثم إرسال النص فقط إذا لم تكن مشكلة في جلب الرابط
+            # خط دفاع فوري: إذا كان الرابط الخارجي مرفوضاً أو به أحرف غير مقبولة لتيليجرام، يتم إرسال النص فوراً حتى لا يضيع الخبر
+            if is_url_fetch_error and caption:
+                res_msg = self.send_msg(chat_id, caption, reply_markup=reply_markup, parse_mode=parse_mode)
+                if res_msg.get("ok"):
+                    res_msg["note"] = "fallback_text_after_photo_url_error"
+                    return res_msg
+
+            # محاولة 4: إرسال الصورة برابطها فارغة ثم إرسال النص فقط إذا لم تكن المشكلة في جلب الرابط نفسه
             if not is_url_fetch_error:
                 res_pure = self.tg_request("sendPhoto", {"chat_id": chat_id, "photo": clean_p})
                 if res_pure.get("ok"):
@@ -1742,16 +1818,21 @@ class StandaloneTelegramEducationalBot:
         cleaned = re.sub(r'\s+X\s*$', '', cleaned)
         # إزالة روابط قنوات تيليجرام الترويجية فقط دون مساس بالروابط الرسمية أو أسماء الجامعات
         cleaned = re.sub(r'https?://(?:t\.me|telegram\.me)/[a-zA-Z0-9_+/]+', '', cleaned)
-        cleaned = re.sub(r'(?:لا تنسوا الاشتراك|تابعونا على تليجرام|اشترك في القناة)[^\n.]*', '', cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r'(?:لا تنسوا الاشتراك|تابعونا على تليجرام|اشترك في القناة|انضموا إلى قناتنا)[^\n.]*', '', cleaned, flags=re.IGNORECASE)
+        # إزالة توقيعات ومصادر وكالات الأنباء والمواقع الخارجية (مثل Kurdistan24 و PUKmedia وغيرها)
+        cleaned = re.sub(r'(?:Kurdistan24|PUKmedia|رويترز|وكالة الأنباء|واس|كونا|أ ف ب|AFP|Reuters|سبق|عكاظ|الرياض|الوطن|القبس|الرأي)\b[^\n]*', '', cleaned, flags=re.IGNORECASE)
+        # تنظيف الهاشتاجات المكررة من نهاية المنشور
+        cleaned = re.sub(r'#\w+', '', cleaned)
         cleaned = cleaned.replace("ߓ堙噈اعيد", "مواعيد").replace("ߓꠙ嘰كرات", "مذكرات").replace("ߎ㠘㙆ظمة", "أنظمة")
-        cleaned = re.sub(r'[\u07C0-\u07FF\u4E00-\u9FFF\uF000-\uFFFF]', '', cleaned)
+        # تنظيف المحارف الكردية/الفارسية والرموز غير العربية القياسية
+        cleaned = re.sub(r'[\u0670-\u06D3\u06D5\u06FB-\u06FE\u07C0-\u07FF\u4E00-\u9FFF\uF000-\uFFFF]+', '', cleaned)
 
         # حذف الأسطر الفارغة والنقاط الفارغة مع الحفاظ الكامل على نصوص المنشور
         lines = cleaned.split("\n")
         clean_lines = []
         for l in lines:
             t = l.strip()
-            if not t or t in ["•", "-", "*", "📌", "🎓", "• ", "- ", "* "]:
+            if not t or t in ["•", "-", "*", "📌", "🎓", "• ", "- ", "* ", "▫️", "▫"]:
                 continue
             clean_lines.append(t)
         return "\n".join(clean_lines).strip()
@@ -2085,10 +2166,8 @@ class StandaloneTelegramEducationalBot:
         except Exception as e:
             logger.warning(f"ملاحظة في دمج الأخبار بالذكاء الاصطناعي: {e}")
 
-        combined = f"🚨 <b>تحديث وتفاصيل مكملة - {univ_label}</b>\n\n▫️ {clean1[:300]}\n▫️ {clean2[:300]}"
-        if all_links:
-            combined += "\n\n🔗 <b>رابط البوابة الإلكترونية المعتمدة:</b>\n" + "\n".join(all_links)
-        return combined
+        # إذا تعذر الدمج بالذكاء الاصطناعي، نصيغ الخبر الأساسي بدقة ودفء عبر call_ai بدلاً من القوالب الصماء
+        return self.call_ai(clean1, target_univ=target_univ)
 
     def call_ai(self, raw_text: str, custom_instruction: str = "", system_prompt: Optional[str] = None, target_univ: Optional[str] = None) -> Optional[str]:
         clean_input = self.clean_text_from_sources(raw_text)
@@ -2113,6 +2192,8 @@ class StandaloneTelegramEducationalBot:
             "friday_prayer": "المحتوى إيماني أو يوم الجمعة. صغه بروح أخوية دافئة مع الصلاة على النبي ﷺ والتذكير بسورة الكهف وساعة الاستجابة ودعوات الخير للجميع.",
             "student_project": "المحتوى استبيان أو مشروع تخرج لزميل. اطلب دعم الزملاء لتعبئة الرابط المرفق فقط.",
             "charity_volunteering": "المحتوى عمل خيري أو تطوع أو تبرع. شجع الطلاب على الخير والمشاركة واحتساب الأجر.",
+            "national_celebrations": "المحتوى احتفال وطني أو فعالية وطنية جامعية (مثل اليوم الوطني أو يوم التأسيس). صغ المنشور بروح وطنية واعتزاز وأسلوب طلابي دافئ ومبهج يبرز مواعيد الفعاليات المقامة بالجامعة المذكورة فقط.",
+            "campus_activities": "المحتوى فعالية طلابية، ورشة عمل، معرض، مسابقة، أو نشاط نادي طلابي. صغ المنشور بأسلوب مشجع ومحفز للطلبة للمشاركة وتنمية المهارات مع إبراز الموعد والقاعة.",
             "general_academic": "تحديث أو إعلان أكاديمي مهم. ادخل في صلب الموضوع مباشرة بأسلوب دقيق ومختصر ينقل الفائدة الحقيقية دون قوالب مكررة أو تضخيم."
         }
         ctx_guide = context_hints.get(ctx, context_hints["general_academic"])
@@ -2713,6 +2794,13 @@ class StandaloneTelegramEducationalBot:
     def check_telegram_channel_scraper(self, src: Dict[str, Any], is_manual: bool = False, bound_univ: Optional[Dict[str, Any]] = None):
         channel_name = src.get("target", "").replace("@", "").replace("https://t.me/s/", "").replace("https://t.me/", "").strip()
         if not channel_name:
+            return
+
+        # إذا كانت القناة هي إحدى قنوات النشر المستهدفة، لا نقوم بزحفها كمصدر لتفادي الحلقات المفرغة
+        target_channels = db.get_target_channels()
+        target_handles = [t.replace("@", "").lower().strip() for t in target_channels]
+        if channel_name.lower() in target_handles:
+            logger.info(f"ℹ️ تم تخطي سحب القناة @{channel_name} لأنها قناة نشر معتمدة وليست مصدراً خارجياً للمراقبة.")
             return
 
         url = f"https://t.me/s/{channel_name}"
@@ -3385,8 +3473,8 @@ class StandaloneTelegramEducationalBot:
 
         post_context = f"نص المنشور الأصلي المعتمد للقناة ({u_name}):\n{orig_post_text[:1200]}\n" if orig_post_text else f"الجامعة المعنية: {u_name} (لا يوجد منشور مرفق محدد)."
 
-        system_instruction = f"""أنت ممثل الدفعة ومساعد الطلاب الأكاديمي الرسمي لـ {u_name}.
-مهمتك: الرد على استفسار الطالب بدقة وذكاء وإيجاز شديدين (سطر إلى سطرين كحد أقصى).
+        system_instruction = f"""أنت ممثل الدفعة ومساعد الطلاب الأكاديمي والناصح لطلبة {u_name}.
+مهمتك: الرد على استفسار الطالب بروح أخوية دافئة وذكاء ودقة وإيجاز في سطرين إلى ثلاثة أسطر.
 {dialect_note}
 
 بيانات التواصل الرسمية المعتمدة لـ {u_name}:
@@ -3395,21 +3483,20 @@ class StandaloneTelegramEducationalBot:
 - بريد عمادة شؤون الطلاب: {sa_email}
 - هاتف شؤون الطلاب: {sa_phone}
 
-ضوابط صارمة لا تقبل الاستثناء (Strict Anti-Hallucination):
-1. أجب فقط استناداً إلى المنشور المرفق أو البيانات المعتمدة أعلاه.
-2. يمنع منعاً باتاً اختراع أي موعد، ساعة، تاريخ، أو يوم أسبوع غير مذكور حرفياً.
-3. إذا كان سؤال الطالب عن موعد أو إجراء غير معلن في المنشور، أجب باختصار وأدب: 'هذا الإجراء غير محدد في الإعلان الرسمي الحالي، ويمكنك مراجعة البوابة ({portal_url}) أو مراسلة عمادة القبول عبر ({adm_email}).'
-4. يمنع منعاً باتاً استخدام أي جمل روبوتية باردة مثل 'أهلاً بك زميلي الطالب... نشكر استفسارك يرجى الاطلاع على التفاصيل الموضحة نصاً في المنشور الرسمي أعلاه...'. كن إنساناً حقيقياً وزميلاً ناصحاً.
-5. لا تضع روابط وهمية مثل example.com أو [الرابط هنا]."""
+توجيهات الإجابة:
+1. أجب على سؤال الطالب بشكل مباشر ومفيد وناصح. إذا كان سؤاله عن إجراءات أكاديمية عامة (مثل الأعذار الطبية، الحذف والإضافة، التواصل مع المرشد، اللوائح)، اشرح له الإجراء المعتمد وأرشده للبوابة أو الإيميل المختص.
+2. لا تكرر إطلاقاً عبارات معلبة مثل "يرجى مراجعة المنشور أعلاه" إذا كان سؤال الطالب غير مذكور في المنشور.
+3. التزم بالحقائق المعتمدة ولا تختلق أي مواعيد أو تواريخ أو نسب غير معلنة.
+4. ابدأ بتحية ودودة واختم بدعوة صادقة بالتوفيق."""
 
         payload = {
             "model": PRIMARY_MODEL,
             "messages": [
                 {"role": "system", "content": system_instruction},
-                {"role": "user", "content": f"{post_context}\nسؤال الطالب: {student_question}\nالمطلوب: إجابة مباشرة وذكية ومختصرة في سطر إلى سطرين دون أي اختلاق:"}
+                {"role": "user", "content": f"{post_context}\nسؤال الطالب: {student_question}\nالمطلوب: إجابة مباشرة وذكية ومختصرة في سطرين دون أي اختلاق:"}
             ],
             "temperature": 0.1,
-            "max_tokens": 150
+            "max_tokens": 250
         }
 
         headers = {
@@ -3425,7 +3512,7 @@ class StandaloneTelegramEducationalBot:
                     reply_text = data["choices"][0]["message"]["content"].strip()
                     reply_text = re.sub(r'\[?(?:الرابط هنا|رابط البوابة|اضغط هنا)\]?', '', reply_text)
                     reply_text = re.sub(r'https?://(?:www\.)?example\.com\S*', '', reply_text).strip()
-                    if "نشكر استفسارك، بخصوص ذلك يرجى الاطلاع" not in reply_text and len(reply_text) > 5:
+                    if "نشكر استفسارك" not in reply_text and len(reply_text) > 5:
                         return reply_text
         except Exception as e:
             logger.debug(f"call_ai_for_comment error: {e}")
@@ -3437,7 +3524,7 @@ class StandaloneTelegramEducationalBot:
                 g_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key={gemini_key}"
                 g_payload = {
                     "contents": [{"parts": [{"text": f"{system_instruction}\n\n{post_context}\nسؤال الطالب: {student_question}"}]}],
-                    "generationConfig": {"temperature": 0.1, "maxOutputTokens": 150}
+                    "generationConfig": {"temperature": 0.1, "maxOutputTokens": 200}
                 }
                 g_req = urllib.request.Request(g_url, data=json.dumps(g_payload).encode("utf-8"), headers={"Content-Type": "application/json"})
                 with urllib.request.urlopen(g_req, context=ssl_ctx, timeout=5) as g_resp:
@@ -3460,7 +3547,7 @@ class StandaloneTelegramEducationalBot:
             # 1. تحديد بيانات الجامعة المستهدفة بدقة
             univ_info = detect_target_university(student_question, orig_post_text, chat_id)
 
-            # 2. الفحص الذكي الفوري للاستفسارات المباشرة (إيميل، هاتف، أين المنشور، شكر)
+            # 2. الفحص الذكي الفوري للاستفسارات المباشرة (إيميل، هاتف، أين المنشور، أعذار طبية، شكر)
             direct_reply = resolve_direct_student_inquiry(student_question, orig_post_text, univ_info)
             if direct_reply:
                 self.send_msg(chat_id, direct_reply, reply_to_message_id=message_id)
@@ -3469,14 +3556,21 @@ class StandaloneTelegramEducationalBot:
             # 3. الاستعانة بالذكاء الأكاديمي للاستفسارات المركبة
             ai_reply = self.call_ai_for_comment(student_question, orig_post_text, group_chat_id=chat_id)
             if not ai_reply:
-                u_name = univ_info.get("name", "جامعة الملك سعود")
+                u_name = univ_info.get("name", "الجامعة")
                 portal = univ_info.get("portal_url", "https://ksu.edu.sa")
                 adm_email = univ_info.get("admission_email", "darss@ksu.edu.sa")
                 sa_email = univ_info.get("student_affairs_email", "sa@ksu.edu.sa")
-                if orig_post_text and len(orig_post_text) > 20:
-                    ai_reply = f"أهلاً زميلي 🎓 تفاصيل هذا الإعلان موضحة في المنشور أعلاه، ولأي استفسار إضافي يمكنك مراسلة عمادة القبول عبر ({adm_email}) أو زيارة البوابة ({portal}). بالتوفيق!"
+                
+                # فحص موضوع السؤال لتوليد رد ذكي وطبيعي بدلاً من القوالب الصماء
+                q_low = student_question.lower()
+                if any(w in q_low for w in ["سؤال", "استفسار", "سلام", "مرحبا", "هلا"]):
+                    ai_reply = f"وعليكم السلام ورحمة الله وبركاته 🌸\nأهلاً بك زميلي في رحاب {u_name} 🎓 تفضل اطرح سؤالك وسأجيبك فوراً بكل ما تحتاجه، وفالك التوفيق والتميز دائماً! ✨"
+                elif any(w in q_low for w in ["طبيه", "طبية", "عذر", "مرض"]):
+                    ai_reply = f"أهلاً زميلي 🎓 لتقديم العذر الطبي، تفضل بزيارة البوابة الإلكترونية ({portal}) قسم الخدمات الطلابية ورفع التقرير المعتمد، أو مراسلة شؤون الطلاب عبر: `{sa_email}`. وفالك العافية والتوفيق! 🌸"
+                elif any(w in q_low for w in ["جدول", "حذف", "اضافة", "مقرر", "شعبة"]):
+                    ai_reply = f"أهلاً زميلي 🎓 تعديل الجداول والحذف والإضافة متاح عبر بوابة الخدمات الأكاديمية ({portal})، وإذا واجهتك شعبة مغلقة تواصل مع مرشدك الأكاديمي (الأدفايزر) أو عمادة القبول عبر: `{adm_email}` 🌸"
                 else:
-                    ai_reply = f"أهلاً بك زميلي 🎓 بخصوص استفسارك حول {u_name}، يمكنك مراجعة اللوائح والمواعيد المعتمدة عبر البوابة الرسمية ({portal}) أو مراسلة ({sa_email}). بالتوفيق لك!"
+                    ai_reply = f"أهلاً بك زميلي 🎓 بخدمتك دائماً، يمكنك الاطلاع على اللوائح والخدمات الطلابية لـ {u_name} عبر البوابة المعتمدة:\n🔗 {portal}\nولأي استفسار إضافي يمكنك مراسلة عمادة شؤون الطلاب: `{sa_email}`. بالتوفيق! 🌸"
 
             self.send_msg(chat_id, ai_reply, reply_to_message_id=message_id)
         except Exception as e:
