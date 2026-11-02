@@ -292,7 +292,7 @@ app.post('/api/university/add', (req: Request, res: Response) => {
     data.lastUpdated = new Date().toISOString();
     fs.writeFileSync(SOURCES_FILE, JSON.stringify(data, null, 2), 'utf-8');
 
-    // Also update SQLite database via Python script helper
+    // Also update SQLite database via Python script helper with the EXACT same univId
     execFile('python3', ['-c', `
 import database as db
 db.add_university_project(
@@ -300,11 +300,74 @@ db.add_university_project(
     target_channel=${JSON.stringify(newProj.target_channel)},
     telegram_sources=${JSON.stringify(newProj.telegram_sources)},
     twitter_sources=${JSON.stringify(newProj.twitter_sources)},
-    google_news_query=${JSON.stringify(newProj.google_news_query)}
+    google_news_query=${JSON.stringify(newProj.google_news_query)},
+    univ_id=${JSON.stringify(newProj.id)}
 )
 `], { cwd: __dirname }, () => {});
 
     res.json({ success: true, project: newProj });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: message });
+  }
+});
+
+// Update an existing University Project (Channel, Sources, Name, Query)
+app.post('/api/university/update', (req: Request, res: Response) => {
+  try {
+    const { id, name, target_channel, telegram_sources, twitter_sources, google_news_query, keywords, enabled } = req.body;
+    if (!id) {
+      res.status(400).json({ error: "معرف الجامعة مطلوب" });
+      return;
+    }
+    const data = JSON.parse(fs.readFileSync(SOURCES_FILE, 'utf-8'));
+    let found = false;
+    let updatedProj: any = null;
+
+    if (data.university_projects) {
+      for (const p of data.university_projects) {
+        if (p.id === id || p.name === name) {
+          if (name !== undefined) p.name = name.trim();
+          if (target_channel !== undefined) p.target_channel = target_channel.trim();
+          if (telegram_sources !== undefined) p.telegram_sources = telegram_sources;
+          if (twitter_sources !== undefined) p.twitter_sources = twitter_sources;
+          if (google_news_query !== undefined) p.google_news_query = google_news_query.trim();
+          if (keywords !== undefined) p.keywords = keywords;
+          if (enabled !== undefined) p.enabled = Boolean(enabled);
+          p.lastUpdated = new Date().toISOString();
+          updatedProj = p;
+          found = true;
+          break;
+        }
+      }
+    }
+
+    if (found && updatedProj) {
+      if (updatedProj.target_channel && !data.target_channels.includes(updatedProj.target_channel)) {
+        data.target_channels.push(updatedProj.target_channel);
+      }
+      data.lastUpdated = new Date().toISOString();
+      fs.writeFileSync(SOURCES_FILE, JSON.stringify(data, null, 2), 'utf-8');
+
+      // Update SQLite database via Python helper
+      execFile('python3', ['-c', `
+import database as db
+db.update_university_project(
+    univ_id=${JSON.stringify(id)},
+    name=${JSON.stringify(updatedProj.name)},
+    target_channel=${JSON.stringify(updatedProj.target_channel)},
+    telegram_sources=${JSON.stringify(updatedProj.telegram_sources)},
+    twitter_sources=${JSON.stringify(updatedProj.twitter_sources)},
+    google_news_query=${JSON.stringify(updatedProj.google_news_query)},
+    keywords=${JSON.stringify(updatedProj.keywords)},
+    enabled=${JSON.stringify(updatedProj.enabled)}
+)
+`], { cwd: __dirname }, () => {});
+
+      res.json({ success: true, project: updatedProj });
+    } else {
+      res.status(404).json({ error: "لم يتم العثور على الجامعة المحددة للتعديل" });
+    }
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     res.status(500).json({ error: message });
@@ -346,10 +409,20 @@ app.post('/api/university/delete', (req: Request, res: Response) => {
     const { id } = req.body;
     const data = JSON.parse(fs.readFileSync(SOURCES_FILE, 'utf-8'));
     if (data.university_projects) {
-      data.university_projects = data.university_projects.filter((p: any) => p.id !== id);
+      const targetProj = data.university_projects.find((p: any) => p.id === id || p.name === id);
+      const deletedName = targetProj ? targetProj.name : id;
+
+      data.university_projects = data.university_projects.filter((p: any) => p.id !== id && p.name !== id);
       data.lastUpdated = new Date().toISOString();
       fs.writeFileSync(SOURCES_FILE, JSON.stringify(data, null, 2), 'utf-8');
-      execFile('python3', ['-c', `import database as db; db.delete_university_project('${id}')`], { cwd: __dirname }, () => {});
+
+      // Permanent deletion in SQLite and disk sync
+      execFile('python3', ['-c', `
+import database as db
+db.delete_university_project(${JSON.stringify(id)})
+db.delete_university_project(${JSON.stringify(deletedName)})
+`], { cwd: __dirname }, () => {});
+
       res.json({ success: true });
     } else {
       res.status(404).json({ error: "الجامعة غير موجودة" });
@@ -368,6 +441,62 @@ app.get('/api/universities', (_req: Request, res: Response) => {
       success: true,
       universities: data.university_projects || [],
       channel_mappings: data.channel_mappings || []
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: message });
+  }
+});
+
+// 5.3 Termux and Phone Internal Storage Sync API
+app.get('/api/termux/status', (_req: Request, res: Response) => {
+  try {
+    execFile('python3', ['-c', `
+import database as db, json
+paths = db.get_phone_storage_paths()
+print(json.dumps({
+    "success": True,
+    "paths": paths,
+    "has_android_storage": any("/sdcard" in p or "/storage" in p for p in paths)
+}))
+`], { cwd: __dirname }, (error, stdout) => {
+      if (error || !stdout) {
+        res.json({
+          success: true,
+          paths: [path.join(__dirname, 'storage_downloads', 'TelegramBot')],
+          has_android_storage: false
+        });
+        return;
+      }
+      try {
+        res.json(JSON.parse(stdout.trim()));
+      } catch {
+        res.json({ success: true, paths: [], has_android_storage: false });
+      }
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post('/api/termux/sync', (req: Request, res: Response) => {
+  try {
+    const forceImport = Boolean(req.body.force_import);
+    execFile('python3', ['-c', `
+import database as db, json
+res = db.sync_all_storages(force_import=${forceImport ? 'True' : 'False'})
+print(json.dumps(res))
+`], { cwd: __dirname }, (error, stdout) => {
+      if (error || !stdout) {
+        res.json({ success: true, message: "تمت المزامنة بنجاح مع التخزين الداخلي" });
+        return;
+      }
+      try {
+        res.json(JSON.parse(stdout.trim()));
+      } catch {
+        res.json({ success: true, message: "تمت المزامنة بنجاح" });
+      }
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);

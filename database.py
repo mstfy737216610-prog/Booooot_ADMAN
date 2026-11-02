@@ -863,7 +863,8 @@ def add_university_project(
     telegram_sources: List[str],
     twitter_sources: List[str],
     google_news_query: Optional[str] = None,
-    keywords: Optional[List[str]] = None
+    keywords: Optional[List[str]] = None,
+    univ_id: Optional[str] = None
 ) -> Dict[str, Any]:
     with _db_lock:
         conn = get_db_connection()
@@ -875,7 +876,10 @@ def add_university_project(
 
             import re, time
             clean_tag = re.sub(r'[^a-zA-Z0-9_]', '', target_ch.replace("@", "")) or "univ"
-            univ_id = f"univ_{clean_tag}_{int(time.time())}"
+            if not univ_id or not univ_id.strip():
+                univ_id = f"univ_{clean_tag}_{int(time.time())}"
+            else:
+                univ_id = univ_id.strip()
             now_str = datetime.utcnow().isoformat()
 
             if not google_news_query:
@@ -964,30 +968,122 @@ def get_university_projects() -> List[Dict[str, Any]]:
                     "enabled": bool(r["enabled"]),
                     "created_at": r["created_at"]
                 })
-            if not results:
-                def_proj = add_university_project(
-                    name="جامعة الملك سعود",
-                    target_channel="@jhdhhdcj",
-                    telegram_sources=["@KSU_News"],
-                    twitter_sources=["@ksu_news"],
-                    google_news_query="جامعة الملك سعود",
-                    keywords=["جامعة الملك سعود", "الملك سعود", "KSU", "قبول", "تسجيل"]
-                )
-                results.append(def_proj)
+            # ملاحظة هامة: لا نقوم بإعادة إنشاء أي جامعة افتراضية تلقائياً عند الحذف؛
+            # إذا قام المستخدم بحذف الجامعة، تبقى محذوفة بشكل دائم ولا تعود للظهور مطلقاً.
             return results
         finally:
             conn.close()
 
 
 def delete_university_project(univ_id: str) -> bool:
+    """حذف مشروع الجامعة بشكل نهائي ودائم بالمعرف أو الاسم مع تطهير الهوية المعرفية والمصادر"""
     with _db_lock:
         conn = get_db_connection()
         try:
             cursor = conn.cursor()
-            cursor.execute("DELETE FROM university_projects WHERE id = ?", (univ_id,))
+            cursor.execute("DELETE FROM university_projects WHERE id = ? OR name = ?", (univ_id, univ_id))
+            deleted = cursor.rowcount > 0
+            cursor.execute("DELETE FROM university_knowledge WHERE univ_id = ? OR univ_name = ?", (univ_id, univ_id))
+            conn.commit()
+            logger.info(f"🗑️ [حذف مشروع جامعة] تم حذف المشروع ({univ_id}) نهائياً: {deleted}")
+            sync_to_json_files()
+            return deleted
+        finally:
+            conn.close()
+
+
+def update_university_project(
+    univ_id: str,
+    name: Optional[str] = None,
+    target_channel: Optional[str] = None,
+    telegram_sources: Optional[List[str]] = None,
+    twitter_sources: Optional[List[str]] = None,
+    google_news_query: Optional[str] = None,
+    keywords: Optional[List[str]] = None,
+    enabled: Optional[bool] = None
+) -> Optional[Dict[str, Any]]:
+    """تعديل مشروع جامعة بالكامل (قناة النشر، المصادر، الاستعلام، الاسم، الكلمات المفتاحية)"""
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM university_projects WHERE id = ? OR name = ?", (univ_id, univ_id))
+            row = cursor.fetchone()
+            if not row:
+                return None
+
+            curr_id = row["id"]
+            new_name = name.strip() if name is not None else row["name"]
+            
+            if target_channel is not None:
+                new_target = target_channel.strip()
+                if not new_target.startswith("@") and not new_target.startswith("-100"):
+                    new_target = "@" + new_target
+            else:
+                new_target = row["target_channel"]
+
+            new_tg = telegram_sources if telegram_sources is not None else json.loads(row["telegram_sources"] or "[]")
+            new_tw = twitter_sources if twitter_sources is not None else json.loads(row["twitter_sources"] or "[]")
+            new_gnews = google_news_query.strip() if google_news_query is not None else row["google_news_query"]
+            new_kw = keywords if keywords is not None else json.loads(row["keywords"] or "[]")
+            new_enabled = int(enabled) if enabled is not None else row["enabled"]
+
+            cursor.execute("""
+                UPDATE university_projects 
+                SET name = ?, target_channel = ?, telegram_sources = ?, twitter_sources = ?,
+                    google_news_query = ?, keywords = ?, enabled = ?
+                WHERE id = ?
+            """, (
+                new_name,
+                new_target,
+                json.dumps(new_tg, ensure_ascii=False),
+                json.dumps(new_tw, ensure_ascii=False),
+                new_gnews,
+                json.dumps(new_kw, ensure_ascii=False),
+                new_enabled,
+                curr_id
+            ))
+
+            now_str = datetime.utcnow().isoformat()
+            cursor.execute("""
+                INSERT OR IGNORE INTO target_channels (channel_id, title, status, created_at)
+                VALUES (?, ?, 'active', ?)
+            """, (new_target, f"قناة {new_name}", now_str))
+
+            # تسجيل مصادر تيليجرام وتويتر الجديدة
+            import re
+            clean_tag = re.sub(r'[^a-zA-Z0-9_]', '', new_target.replace("@", "")) or "univ"
+            for tg_s in new_tg:
+                tg_clean = tg_s.strip()
+                if tg_clean:
+                    cursor.execute("""
+                        INSERT INTO sources (id, type, target, title, priority, rule, enabled, last_post_id, added_by, created_at)
+                        VALUES (?, 'telegram', ?, ?, 'high', 'official', 1, '0', 7607633343, ?)
+                        ON CONFLICT(target) DO UPDATE SET enabled = 1, title = excluded.title
+                    """, (f"src_{clean_tag}_{abs(hash(tg_clean)) % 100000}", tg_clean, f"مصدر {new_name}", now_str))
+
+            for tw_s in new_tw:
+                tw_clean = tw_s.strip()
+                if tw_clean:
+                    cursor.execute("""
+                        INSERT INTO sources (id, type, target, title, priority, rule, enabled, last_post_id, added_by, created_at)
+                        VALUES (?, 'twitter', ?, ?, 'high', 'official', 1, '0', 7607633343, ?)
+                        ON CONFLICT(target) DO UPDATE SET enabled = 1, title = excluded.title
+                    """, (f"src_tw_{clean_tag}_{abs(hash(tw_clean)) % 100000}", tw_clean, f"تويتر {new_name}", now_str))
+
             conn.commit()
             sync_to_json_files()
-            return cursor.rowcount > 0
+            logger.info(f"✏️ [تعديل مشروع جامعة] تم تحديث مشروع {new_name} ({curr_id}) بنجاح.")
+            return {
+                "id": curr_id,
+                "name": new_name,
+                "target_channel": new_target,
+                "telegram_sources": new_tg,
+                "twitter_sources": new_tw,
+                "google_news_query": new_gnews,
+                "keywords": new_kw,
+                "enabled": bool(new_enabled)
+            }
         finally:
             conn.close()
 
@@ -1199,7 +1295,7 @@ def find_university_for_post(source: str, text: str = "") -> Optional[Dict[str, 
 # ----------------- المزامنة مع ملفات JSON ومستودع GitHub -----------------
 
 def sync_to_json_files():
-    """حفظ الحالة الحالية في sources.json و state.json لضمان عمل بوت بزنس وأي أداة خارجية"""
+    """حفظ الحالة الحالية في sources.json و state.json وتصديرها لوحدة التخزين الداخلية ومجلد التنزيلات"""
     try:
         chs = get_target_channels()
         srcs = get_sources()
@@ -1250,8 +1346,206 @@ def sync_to_json_files():
         }
         with open(STATE_FILE, "w", encoding="utf-8") as f:
             json.dump(state_data, f, ensure_ascii=False, indent=2)
+
+        # مزامنة وتصدير فوري لوحدة التخزين الداخلية ومجلد التنزيلات (Termux Downloads)
+        export_to_phone_storage()
     except Exception as e:
         logger.warning(f"ملاحظة في مزامنة JSON: {e}")
+
+
+def get_phone_storage_paths() -> List[str]:
+    """
+    اكتشاف كافة مسارات وحدة التخزين الداخلية ومجلد التنزيلات على أجهزة أندرويد وTermux
+    """
+    candidates = [
+        "/sdcard/Download/TelegramBot",
+        "/storage/emulated/0/Download/TelegramBot",
+        os.path.expanduser("~/storage/downloads/TelegramBot"),
+        os.path.expanduser("~/storage/shared/Download/TelegramBot"),
+        os.path.join(BASE_DIR, "storage_downloads", "TelegramBot")
+    ]
+    valid_paths = []
+    for p in candidates:
+        try:
+            parent = os.path.dirname(p)
+            if os.path.exists(parent) or os.path.exists("/sdcard") or os.path.exists("/storage/emulated/0"):
+                os.makedirs(p, exist_ok=True)
+                valid_paths.append(p)
+        except Exception:
+            pass
+    # نضمن دائماً وجود مسار محلي موحد على الأقل
+    fallback_p = os.path.join(BASE_DIR, "storage_downloads", "TelegramBot")
+    try:
+        os.makedirs(fallback_p, exist_ok=True)
+        if fallback_p not in valid_paths:
+            valid_paths.append(fallback_p)
+    except Exception:
+        pass
+    return valid_paths
+
+
+def export_to_phone_storage() -> Dict[str, Any]:
+    """
+    تصدير ومزامنة فورية لكافة ملفات الإعدادات والجامعات وقاعدة البيانات لمجلد التنزيلات في الهاتف
+    """
+    try:
+        paths = get_phone_storage_paths()
+        univs = get_university_projects()
+
+        univ_data = {
+            "_title": "Telegram University Projects - Live Sync",
+            "last_synced": datetime.utcnow().isoformat(),
+            "total_universities": len(univs),
+            "universities": univs
+        }
+        readme_content = """===============================================================
+مجلد المزامنة المباشرة لبوت الجامعات الأكاديمي (Termux & Internal Storage)
+===============================================================
+هذا المجلد مرتبط بوحدة التخزين الداخلية ومجلد التنزيلات (Downloads) في هاتفك،
+ويتم تحديثه ومزامنته لحظة بلحظة مع البوت وواجهة الويب وتطبيق Termux.
+
+الملفات المتزامنة في هذا المجلد:
+1. universities.json:
+   - يحتوي على كافة الجامعات المضافة وقنوات النشر التابعة لها ومصادرها.
+   - يمكنك تعديل قناة النشر أو إضافة وحذف مصادر تيليجرام وتويتر هنا مباشرة.
+
+2. sources.json:
+   - ملف الإعدادات الشامل للمصادر والقنوات المعتمدة المتوافق مع بوت بزنس.
+
+3. state.json:
+   - حالة النظام وإحصائيات النشر والإعلانات البديلة وآخر التوجيهات.
+
+4. bot_database_backup.sqlite:
+   - نسخة احتياطية حية من قاعدة بيانات البوت (SQLite).
+
+كيفية التعديل من الهاتف:
+- يمكنك فتح universities.json بواسطة أي تطبيق مثل QuickEdit أو MT Manager أو محرر نصوص.
+- احفظ التعديلات، ثم اضغط زر 'مزامنة التخزين الداخلي' من واجهة الويب أو أرسل /sync_storage في تيليجرام.
+- سيقوم البوت باستيراد كافة تعديلاتك وتطبيقها فوراً دون الحاجة لإعادة التشغيل!
+==============================================================="""
+
+        synced_count = 0
+        import shutil
+        for folder in paths:
+            try:
+                # 1. universities.json
+                with open(os.path.join(folder, "universities.json"), "w", encoding="utf-8") as f:
+                    json.dump(univ_data, f, ensure_ascii=False, indent=2)
+
+                # 2. sources.json copy
+                if os.path.exists(SOURCES_FILE):
+                    shutil.copy2(SOURCES_FILE, os.path.join(folder, "sources.json"))
+
+                # 3. state.json copy
+                if os.path.exists(STATE_FILE):
+                    shutil.copy2(STATE_FILE, os.path.join(folder, "state.json"))
+
+                # 4. sqlite database copy
+                if os.path.exists(DB_FILE):
+                    shutil.copy2(DB_FILE, os.path.join(folder, "bot_database_backup.sqlite"))
+
+                # 5. README_TERMUX.txt
+                with open(os.path.join(folder, "README_TERMUX.txt"), "w", encoding="utf-8") as f:
+                    f.write(readme_content)
+
+                synced_count += 1
+            except Exception as fe:
+                logger.debug(f"Phone storage write note for {folder}: {fe}")
+
+        # حفظ نسخة universities.json في المجلد الرئيسي أيضاً
+        with open(os.path.join(BASE_DIR, "universities.json"), "w", encoding="utf-8") as f:
+            json.dump(univ_data, f, ensure_ascii=False, indent=2)
+
+        return {"success": True, "synced_folders": paths, "count": synced_count}
+    except Exception as e:
+        logger.warning(f"ملاحظة في تصدير التخزين الداخلي: {e}")
+        return {"success": False, "error": str(e)}
+
+
+def import_from_phone_storage(force: bool = False) -> Dict[str, Any]:
+    """
+    استيراد التعديلات من ملفات universities.json أو sources.json الموجودة في مجلد التنزيلات بالهاتف
+    """
+    try:
+        paths = get_phone_storage_paths()
+        imported = False
+        target_path = None
+
+        for folder in paths:
+            u_path = os.path.join(folder, "universities.json")
+            if os.path.exists(u_path):
+                # إذا كانت النسخة في التخزين الداخلي أحدث أو تم فرض الاستيراد
+                local_u = os.path.join(BASE_DIR, "universities.json")
+                if force or not os.path.exists(local_u) or os.path.getmtime(u_path) > os.path.getmtime(local_u):
+                    with open(u_path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    univ_list = data.get("universities", [])
+                    if isinstance(univ_list, list) and len(univ_list) > 0:
+                        for u in univ_list:
+                            add_university_project(
+                                name=u["name"],
+                                target_channel=u["target_channel"],
+                                telegram_sources=u.get("telegram_sources", []),
+                                twitter_sources=u.get("twitter_sources", []),
+                                google_news_query=u.get("google_news_query"),
+                                keywords=u.get("keywords"),
+                                univ_id=u.get("id")
+                            )
+                        imported = True
+                        target_path = u_path
+                        break
+
+        # أيضاً فحص sources.json
+        if not imported:
+            for folder in paths:
+                s_path = os.path.join(folder, "sources.json")
+                if os.path.exists(s_path) and s_path != SOURCES_FILE:
+                    if force or os.path.getmtime(s_path) > os.path.getmtime(SOURCES_FILE):
+                        with open(s_path, "r", encoding="utf-8") as f:
+                            sdata = json.load(f)
+                        univ_list = sdata.get("university_projects", [])
+                        for u in univ_list:
+                            add_university_project(
+                                name=u["name"],
+                                target_channel=u["target_channel"],
+                                telegram_sources=u.get("telegram_sources", []),
+                                twitter_sources=u.get("twitter_sources", []),
+                                google_news_query=u.get("google_news_query"),
+                                keywords=u.get("keywords"),
+                                univ_id=u.get("id")
+                            )
+                        imported = True
+                        target_path = s_path
+                        break
+
+        if imported:
+            sync_to_json_files()
+            logger.info(f"📥 [Termux Storage Sync] تم بنجاح استيراد التعديلات من التخزين الداخلي: {target_path}")
+            return {"success": True, "imported": True, "source_path": target_path}
+        else:
+            return {"success": True, "imported": False, "message": "الملفات متطابقة بالفعل ولا توجد تعديلات جديدة"}
+    except Exception as e:
+        logger.warning(f"ملاحظة في استيراد التخزين الداخلي: {e}")
+        return {"success": False, "error": str(e)}
+
+
+def sync_all_storages(force_import: bool = False) -> Dict[str, Any]:
+    """
+    مزامنة شاملة ثنائية الاتجاه تجمع بين:
+    1. استيراد التعديلات من التخزين الداخلي / Termux
+    2. تصدير الحالة الحالية لجميع مسارات التنزيل في الهاتف
+    3. مزامنة ملفات JSON ومستودع GitHub
+    """
+    imp_res = import_from_phone_storage(force=force_import)
+    exp_res = export_to_phone_storage()
+    git_res = git_sync("Sync Termux internal storage and configs")
+    return {
+        "success": True,
+        "import_result": imp_res,
+        "export_result": exp_res,
+        "git_result": git_res,
+        "active_paths": get_phone_storage_paths()
+    }
 
 
 def git_sync(commit_message: str = "Auto-sync update") -> Dict[str, Any]:

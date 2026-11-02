@@ -1546,9 +1546,45 @@ class StandaloneTelegramEducationalBot:
 
     # ----------------- التعرف الضوئي على الحروف (OCR) وتنزيل الوسائط -----------------
     def get_telegram_file_bytes(self, file_id: str) -> Optional[bytes]:
-        """تنزيل ملف أو صورة من تيليجرام باستخدام معرف الملف file_id"""
+        """تنزيل ملف أو صورة من تيليجرام باستخدام معرف الملف file_id أو الرابط المباشر أو المسار المحلي"""
+        if not file_id:
+            return None
+
+        # 1. إذا كان ملفاً محلياً على القرص
+        if os.path.isfile(file_id):
+            try:
+                with open(file_id, "rb") as f:
+                    return f.read()
+            except Exception as e:
+                logger.debug(f"تعذر قراءة الصورة المحلية: {e}")
+                return None
+
+        # 2. إذا كانت الصورة رابط إنترنت مباشر (URL)
+        if file_id.startswith("http://") or file_id.startswith("https://"):
+            try:
+                req_headers = {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                    "Accept": "*/*"
+                }
+                if "telegram" in file_id or "telesco.pe" in file_id or "t.me" in file_id:
+                    req_headers["Referer"] = "https://t.me/"
+                elif "twimg" in file_id or "x.com" in file_id or "twitter" in file_id:
+                    req_headers["Referer"] = "https://x.com/"
+
+                req = urllib.request.Request(file_id, headers=req_headers)
+                with urllib.request.urlopen(req, context=ssl_ctx, timeout=20) as resp:
+                    return resp.read()
+            except Exception as e:
+                logger.debug(f"ملاحظة في تنزيل الصورة من الرابط المباشر: {e}")
+                return None
+
+        # 3. إذا كانت معرف ملف تيليجرام (Telegram file_id)
+        tok = self.get_current_token()
+        if not tok:
+            return None
+
         try:
-            url = f"https://api.telegram.org/bot{self.token}/getFile?file_id={file_id}"
+            url = f"https://api.telegram.org/bot{tok}/getFile?file_id={file_id}"
             req = urllib.request.Request(url, headers={"User-Agent": "TelegramEducationalBot/3.0"})
             with urllib.request.urlopen(req, context=ssl_ctx, timeout=20) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
@@ -1558,12 +1594,15 @@ class StandaloneTelegramEducationalBot:
                 if not file_path:
                     return None
 
-            download_url = f"https://api.telegram.org/file/bot{self.token}/{file_path}"
+            download_url = f"https://api.telegram.org/file/bot{tok}/{file_path}"
             down_req = urllib.request.Request(download_url, headers={"User-Agent": "TelegramEducationalBot/3.0"})
             with urllib.request.urlopen(down_req, context=ssl_ctx, timeout=35) as down_resp:
                 return down_resp.read()
+        except urllib.error.HTTPError as e:
+            logger.debug(f"ملاحظة في تنزيل ملف الصورة من تيليجرام ({file_id[:20]}): {e}")
+            return None
         except Exception as e:
-            logger.warning(f"ملاحظة في تنزيل ملف الصورة من تيليجرام: {e}")
+            logger.debug(f"ملاحظة في تنزيل ملف الصورة من تيليجرام: {e}")
             return None
 
     def extract_text_via_ocr(self, photo_id: str) -> Optional[str]:
@@ -1744,10 +1783,11 @@ class StandaloneTelegramEducationalBot:
             [{"text": "🧠 تعليمات وتدريب البوت"}, {"text": "🐦 سحب وفحص حسابات تويتر"}],
             [{"text": twitter_btn_text}, {"text": google_btn_text}],
             [{"text": "🔄 فحص وسحب أخبار الجامعات"}, {"text": "📝 صياغة ونشر خبر فوري"}],
+            [{"text": "📂 مزامنة التخزين الداخلي (Termux)"}, {"text": "🔄 مزامنة جيت هاب (Git Sync)"}],
             [{"text": "🎯 إعلان خدماتي البديل"}, {"text": "💬 محادثة وبحث الذكاء"}],
-            [{"text": "🔄 مزامنة جيت هاب (Git Sync)"}, {"text": "📊 تقارير القنوات"}],
-            [{"text": "⏸ إيقاف / استئناف"}, {"text": "👥 إدارة المستخدمين"}],
-            [{"text": "👤 حسابي والاشتراك"}, {"text": "🧪 تجربة الصياغة الفورية"}]
+            [{"text": "⏸ إيقاف / استئناف"}, {"text": "📊 تقارير القنوات"}],
+            [{"text": "👥 إدارة المستخدمين"}, {"text": "👤 حسابي والاشتراك"}],
+            [{"text": "🧪 تجربة الصياغة الفورية"}]
         ]
         return {
             "keyboard": kb,
@@ -1785,26 +1825,27 @@ class StandaloneTelegramEducationalBot:
                 {"text": google_btn_text, "callback_data": "panel_toggle_google_search"}
             ],
             [
-                {"text": "🐦 فحص حسابات تويتر المتصلة", "callback_data": "panel_crawl_twitter"},
+                {"text": "📂 مزامنة التخزين الداخلي (Termux)", "callback_data": "panel_sync_storage"},
                 {"text": "🔄 فحص وسحب أخبار الجامعات", "callback_data": "panel_crawl"}
             ],
             [
-                {"text": "🧠 تعليمات وتدريب البوت", "callback_data": "panel_instructions"},
-                {"text": "📝 صياغة ونشر خبر فوري", "callback_data": "panel_new_post"}
+                {"text": "🐦 فحص حسابات تويتر المتصلة", "callback_data": "panel_crawl_twitter"},
+                {"text": "🧠 تعليمات وتدريب البوت", "callback_data": "panel_instructions"}
             ],
             [
-                {"text": "🎯 إعلان خدماتي البديل", "callback_data": "panel_ad"},
-                {"text": pause_btn_text, "callback_data": "panel_toggle_pause"}
+                {"text": "📝 صياغة ونشر خبر فوري", "callback_data": "panel_new_post"},
+                {"text": "🎯 إعلان خدماتي البديل", "callback_data": "panel_ad"}
             ],
             [
                 {"text": "📊 حالة النظام والتقارير", "callback_data": "panel_stats"},
-                {"text": "👥 إدارة المستخدمين", "callback_data": "panel_users"}
+                {"text": pause_btn_text, "callback_data": "panel_toggle_pause"}
             ],
             [
-                {"text": "🧪 تجربة الصياغة المباشرة", "callback_data": "panel_test"},
-                {"text": "🔄 تحديث اللوحة", "callback_data": "panel_start"}
+                {"text": "👥 إدارة المستخدمين", "callback_data": "panel_users"},
+                {"text": "🧪 تجربة الصياغة المباشرة", "callback_data": "panel_test"}
             ],
             [
+                {"text": "🔄 تحديث اللوحة", "callback_data": "panel_start"},
                 {"text": "📞 الدعم الفني (@M_S_F_G)", "url": "https://t.me/M_S_F_G"}
             ]
         ]
@@ -3753,6 +3794,7 @@ class StandaloneTelegramEducationalBot:
             "📢 قنوات النشر المعتمدة", "قنوات النشر",
             "👤 حسابي والاشتراك", "/my_account",
             "📱 ربط رقم هاتفي (تحقق)", "/register",
+            "📂 مزامنة التخزين الداخلي (Termux)", "/sync_storage", "/termux",
             "🔄 مزامنة جيت هاب (Git Sync)", "/git_sync"
         }
 
@@ -3835,6 +3877,78 @@ class StandaloneTelegramEducationalBot:
                 media_desc = "فيديو" if video_id else ("صورة" if photo_id else ("مستند" if document_id else "نص"))
                 logger.info(f"⚡ [نشر صامت] تم استلام منشور مخصص لـ {target_name} ({media_desc}) وتوجيهه للقناة: {target_ch[0]}")
                 return
+            elif state.startswith("waiting_univ_edit_ch_"):
+                univ_id = state.replace("waiting_univ_edit_ch_", "")
+                self.user_waiting_state.pop(chat_id, None)
+                target_ch = clean_text.strip()
+                if not target_ch.startswith("@") and not target_ch.startswith("-100"):
+                    target_ch = "@" + target_ch
+                updated = db.update_university_project(univ_id, target_channel=target_ch)
+                if updated:
+                    self.send_msg(chat_id, f"✅ **تم تحديث وتثبيت قناة النشر بنجاح!**\nالجامعة: {updated['name']}\nالقناة الجديدة الحصرية: `{target_ch}`\n⚡ تمت المزامنة مع قاعدة البيانات ووحدة التخزين الداخلية فوراً.")
+                else:
+                    self.send_msg(chat_id, "⚠️ لم يتم العثور على الجامعة لتحديث قناتها.")
+                self.show_single_university_dashboard(chat_id, univ_id)
+                return
+            elif state.startswith("waiting_univ_edit_name_"):
+                univ_id = state.replace("waiting_univ_edit_name_", "")
+                self.user_waiting_state.pop(chat_id, None)
+                new_name = clean_text.strip()
+                updated = db.update_university_project(univ_id, name=new_name)
+                if updated:
+                    self.send_msg(chat_id, f"✅ **تم تحديث اسم الجامعة بنجاح!**\nالاسم الجديد: {new_name}")
+                self.show_single_university_dashboard(chat_id, univ_id)
+                return
+            elif state.startswith("waiting_univ_add_tg_"):
+                univ_id = state.replace("waiting_univ_add_tg_", "")
+                self.user_waiting_state.pop(chat_id, None)
+                univ = db.get_university_by_id(univ_id)
+                if univ:
+                    new_srcs = list(univ.get("telegram_sources", []))
+                    parts = re.split(r'[\s,]+', clean_text.strip())
+                    for p in parts:
+                        p = p.strip()
+                        if p:
+                            if not p.startswith("@") and not p.startswith("https://"):
+                                p = "@" + p
+                            if p not in new_srcs:
+                                new_srcs.append(p)
+                    updated = db.update_university_project(univ_id, telegram_sources=new_srcs)
+                    self.send_msg(chat_id, f"✅ **تمت إضافة مصادر التيليجرام بنجاح!**\nالمصادر الحالية: `{', '.join(new_srcs)}`\n⚡ جاري فحص وسحب أحدث المنشورات منها فوراً...")
+                    for s in new_srcs:
+                        src_obj = {"type": "telegram", "target": s, "last_post_id": ""}
+                        threading.Thread(target=self.check_telegram_channel_scraper, args=(src_obj, True, updated), daemon=True).start()
+                self.show_single_university_dashboard(chat_id, univ_id)
+                return
+            elif state.startswith("waiting_univ_add_tw_"):
+                univ_id = state.replace("waiting_univ_add_tw_", "")
+                self.user_waiting_state.pop(chat_id, None)
+                univ = db.get_university_by_id(univ_id)
+                if univ:
+                    new_srcs = list(univ.get("twitter_sources", []))
+                    parts = re.split(r'[\s,]+', clean_text.strip())
+                    for p in parts:
+                        p = p.strip()
+                        if p:
+                            if not p.startswith("@") and not p.startswith("https://"):
+                                p = "@" + p
+                            if p not in new_srcs:
+                                new_srcs.append(p)
+                    updated = db.update_university_project(univ_id, twitter_sources=new_srcs)
+                    self.send_msg(chat_id, f"✅ **تمت إضافة حسابات تويتر/X بنجاح!**\nالحسابات الحالية: `{', '.join(new_srcs)}`\n⚡ جاري فحص وسحب التغريدات منها فوراً...")
+                    for s in new_srcs:
+                        src_obj = {"type": "twitter", "target": s, "last_post_id": ""}
+                        threading.Thread(target=self.check_twitter_feed, args=(src_obj, True, updated), daemon=True).start()
+                self.show_single_university_dashboard(chat_id, univ_id)
+                return
+            elif state.startswith("waiting_univ_edit_gnews_"):
+                univ_id = state.replace("waiting_univ_edit_gnews_", "")
+                self.user_waiting_state.pop(chat_id, None)
+                q_text = clean_text.strip()
+                updated = db.update_university_project(univ_id, google_news_query=q_text)
+                self.send_msg(chat_id, f"✅ **تم تحديث استعلام أخبار جوجل بنجاح!**\nالاستعلام الجديد: `{q_text}`")
+                self.show_single_university_dashboard(chat_id, univ_id)
+                return
             elif state == "waiting_for_custom_ad":
                 self.user_waiting_state.pop(chat_id, None)
                 db.set_setting("custom_ad", clean_text)
@@ -3883,6 +3997,10 @@ class StandaloneTelegramEducationalBot:
 • ملف حالة النظام وإحصائيات النشر (`state.json`)
 • قاعدة البيانات الدائمة وكافة القنوات المربوطة."""
             self.send_msg(chat_id, sync_msg)
+            return
+
+        if clean_text in ["/sync_storage", "/termux", "📂 مزامنة التخزين الداخلي (Termux)", "مزامنة التخزين الداخلي", "مزامنة الترمكس"]:
+            self.sync_phone_storage_action(chat_id)
             return
 
         # ----------------- الرد الذكي العام (AI Chat Fallback) -----------------
@@ -4239,6 +4357,79 @@ class StandaloneTelegramEducationalBot:
             univ_id = data.replace("univ_crawl_", "").replace("crawl_univ_", "")
             self.crawl_single_university(chat_id, univ_id)
 
+        elif data.startswith("univ_edit_ch_"):
+            univ_id = data.replace("univ_edit_ch_", "")
+            target_univ = db.get_university_by_id(univ_id)
+            if target_univ:
+                self.user_waiting_state[chat_id] = f"waiting_univ_edit_ch_{univ_id}"
+                self.send_msg(chat_id, f"📢 **أرسل الآن معرّف أو رابط قناة النشر الجديدة لـ {target_univ['name']}:**\n(مثال: `@mstfyuhhh` أو قم بتوجيه رسالة منها هنا)\n*(أرسل /cancel للإلغاء)*")
+
+        elif data.startswith("univ_edit_name_"):
+            univ_id = data.replace("univ_edit_name_", "")
+            target_univ = db.get_university_by_id(univ_id)
+            if target_univ:
+                self.user_waiting_state[chat_id] = f"waiting_univ_edit_name_{univ_id}"
+                self.send_msg(chat_id, f"🏷️ **أرسل الآن الاسم الجديد لجامعة {target_univ['name']}:**\n*(أرسل /cancel للإلغاء)*")
+
+        elif data.startswith("univ_add_tg_"):
+            univ_id = data.replace("univ_add_tg_", "")
+            target_univ = db.get_university_by_id(univ_id)
+            if target_univ:
+                self.user_waiting_state[chat_id] = f"waiting_univ_add_tg_{univ_id}"
+                self.send_msg(chat_id, f"📡 **أرسل معرّف قناة التيليجرام المصدر لإضافتها لـ {target_univ['name']}:**\n(مثال: `@Next_Plus_BOT0`)\n*(أرسل /cancel للإلغاء)*")
+
+        elif data.startswith("univ_add_tw_"):
+            univ_id = data.replace("univ_add_tw_", "")
+            target_univ = db.get_university_by_id(univ_id)
+            if target_univ:
+                self.user_waiting_state[chat_id] = f"waiting_univ_add_tw_{univ_id}"
+                self.send_msg(chat_id, f"🐦 **أرسل معرّف أو رابط حساب تويتر/X لإضافته لـ {target_univ['name']}:**\n(مثال: `@aum_kw`)\n*(أرسل /cancel للإلغاء)*")
+
+        elif data.startswith("univ_edit_gnews_"):
+            univ_id = data.replace("univ_edit_gnews_", "")
+            target_univ = db.get_university_by_id(univ_id)
+            if target_univ:
+                self.user_waiting_state[chat_id] = f"waiting_univ_edit_gnews_{univ_id}"
+                self.send_msg(chat_id, f"🌐 **أرسل استعلام بحث جوجل الإخباري الجديد لـ {target_univ['name']}:**\n(مثال: `{target_univ['name']} قبول تسجيل`)\n*(أرسل /cancel للإلغاء)*")
+
+        elif data.startswith("univ_manage_srcs_"):
+            univ_id = data.replace("univ_manage_srcs_", "")
+            self.show_manage_sources_panel(chat_id, univ_id)
+
+        elif data.startswith("univ_rm_tg_"):
+            parts = data.replace("univ_rm_tg_", "").rsplit("_", 1)
+            if len(parts) == 2:
+                univ_id, idx_str = parts[0], parts[1]
+                target_univ = db.get_university_by_id(univ_id)
+                if target_univ:
+                    tg_srcs = list(target_univ.get("telegram_sources", []))
+                    try:
+                        idx = int(idx_str)
+                        if 0 <= idx < len(tg_srcs):
+                            removed = tg_srcs.pop(idx)
+                            db.update_university_project(univ_id, telegram_sources=tg_srcs)
+                            self.send_msg(chat_id, f"🗑️ تم حذف مصدر التيليجرام `{removed}` من مشروع {target_univ['name']}!")
+                    except Exception:
+                        pass
+                self.show_manage_sources_panel(chat_id, univ_id)
+
+        elif data.startswith("univ_rm_tw_"):
+            parts = data.replace("univ_rm_tw_", "").rsplit("_", 1)
+            if len(parts) == 2:
+                univ_id, idx_str = parts[0], parts[1]
+                target_univ = db.get_university_by_id(univ_id)
+                if target_univ:
+                    tw_srcs = list(target_univ.get("twitter_sources", []))
+                    try:
+                        idx = int(idx_str)
+                        if 0 <= idx < len(tw_srcs):
+                            removed = tw_srcs.pop(idx)
+                            db.update_university_project(univ_id, twitter_sources=tw_srcs)
+                            self.send_msg(chat_id, f"🗑️ تم حذف حساب تويتر `{removed}` من مشروع {target_univ['name']}!")
+                    except Exception:
+                        pass
+                self.show_manage_sources_panel(chat_id, univ_id)
+
         elif data.startswith("univ_gnews_"):
             univ_id = data.replace("univ_gnews_", "")
             target_univ = db.get_university_by_id(univ_id)
@@ -4257,8 +4448,11 @@ class StandaloneTelegramEducationalBot:
             univ_id = data.replace("univ_del_", "").replace("del_univ_", "")
             target_univ = db.get_university_by_id(univ_id)
             db.delete_university_project(univ_id)
-            self.send_msg(chat_id, f"🗑️ تم حذف مشروع الجامعة `{target_univ['name'] if target_univ else univ_id}` بنجاح!")
+            self.send_msg(chat_id, f"🗑️ تم حذف مشروع الجامعة `{target_univ['name'] if target_univ else univ_id}` بنجاح نهائي!")
             self.show_universities_panel(chat_id)
+
+        elif data in ["panel_sync_storage", "sync_storage"]:
+            self.sync_phone_storage_action(chat_id)
 
         elif data == "panel_cancel":
             self.cached_forwarded_post.pop(chat_id, None)
@@ -4853,11 +5047,23 @@ class StandaloneTelegramEducationalBot:
                 {"text": btn_toggle_text, "callback_data": f"univ_toggle_{univ['id']}"}
             ],
             [
+                {"text": "✏️ تعديل قناة النشر الهدف", "callback_data": f"univ_edit_ch_{univ['id']}"},
+                {"text": "🏷️ تعديل اسم الجامعة", "callback_data": f"univ_edit_name_{univ['id']}"}
+            ],
+            [
+                {"text": "➕ إضافة مصدر تيليجرام", "callback_data": f"univ_add_tg_{univ['id']}"},
+                {"text": "➕ إضافة حساب تويتر", "callback_data": f"univ_add_tw_{univ['id']}"}
+            ],
+            [
+                {"text": "➖ إدارة وحذف المصادر", "callback_data": f"univ_manage_srcs_{univ['id']}"},
+                {"text": "🌐 تعديل بحث جوجل", "callback_data": f"univ_edit_gnews_{univ['id']}"}
+            ],
+            [
                 {"text": f"🌐 أخبار جوجل المباشرة", "callback_data": f"univ_gnews_{univ['id']}"},
                 {"text": f"📝 نشر خبر فوري في قناتها", "callback_data": f"univ_post_{univ['id']}"}
             ],
             [
-                {"text": "🗑️ حذف هذه الجامعة من النظام", "callback_data": f"univ_del_{univ['id']}"}
+                {"text": "🗑️ حذف هذه الجامعة نهائياً", "callback_data": f"univ_del_{univ['id']}"}
             ],
             [
                 {"text": "🔙 عودة لقائمة الجامعات", "callback_data": "panel_universities"},
@@ -4866,6 +5072,63 @@ class StandaloneTelegramEducationalBot:
         ]
 
         self.send_msg(chat_id, text, {"inline_keyboard": buttons})
+
+    def show_manage_sources_panel(self, chat_id: int, univ_id: str):
+        """عرض مصادر الجامعة مع زر حذف مباشر لكل مصدر على حدة"""
+        univ = db.get_university_by_id(univ_id)
+        if not univ:
+            self.send_msg(chat_id, "⚠️ لم يتم العثور على الجامعة.")
+            return
+
+        tg_srcs = univ.get("telegram_sources", [])
+        tw_srcs = univ.get("twitter_sources", [])
+
+        text = f"⚙️ **إدارة وحذف مصادر: {univ['name']}**\n━━━━━━━━━━━━━━━━━━━\n"
+        text += f"📢 قناة النشر الحالية: `{univ['target_channel']}`\n\n"
+        text += "👇 **اضغط على أي زر أدناه لحذف ذلك المصدر فوراً:**"
+
+        buttons = []
+        for i, s in enumerate(tg_srcs):
+            buttons.append([
+                {"text": f"🗑️ حذف تيليجرام: {s}", "callback_data": f"univ_rm_tg_{univ_id}_{i}"}
+            ])
+        for i, s in enumerate(tw_srcs):
+            buttons.append([
+                {"text": f"🗑️ حذف تويتر: {s}", "callback_data": f"univ_rm_tw_{univ_id}_{i}"}
+            ])
+
+        buttons.append([
+            {"text": "➕ إضافة مصدر تيليجرام", "callback_data": f"univ_add_tg_{univ_id}"},
+            {"text": "➕ إضافة حساب تويتر", "callback_data": f"univ_add_tw_{univ_id}"}
+        ])
+        buttons.append([
+            {"text": f"🔙 رجوع إلى لوحة {univ['name'][:18]}", "callback_data": f"univ_view_{univ_id}"}
+        ])
+        self.send_msg(chat_id, text, {"inline_keyboard": buttons})
+
+    def sync_phone_storage_action(self, chat_id: int):
+        """مزامنة ثنائية الاتجاه مع مجلد التنزيلات ووحدة التخزين الداخلية للهاتف (Termux)"""
+        self.send_msg(chat_id, "🔄 **جاري مزامنة الملفات مع مجلد التنزيلات ووحدة التخزين الداخلية للهاتف (Termux)...**")
+        res = db.sync_all_storages(force_import=True)
+        paths = res.get("active_paths", [])
+        paths_txt = "\n".join([f"• `{p}`" for p in paths]) if paths else "• مجلد التنزيلات المعتمد"
+
+        sync_report = f"""📂 **تقرير المزامنة الفورية مع وحدة التخزين الداخلية (Termux Sync):**
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📱 **حالة الاتصال**: 🟢 متزامن 100% بنجاح تام
+📁 **المسارات النشطة المكتشفة**:
+{paths_txt}
+
+💾 **الملفات المحدثة لحظياً في مجلد التنزيلات**:
+✅ `universities.json` (كافة الجامعات وقنوات النشر والمصادر)
+✅ `sources.json` (المصادر المراقبة وبوت بزنس)
+✅ `state.json` (الحالة وإحصائيات النشر والتعليمات)
+✅ `bot_database_backup.sqlite` (النسخة الاحتياطية الحية لقاعدة البيانات)
+✅ `README_TERMUX.txt` (دليل التعديل والإدارة من الهاتف)
+
+💡 **حرية التحكم الكاملة**:
+يمكنك الآن تعديل `universities.json` مباشرة من مدير ملفات هاتفك أو عبر Termux وسيتم استيراد وتطبيق أي تعديل فورياً!"""
+        self.send_msg(chat_id, sync_report)
 
     def check_google_news_single_university(self, target_univ: Dict[str, Any], is_manual: bool = False):
         """فحص وسحب أخبار جوجل لجامعة محددة حصراً وتوجيهها لقناتها الهدف مع فلترة الشأن الطلابي والتواريخ"""

@@ -1,0 +1,29 @@
+{
+  "_title": "Telegram University Projects - Live Sync",
+  "last_synced": "2026-11-02T20:26:47.060817",
+  "total_universities": 1,
+  "universities": [
+    {
+      "id": "univ_jhdhhdcj_1792690239",
+      "name": "جامعة الملك سعود",
+      "target_channel": "@jhdhhdcj",
+      "telegram_sources": [
+        "@KSU_News"
+      ],
+      "twitter_sources": [
+        "@ksu_news"
+      ],
+      "google_news_query": "جامعة الملك سعود",
+      "google_news_enabled": true,
+      "keywords": [
+        "جامعة الملك سعود",
+        "الملك سعود",
+        "KSU",
+        "قبول",
+        "تسجيل"
+      ],
+      "enabled": true,
+      "created_at": "2026-10-22T17:30:39.193267"
+    }
+  ]
+}

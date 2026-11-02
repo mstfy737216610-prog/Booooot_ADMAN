@@ -26,6 +26,9 @@ import {
   HelpCircle,
   Radio,
   Lock,
+  Edit3,
+  Download,
+  HardDrive,
 } from 'lucide-react';
 
 interface Props {
@@ -93,9 +96,117 @@ export const SourcesManager: React.FC<Props> = ({
   });
   const [isTogglingSource, setIsTogglingSource] = useState(false);
 
+  // University Edit Modal state
+  const [editingUniv, setEditingUniv] = useState<UniversityProject | null>(null);
+  const [editFormData, setEditFormData] = useState({
+    name: '',
+    targetChannel: '',
+    telegramSources: '',
+    twitterSources: '',
+    googleNewsQuery: '',
+    keywords: '',
+  });
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+
+  // Termux Storage Sync state
+  const [isSyncingStorage, setIsSyncingStorage] = useState(false);
+
   const showNotice = (msg: string) => {
     setActionNotice(msg);
     setTimeout(() => setActionNotice(null), 3500);
+  };
+
+  const handleStartEditUniv = (univ: UniversityProject) => {
+    setEditingUniv(univ);
+    setEditFormData({
+      name: univ.name,
+      targetChannel: univ.target_channel,
+      telegramSources: (univ.telegram_sources || []).join('\n'),
+      twitterSources: (univ.twitter_sources || []).join('\n'),
+      googleNewsQuery: univ.google_news_query || univ.name,
+      keywords: (univ.keywords || []).join(', '),
+    });
+  };
+
+  const handleSaveEditUniv = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingUniv || !editFormData.name.trim() || !editFormData.targetChannel.trim()) {
+      showNotice('اسم الجامعة وقناة النشر مطلوبان');
+      return;
+    }
+    setIsSavingEdit(true);
+
+    const tgSources = editFormData.telegramSources
+      .split(/[\n,]+/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0)
+      .map((s) => (s.startsWith('@') || s.startsWith('-') ? s : `@${s}`));
+
+    const twSources = editFormData.twitterSources
+      .split(/[\n,]+/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0)
+      .map((s) => (s.startsWith('@') ? s : `@${s}`));
+
+    const kwList = editFormData.keywords
+      .split(/[\n,]+/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+
+    try {
+      const res = await fetch('/api/university/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: editingUniv.id,
+          name: editFormData.name.trim(),
+          target_channel: editFormData.targetChannel.trim(),
+          telegram_sources: tgSources,
+          twitter_sources: twSources,
+          google_news_query: editFormData.googleNewsQuery.trim() || editFormData.name.trim(),
+          keywords: kwList,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showNotice(`✅ تم تعديل بيانات ومصادر جامعة "${editFormData.name}" بنجاح!`);
+        setEditingUniv(null);
+        await fetchUniversities();
+        onRefresh();
+      } else {
+        alert(data.error || 'فشل تحديث بيانات الجامعة');
+      }
+    } catch {
+      alert('حدث خطأ أثناء تعديل الجامعة');
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
+
+  const handleTriggerStorageSync = async (forceImport = false) => {
+    setIsSyncingStorage(true);
+    try {
+      const res = await fetch('/api/termux/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ force_import: forceImport }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        const msg = forceImport
+          ? '📥 تم استيراد التعديلات من ملفات التخزين الداخلي بنجاح!'
+          : '📁 تمت مزامنة كافة الملفات مع مجلد التنزيلات (/sdcard/Download/TelegramBot)!';
+        showNotice(msg);
+        await fetchUniversities();
+        onRefresh();
+      } else {
+        showNotice('حدث خطأ أثناء المزامنة');
+      }
+    } catch {
+      showNotice('تعذر الاتصال بخدمة المزامنة');
+    } finally {
+      setIsSyncingStorage(false);
+    }
   };
 
   const fetchSourceToggles = async () => {
@@ -629,6 +740,48 @@ export const SourcesManager: React.FC<Props> = ({
       {/* TAB 1: Independent University Cards with Dedicated Control Buttons */}
       {activeTab === 'universities' && (
         <div className="space-y-4">
+          {/* Termux & Phone Storage Sync Status Bar */}
+          <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5 sm:p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-md">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2.5 bg-emerald-500/20 text-emerald-400 rounded-xl border border-emerald-500/30">
+                <HardDrive className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-bold text-white">مزامنة وحدة التخزين الداخلية ومجلد التنزيلات (Termux Sync)</span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                    🟢 متزامن تلقائياً
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  يتم حفظ ملفات <code className="text-sky-300">universities.json</code> و <code className="text-sky-300">sources.json</code> وقاعدة البيانات مباشرة في مسار التنزيلات بالهاتف <code className="text-amber-300">/sdcard/Download/TelegramBot</code>.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0 w-full md:w-auto">
+              <button
+                onClick={() => handleTriggerStorageSync(false)}
+                disabled={isSyncingStorage}
+                className="flex-1 md:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white text-xs font-bold rounded-xl transition-all shadow cursor-pointer"
+                title="تصدير ومزامنة أحدث الإعدادات لمجلد التنزيلات بالهاتف"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isSyncingStorage ? 'animate-spin' : ''}`} />
+                <span>مزامنة التخزين الداخلي</span>
+              </button>
+
+              <button
+                onClick={() => handleTriggerStorageSync(true)}
+                disabled={isSyncingStorage}
+                className="flex-1 md:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold rounded-xl transition-all shadow cursor-pointer"
+                title="استيراد التعديلات من ملفات الهاتف في حال قمت بتعديلها يدوياً"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>استيراد من الهاتف</span>
+              </button>
+            </div>
+          </div>
+
           {universities.length === 0 ? (
             <div className="p-8 text-center bg-slate-950/60 rounded-xl border border-slate-800 space-y-3">
               <Building2 className="w-10 h-10 text-slate-600 mx-auto" />
@@ -807,14 +960,23 @@ export const SourcesManager: React.FC<Props> = ({
                         </button>
                       </div>
 
-                      {/* Delete University Action */}
-                      <div className="flex justify-end pt-1">
+                      {/* Actions: Edit & Delete */}
+                      <div className="flex items-center justify-between pt-2 border-t border-slate-800/80 mt-1">
+                        <button
+                          onClick={() => handleStartEditUniv(univ)}
+                          className="text-xs text-sky-400 hover:text-sky-300 flex items-center gap-1.5 py-1 px-2.5 rounded-lg bg-sky-950/70 hover:bg-sky-900 border border-sky-800/70 transition-colors cursor-pointer font-bold"
+                          title="تعديل قناة النشر والمصادر والاسم"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                          <span>تعديل القناة والمصادر</span>
+                        </button>
+
                         <button
                           onClick={() => handleDeleteUniv(univ.id, univ.name)}
                           className="text-[11px] text-rose-400/80 hover:text-rose-300 flex items-center gap-1 py-1 px-2 rounded hover:bg-rose-950/50 transition-colors cursor-pointer"
                         >
                           <Trash2 className="w-3 h-3" />
-                          <span>حذف هذا المشروع وعزل قنواته</span>
+                          <span>حذف هذا المشروع</span>
                         </button>
                       </div>
                     </div>
@@ -1487,6 +1649,139 @@ export const SourcesManager: React.FC<Props> = ({
                   className="px-5 py-2 bg-sky-600 hover:bg-sky-500 text-white font-bold rounded-xl shadow-lg cursor-pointer"
                 >
                   إضافة ومزامنة
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit University Modal */}
+      {editingUniv && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-lg p-5 sm:p-6 shadow-2xl space-y-4 my-8" dir="rtl">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <Edit3 className="w-5 h-5 text-sky-400" />
+                <h3 className="text-base font-bold text-white">
+                  تعديل بيانات مشروع: {editingUniv.name}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingUniv(null)}
+                className="text-slate-400 hover:text-white text-lg font-bold p-1 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditUniv} className="space-y-4 text-xs">
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">
+                  اسم الجامعة / الكلية:
+                </label>
+                <input
+                  type="text"
+                  value={editFormData.name}
+                  onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                  placeholder="مثال: جامعة الشرق الأوسط الأمريكية AUM"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">
+                  قناة النشر الحصرية المستهدفة:
+                </label>
+                <input
+                  type="text"
+                  value={editFormData.targetChannel}
+                  onChange={(e) => setEditFormData({ ...editFormData, targetChannel: e.target.value })}
+                  placeholder="مثال: @mstfyuhhh أو @MyUnivChannel"
+                  dir="ltr"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono"
+                  required
+                />
+                <span className="text-[10px] text-slate-400 mt-0.5 block">
+                  سيتم توجيه كافة منشورات وأخبار مصادر هذه الجامعة حصراً إلى هذه القناة دون أي تداخل.
+                </span>
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">
+                  قنوات تيليجرام المصدرة (قناة لكل سطر أو مفصولة بفاصلة):
+                </label>
+                <textarea
+                  rows={2}
+                  value={editFormData.telegramSources}
+                  onChange={(e) => setEditFormData({ ...editFormData, telegramSources: e.target.value })}
+                  placeholder="@Next_Plus_BOT0&#10;@aum_news"
+                  dir="ltr"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">
+                  حسابات تويتر / X المصدرة (حساب لكل سطر أو مفصول بفاصلة):
+                </label>
+                <textarea
+                  rows={2}
+                  value={editFormData.twitterSources}
+                  onChange={(e) => setEditFormData({ ...editFormData, twitterSources: e.target.value })}
+                  placeholder="@aum_kw&#10;@moe_kw"
+                  dir="ltr"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">
+                  استعلام البحث الإخباري في أخبار جوجل:
+                </label>
+                <input
+                  type="text"
+                  value={editFormData.googleNewsQuery}
+                  onChange={(e) => setEditFormData({ ...editFormData, googleNewsQuery: e.target.value })}
+                  placeholder="مثال: جامعة الشرق الأوسط الأمريكية"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">
+                  الكلمات المفتاحية الأكاديمية (مفصولة بفاصلة):
+                </label>
+                <input
+                  type="text"
+                  value={editFormData.keywords}
+                  onChange={(e) => setEditFormData({ ...editFormData, keywords: e.target.value })}
+                  placeholder="قبول, تسجيل, مكافأة, تخرج, فاينل"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                />
+              </div>
+
+              <div className="pt-3 border-t border-slate-800 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingUniv(null)}
+                  className="px-4 py-2 text-slate-400 hover:text-white cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingEdit}
+                  className="px-5 py-2 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white font-bold rounded-xl shadow-lg cursor-pointer flex items-center gap-2"
+                >
+                  {isSavingEdit ? (
+                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  ) : (
+                    <Check className="w-4 h-4" />
+                  )}
+                  <span>حفظ التعديلات فوراً</span>
                 </button>
               </div>
             </form>

@@ -1,13 +1,16 @@
 {
   "_info": "Telegram University Educational AutoForwarder Watchlist (Synced from SQLite)",
   "version": "3.1.0",
-  "lastUpdated": "2026-11-01T22:54:11.541758",
+  "lastUpdated": "2026-11-02T20:26:47.057796",
   "target_channels": [
-    "@jhdhhdcj"
+    "@jhdhhdcj",
+    "@test_channel_ch",
+    "@new_target_ch",
+    "@temp_channel"
   ],
   "university_projects": [
     {
-      "id": "univ_jhdhhdcj_1793569332",
+      "id": "univ_jhdhhdcj_1792690239",
       "name": "جامعة الملك سعود",
       "target_channel": "@jhdhhdcj",
       "telegram_sources": [
@@ -26,7 +29,7 @@
         "تسجيل"
       ],
       "enabled": true,
-      "created_at": "2026-11-01T21:42:12.409999"
+      "created_at": "2026-10-22T17:30:39.193267"
     }
   ],
   "channel_mappings": [
@@ -55,7 +58,7 @@
       "id": "src_tg_univ_news",
       "type": "telegram",
       "target": "@KSU_News",
-      "title": "مصدر جامعة الملك سعود",
+      "title": "أخبار الجامعة والقبول الرسمي",
       "priority": "high",
       "rule": "official",
       "enabled": true,
@@ -89,7 +92,7 @@
       "priority": "high",
       "rule": "official",
       "enabled": true,
-      "lastPostId": "Next_Plus_BOT0/134"
+      "lastPostId": "Next_Plus_BOT0/144"
     },
     {
       "id": "src_tw_95430",
@@ -100,6 +103,36 @@
       "rule": "official",
       "enabled": true,
       "lastPostId": "tw_f29dae4407968875e4a6492a"
+    },
+    {
+      "id": "src_test_channel_ch_10855",
+      "type": "telegram",
+      "target": "@src_tg_test",
+      "title": "مصدر جامعة اختبار",
+      "priority": "high",
+      "rule": "official",
+      "enabled": true,
+      "lastPostId": "0"
+    },
+    {
+      "id": "src_tw_test_channel_ch_86492",
+      "type": "twitter",
+      "target": "@src_tw_test",
+      "title": "تويتر جامعة اختبار",
+      "priority": "high",
+      "rule": "official",
+      "enabled": true,
+      "lastPostId": "0"
+    },
+    {
+      "id": "src_new_target_ch_46933",
+      "type": "telegram",
+      "target": "@src_tg_extra",
+      "title": "مصدر جامعة اختبار",
+      "priority": "high",
+      "rule": "official",
+      "enabled": true,
+      "lastPostId": "0"
     }
   ]
 }
