@@ -852,8 +852,20 @@ def is_relevant_student_news(text: str, target_univ: Optional[str] = None) -> Tu
             if not has_student_context:
                 return False, f"خبر سياسي/اقتصادي عام ({kw})"
 
-    # 3. فحص إلزامي: هل يحتوي الخبر على موضوع أكاديمي أو طلابي حقيقي؟
+    # 3. فحص إلزامي: هل يحتوي الخبر على موضوع أكاديمي أو طلابي أو جامعي حقيقي؟
     has_pos_academic = any(pk in lower_text for pk in POSITIVE_ACADEMIC_KEYWORDS)
+    if not has_pos_academic:
+        # فحص السياق الأكاديمي للجامعة المحددة أو الكليات والمجالس والعمادات والمؤتمرات والبرامج
+        if target_univ and target_univ.lower() in lower_text:
+            has_pos_academic = True
+        elif any(u_word in lower_text for u_word in [
+            "جامعة", "جامعه", "كلية", "كليه", "عمادة", "عماده", "قسم", "رئيس الجامعة",
+            "الدراسات العليا", "البحث العلمي", "شؤون الطلاب", "شؤون الطلبة", "مجلس الجامعة",
+            "مؤتمر", "ورشة عمل", "لقاء تعريفي", "برنامج", "مبادرة", "معرض", "معارض",
+            "أكاديمي", "اكاديمي", "تعليمي", "معهد", "دكتور", "أستاذ", "طلاب", "طلبة", "طالبات"
+        ]):
+            has_pos_academic = True
+
     if not has_pos_academic:
         return False, "الخبر لا يمس الشأن الأكاديمي أو الطلابي المباشر"
 
@@ -1071,8 +1083,13 @@ class StandaloneTelegramEducationalBot:
                     self._unauth_logged = True
             elif e.code in [401, 409] and "getUpdates" in method:
                 logger.debug(f"تيليجرام HTTP ({method}) [{e.code}]: {err_body}")
+            elif "message is not modified" in err_body:
+                # الرسالة والأزرار متطابقة بالفعل - طبيعي عند النقر المتكرر
+                logger.debug(f"تيليجرام HTTP ({method}): الرسالة متطابقة بالفعل ولا تحتاج تعديل.")
             elif "failed to get HTTP URL content" in err_body:
                 logger.info(f"💡 ملاحظة: خوادم تيليجرام لم تتمكن من سحب رابط الوسائط مباشرة ({method}). سيتم التنزيل والرفع المباشر كملف...")
+            elif "wrong remote file identifier" in err_body or "wrong file identifier" in err_body or "wrong character in the string" in err_body:
+                logger.debug(f"💡 ملاحظة: معرف ملف الوسائط غير صالح لـ تيليجرام ({method}). تم التحويل للنشر النصي المباشر.")
             else:
                 logger.warning(f"تيليجرام HTTP ({method}) [{e.code}]: {err_body}")
             try:
@@ -1241,10 +1258,18 @@ class StandaloneTelegramEducationalBot:
         if parse_mode:
             payload["parse_mode"] = parse_mode
         res = self.tg_request("editMessageText", payload)
+        if res.get("ok"):
+            return res
+        desc = str(res.get("description", "")).lower()
+        if "message is not modified" in desc or "message to edit not found" in desc:
+            return {"ok": True, "result": True, "description": "Message unchanged"}
+        payload.pop("parse_mode", None)
+        payload["text"] = self.strip_html(text)
+        res = self.tg_request("editMessageText", payload)
         if not res.get("ok"):
-            payload.pop("parse_mode", None)
-            payload["text"] = self.strip_html(text)
-            res = self.tg_request("editMessageText", payload)
+            desc2 = str(res.get("description", "")).lower()
+            if "message is not modified" in desc2:
+                return {"ok": True, "result": True, "description": "Message unchanged"}
         return res
 
     def send_photo(self, chat_id: Any, photo: str, caption: str = "", reply_markup: Optional[Dict] = None, parse_mode: Optional[str] = "HTML") -> Dict[str, Any]:
@@ -1387,6 +1412,13 @@ class StandaloneTelegramEducationalBot:
 
         # 3. إذا كانت الصورة عبارة عن file_id في تيليجرام
         if clean_p and not os.path.isfile(clean_p) and not clean_p.startswith("http"):
+            # فحص سريع لشرعية شكل معرّف ملف تيليجرام (حروف إنجليزية وأرقام وشرطات فقط)
+            if not re.match(r'^[a-zA-Z0-9_\-]{15,128}$', clean_p):
+                # إذا كانت السلسلة تحتوي على أحرف غير مطابقة للـ file_id أو أحرف عربية، ننشر النص مباشرة دون توليد أخطاء HTTP 400
+                if caption:
+                    return self.send_msg(chat_id, caption, reply_markup=reply_markup, parse_mode=parse_mode)
+                return {"ok": False, "description": "Invalid file_id identifier"}
+
             payload = {"chat_id": chat_id, "photo": clean_p}
             if lead_caption:
                 payload["caption"] = lead_caption
@@ -1401,8 +1433,15 @@ class StandaloneTelegramEducationalBot:
                     self.send_msg(chat_id, remainder, reply_markup=reply_markup, parse_mode=parse_mode)
                 return res
 
-            # محاولة بنص عادي
-            if lead_caption:
+            err_d = str(res.get("description", "")).lower()
+            if "wrong remote file identifier" in err_d or "wrong file identifier" in err_d or "wrong character" in err_d:
+                # المعرّف غير صالح - التحويل فوراً للنشر النصي دون تكرار الطلبات الخاطئة
+                if caption:
+                    return self.send_msg(chat_id, caption, reply_markup=reply_markup, parse_mode=parse_mode)
+                return res
+
+            # محاولة بنص عادي فقط في حال كان الخطأ في وسم HTML
+            if lead_caption and "parse" in err_d:
                 payload.pop("parse_mode", None)
                 payload["caption"] = plain_caption
                 res = self.tg_request("sendPhoto", payload)
@@ -1410,13 +1449,6 @@ class StandaloneTelegramEducationalBot:
                     if remainder:
                         self.send_msg(chat_id, remainder, reply_markup=reply_markup, parse_mode=parse_mode)
                     return res
-
-            # محاولة بالصورة وحدها
-            res_id = self.tg_request("sendPhoto", {"chat_id": chat_id, "photo": clean_p})
-            if res_id.get("ok"):
-                if caption:
-                    self.send_msg(chat_id, caption, reply_markup=reply_markup, parse_mode=parse_mode)
-                return res_id
 
         # خط الدفاع الأخير: إذا كانت الصورة تالفة تماماً أو محذوفة من المصدر، يتم نشر النص كاملاً حتى لا يضيع الخبر
         if caption:
@@ -2316,17 +2348,54 @@ class StandaloneTelegramEducationalBot:
             return []
         tweets = []
         try:
-            q_str = f"site:x.com/{clean_handle} OR site:twitter.com/{clean_handle}"
+            # 1. نستعلم عن status لجلب التغريدات الحقيقية الفردية المنشورة بواسطة الحساب
+            q_str = f"site:x.com/{clean_handle}/status OR site:twitter.com/{clean_handle}/status"
             url = f"https://news.google.com/rss/search?q={urllib.parse.quote(q_str)}&hl=ar&gl=SA&ceid=SA:ar"
             req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
             with urllib.request.urlopen(req, context=ssl_ctx, timeout=6) as r:
                 root = ET.fromstring(r.read())
-                for item in root.findall(".//item")[:limit]:
+                for item in root.findall(".//item"):
+                    if len(tweets) >= limit:
+                        break
                     title = item.find("title").text or ""
                     title = re.sub(r' - (?:X|Twitter)$', '', title).strip()
+                    # استبعاد العناوين التي هي مجرد عنوان الحساب أو لا تحتوي على نص تغريدة كافٍ
+                    clean_name_comp = re.sub(r'[\s@_#\(\)]', '', title).lower()
+                    if clean_name_comp in [clean_handle.lower(), ""] or title.endswith(f"(@{clean_handle})") or len(title) < 20:
+                        continue
                     link = item.find("link").text or ""
                     pub_date = item.find("pubDate").text or ""
-                    if len(title) > 15:
+                    tweets.append({
+                        "name": clean_handle,
+                        "handle": clean_handle,
+                        "text": title,
+                        "url": link,
+                        "date": pub_date,
+                        "photos": [],
+                        "videos": [],
+                        "tweet_id": hashlib.md5(title[:80].encode("utf-8")).hexdigest()
+                    })
+
+            # 2. خطوة تكميلية إذا كانت نتائج status محدودة: سحب البحث العام مع استبعاد عناوين البروفايل البحتة
+            if len(tweets) < 2:
+                q_fallback = f"site:x.com/{clean_handle} OR site:twitter.com/{clean_handle}"
+                url_fb = f"https://news.google.com/rss/search?q={urllib.parse.quote(q_fallback)}&hl=ar&gl=SA&ceid=SA:ar"
+                req_fb = urllib.request.Request(url_fb, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+                with urllib.request.urlopen(req_fb, context=ssl_ctx, timeout=6) as r_fb:
+                    root_fb = ET.fromstring(r_fb.read())
+                    for item in root_fb.findall(".//item"):
+                        if len(tweets) >= limit:
+                            break
+                        title = item.find("title").text or ""
+                        title = re.sub(r' - (?:X|Twitter)$', '', title).strip()
+                        clean_name_comp = re.sub(r'[\s@_#\(\)]', '', title).lower()
+                        if clean_name_comp in [clean_handle.lower(), ""] or title.endswith(f"(@{clean_handle})") or len(title) < 25:
+                            continue
+                        tid = hashlib.md5(title[:80].encode("utf-8")).hexdigest()
+                        if any(t["tweet_id"] == tid for t in tweets):
+                            continue
+                        link = item.find("link").text or ""
+                        pub_date = item.find("pubDate").text or ""
                         tweets.append({
                             "name": clean_handle,
                             "handle": clean_handle,
@@ -2335,7 +2404,7 @@ class StandaloneTelegramEducationalBot:
                             "date": pub_date,
                             "photos": [],
                             "videos": [],
-                            "tweet_id": hashlib.md5(title[:80].encode("utf-8")).hexdigest()
+                            "tweet_id": tid
                         })
         except Exception as e:
             logger.debug(f"fetch_twitter_account_tweets for @{clean_handle} note: {e}")
@@ -2360,29 +2429,38 @@ class StandaloneTelegramEducationalBot:
     def search_twitter_for_university(self, univ_name: str, limit: int = 6) -> List[Dict[str, Any]]:
         """البحث المباشر بالكلمات المفتاحية في تويتر لأخبار وإعلانات الجامعة المحددة"""
         clean_name = univ_name.split("-")[0].strip()
-        q_str = f'"{clean_name}" (قبول OR تسجيل OR دراسة OR اختبار OR مكافأة OR إجازة OR طلاب OR طلبة OR جدول) (site:x.com OR site:twitter.com)'
+        q_str = f'"{clean_name}" (قبول OR تسجيل OR دراسة OR اختبار OR مكافأة OR إجازة OR طلاب OR طلبة OR جدول OR كلية) (site:x.com OR site:twitter.com)'
         url = f"https://news.google.com/rss/search?q={urllib.parse.quote(q_str)}&hl=ar&gl=SA&ceid=SA:ar"
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
         results = []
         try:
             with urllib.request.urlopen(req, context=ssl_ctx, timeout=7) as r:
                 root = ET.fromstring(r.read())
-                for item in root.findall(".//item")[:limit]:
+                for item in root.findall(".//item"):
+                    if len(results) >= limit:
+                        break
                     title = item.find("title").text or ""
                     title = re.sub(r' - (?:X|Twitter)$', '', title).strip()
+                    # استبعاد العناوين التي هي مجرد اسم حساب أو اسم عام دون نص تغريدة
+                    clean_norm = re.sub(r'[\s@_#\(\)]', '', title).lower()
+                    if clean_norm in ["جامعةالملكسعودksu", "جامعةالملكسعود", "ksu", clean_name.replace(" ", "").lower()] or title.endswith("(@_KSU)"):
+                        continue
+                    if len(title) < 25 or len(title.split()) < 5:
+                        continue
+                    if any(bad in title for bad in ["وظائف شاغرة", "حراس أمن", "سائقين", "إعلان ممول", "الأول بارك", "مباراة"]):
+                        continue
                     link = item.find("link").text or ""
                     pub_date = item.find("pubDate").text or ""
-                    if len(title) > 20 and not any(bad in title for bad in ["وظائف شاغرة", "حراس أمن", "سائقين", "إعلان ممول"]):
-                        results.append({
-                            "name": clean_name,
-                            "handle": clean_name,
-                            "text": title,
-                            "url": link,
-                            "date": pub_date,
-                            "photos": [],
-                            "videos": [],
-                            "tweet_id": hashlib.md5(title[:80].encode("utf-8")).hexdigest()
-                        })
+                    results.append({
+                        "name": clean_name,
+                        "handle": clean_name,
+                        "text": title,
+                        "url": link,
+                        "date": pub_date,
+                        "photos": [],
+                        "videos": [],
+                        "tweet_id": hashlib.md5(title[:80].encode("utf-8")).hexdigest()
+                    })
         except Exception as e:
             logger.debug(f"search_twitter_for_university ({clean_name}) note: {e}")
         return results

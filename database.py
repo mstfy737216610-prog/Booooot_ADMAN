@@ -1037,6 +1037,20 @@ def check_smart_duplicate(title: str, text: str, target_univ: Optional[str] = No
             conn.close()
 
 
+def is_duplicate_published_news(text: str, target_univ: Optional[str] = None, max_hours: int = 24) -> Tuple[bool, str]:
+    """
+    فحص فوري ودقيق لما إذا كان نص الخبر أو التغريدة قد نُشر سابقاً أو يكرر خبراً نُشر للجامعة خلال الـ 24 ساعة الماضية.
+    يعيد (True, reason) في حال التطابق أو وجود خبر مماثل، أو (False, "") إذا كان الخبر جديداً.
+    """
+    if not text or len(text.strip()) < 10:
+        return False, ""
+    first_line = (text.split("\n")[0] if text else "")[:90]
+    is_dup, past_story, score, reason = check_smart_duplicate(first_line, text, target_univ=target_univ, hours=max_hours)
+    if is_dup:
+        return True, f"{reason} تطابق {score*100:.1f}%"
+    return False, ""
+
+
 def log_published_story(post_id: str, title: str, clean_text: str, target_channel: str, target_univ: Optional[str] = None):
     """تسجيل الخبر المنشور في سجل الـ 24 ساعة للمقارنة ومنع التكرار والدمج"""
     norm_title = normalize_arabic_text(title)
