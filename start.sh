@@ -57,7 +57,7 @@ echo -e "\n${YELLOW}📦 [3/4] فحص مكتبات Node.js و واجهة الو�
 if command -v npm &>/dev/null; then
     if [ ! -d "node_modules" ]; then
         echo -e "   تثبيت حزم npm للمرة الأولى..."
-        npm install
+        npm install --legacy-peer-deps
     fi
     echo -e "${GREEN}   ✅ حزم Node.js جاهزة ومكتملة.${NC}"
 else
