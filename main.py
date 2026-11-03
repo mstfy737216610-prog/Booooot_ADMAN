@@ -1232,6 +1232,21 @@ class StandaloneTelegramEducationalBot:
             res = self.tg_request("sendMessage", payload)
         return res
 
+    def edit_msg_text(self, chat_id: Any, message_id: int, text: str, reply_markup: Optional[Dict] = None, parse_mode: Optional[str] = "HTML") -> Dict[str, Any]:
+        """تعديل رسالة نصية حالية فورياً لمنع تكرار الرسائل وتراكم الأزرار في محادثة تيليجرام"""
+        safe_text = self.to_safe_html(text) if parse_mode == "HTML" else text
+        payload = {"chat_id": chat_id, "message_id": message_id, "text": safe_text}
+        if reply_markup:
+            payload["reply_markup"] = reply_markup
+        if parse_mode:
+            payload["parse_mode"] = parse_mode
+        res = self.tg_request("editMessageText", payload)
+        if not res.get("ok"):
+            payload.pop("parse_mode", None)
+            payload["text"] = self.strip_html(text)
+            res = self.tg_request("editMessageText", payload)
+        return res
+
     def send_photo(self, chat_id: Any, photo: str, caption: str = "", reply_markup: Optional[Dict] = None, parse_mode: Optional[str] = "HTML") -> Dict[str, Any]:
         """
         إرسال صورة بنظام الحماية الفولاذي:
@@ -1315,16 +1330,18 @@ class StandaloneTelegramEducationalBot:
             except Exception as e:
                 logger.warning(f"تعذر رفع ملف الصورة المحلي بالكامل {clean_p}: {e}")
 
+        # منع تكرار الأزرار: الأزرار تُرفق بالصورة فقط إذا لم تكن هناك تتمة نصية، أما مع وجود التتمة فنرفق الأزرار مع التتمة حصرياً
+        photo_markup = None if remainder else reply_markup
+
         # 2. إذا كانت الصورة رابط إنترنت مباشر (URL)
         if clean_p.startswith("http://") or clean_p.startswith("https://"):
-            # محاولة 1: إرسال الرابط مباشرة عبر Telegram API
             payload = {"chat_id": chat_id, "photo": clean_p}
             if lead_caption:
                 payload["caption"] = lead_caption
                 if parse_mode:
                     payload["parse_mode"] = parse_mode
-            if reply_markup:
-                payload["reply_markup"] = reply_markup
+            if photo_markup:
+                payload["reply_markup"] = photo_markup
 
             res = self.tg_request("sendPhoto", payload)
             if res.get("ok"):
@@ -1333,7 +1350,8 @@ class StandaloneTelegramEducationalBot:
                 return res
 
             err_desc = str(res.get("description", "")).lower()
-            is_url_fetch_error = any(phrase in err_desc for phrase in [
+            err_code = res.get("error_code", 0)
+            is_url_fetch_error = err_code == 400 or any(phrase in err_desc for phrase in [
                 "failed to get http url content",
                 "wrong_file_identifier",
                 "wrong file identifier",
@@ -1341,20 +1359,15 @@ class StandaloneTelegramEducationalBot:
                 "wrong character in the string",
                 "wrong_type",
                 "wrong persistent file id",
-                "can't parse"
+                "can't parse",
+                "حرف خاطئ",
+                "معرف ملف",
+                "مُعرّف ملف",
+                "طلب غير صالح",
+                "url"
             ])
 
-            # محاولة 2: بدون parse_mode بنص عادي فقط إذا كان الخطأ متعلقاً بالتنسيق
-            if not is_url_fetch_error and lead_caption and parse_mode:
-                payload.pop("parse_mode", None)
-                payload["caption"] = plain_caption
-                res = self.tg_request("sendPhoto", payload)
-                if res.get("ok"):
-                    if remainder:
-                        self.send_msg(chat_id, remainder, reply_markup=reply_markup, parse_mode=parse_mode)
-                    return res
-
-            # محاولة 3: تحميل الصورة محلياً ورفعها كـ Multipart لضمان تجاوز حظر خوادم الـ CDN أو تعذر جلب الرابط من تيليجرام
+            # محاولة تنزيل الصورة محلياً ورفعها إذا كان الرابط يرفضه خادم تيليجرام
             temp_file = self.download_remote_media_to_temp(clean_p, ".jpg")
             if temp_file and os.path.isfile(temp_file):
                 local_res = self.send_photo(chat_id, temp_file, caption=caption, reply_markup=reply_markup, parse_mode=parse_mode)
@@ -1365,20 +1378,12 @@ class StandaloneTelegramEducationalBot:
                 if local_res.get("ok"):
                     return local_res
 
-            # خط دفاع فوري: إذا كان الرابط الخارجي مرفوضاً أو به أحرف غير مقبولة لتيليجرام، يتم إرسال النص فوراً حتى لا يضيع الخبر
-            if is_url_fetch_error and caption:
+            # خط دفاع حاسم: إذا كان الرابط تالفاً أو مرفوضاً لتيليجرام، يتم إرسال النص فوراً حتى لا يضيع المنشور
+            if caption:
                 res_msg = self.send_msg(chat_id, caption, reply_markup=reply_markup, parse_mode=parse_mode)
                 if res_msg.get("ok"):
                     res_msg["note"] = "fallback_text_after_photo_url_error"
                     return res_msg
-
-            # محاولة 4: إرسال الصورة برابطها فارغة ثم إرسال النص فقط إذا لم تكن المشكلة في جلب الرابط نفسه
-            if not is_url_fetch_error:
-                res_pure = self.tg_request("sendPhoto", {"chat_id": chat_id, "photo": clean_p})
-                if res_pure.get("ok"):
-                    if caption:
-                        self.send_msg(chat_id, caption, reply_markup=reply_markup, parse_mode=parse_mode)
-                    return res_pure
 
         # 3. إذا كانت الصورة عبارة عن file_id في تيليجرام
         if clean_p and not os.path.isfile(clean_p) and not clean_p.startswith("http"):
@@ -1387,8 +1392,8 @@ class StandaloneTelegramEducationalBot:
                 payload["caption"] = lead_caption
                 if parse_mode:
                     payload["parse_mode"] = parse_mode
-            if reply_markup:
-                payload["reply_markup"] = reply_markup
+            if photo_markup:
+                payload["reply_markup"] = photo_markup
 
             res = self.tg_request("sendPhoto", payload)
             if res.get("ok"):
@@ -2303,6 +2308,85 @@ class StandaloneTelegramEducationalBot:
         except Exception as e:
             logger.debug(f"fetch_twitter_post_or_profile error: {e}")
             return None
+
+    def fetch_twitter_account_tweets(self, handle: str, limit: int = 5) -> List[Dict[str, Any]]:
+        """سحب أحدث التغريدات الفعلية المتعددة لحساب تويتر عبر RSS والمحركات المفتوحة"""
+        clean_handle = handle.replace("https://x.com/", "").replace("https://twitter.com/", "").lstrip("@").split("/")[0].split("?")[0].strip()
+        if not clean_handle:
+            return []
+        tweets = []
+        try:
+            q_str = f"site:x.com/{clean_handle} OR site:twitter.com/{clean_handle}"
+            url = f"https://news.google.com/rss/search?q={urllib.parse.quote(q_str)}&hl=ar&gl=SA&ceid=SA:ar"
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+            with urllib.request.urlopen(req, context=ssl_ctx, timeout=6) as r:
+                root = ET.fromstring(r.read())
+                for item in root.findall(".//item")[:limit]:
+                    title = item.find("title").text or ""
+                    title = re.sub(r' - (?:X|Twitter)$', '', title).strip()
+                    link = item.find("link").text or ""
+                    pub_date = item.find("pubDate").text or ""
+                    if len(title) > 15:
+                        tweets.append({
+                            "name": clean_handle,
+                            "handle": clean_handle,
+                            "text": title,
+                            "url": link,
+                            "date": pub_date,
+                            "photos": [],
+                            "videos": [],
+                            "tweet_id": hashlib.md5(title[:80].encode("utf-8")).hexdigest()
+                        })
+        except Exception as e:
+            logger.debug(f"fetch_twitter_account_tweets for @{clean_handle} note: {e}")
+
+        # إضافة البروفيل والبانر من fxtwitter إذا لم تكن هناك صور
+        try:
+            req = urllib.request.Request(f"https://api.fxtwitter.com/{clean_handle}", headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, context=ssl_ctx, timeout=4) as r:
+                udata = json.loads(r.read().decode("utf-8")).get("user", {})
+                banner = udata.get("banner_url", "")
+                avatar = udata.get("avatar_url", "")
+                for tw in tweets:
+                    if not tw.get("photos"):
+                        if banner:
+                            tw["photos"].append(banner)
+                        elif avatar:
+                            tw["photos"].append(avatar)
+        except Exception:
+            pass
+        return tweets
+
+    def search_twitter_for_university(self, univ_name: str, limit: int = 6) -> List[Dict[str, Any]]:
+        """البحث المباشر بالكلمات المفتاحية في تويتر لأخبار وإعلانات الجامعة المحددة"""
+        clean_name = univ_name.split("-")[0].strip()
+        q_str = f'"{clean_name}" (قبول OR تسجيل OR دراسة OR اختبار OR مكافأة OR إجازة OR طلاب OR طلبة OR جدول) (site:x.com OR site:twitter.com)'
+        url = f"https://news.google.com/rss/search?q={urllib.parse.quote(q_str)}&hl=ar&gl=SA&ceid=SA:ar"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+        results = []
+        try:
+            with urllib.request.urlopen(req, context=ssl_ctx, timeout=7) as r:
+                root = ET.fromstring(r.read())
+                for item in root.findall(".//item")[:limit]:
+                    title = item.find("title").text or ""
+                    title = re.sub(r' - (?:X|Twitter)$', '', title).strip()
+                    link = item.find("link").text or ""
+                    pub_date = item.find("pubDate").text or ""
+                    if len(title) > 20 and not any(bad in title for bad in ["وظائف شاغرة", "حراس أمن", "سائقين", "إعلان ممول"]):
+                        results.append({
+                            "name": clean_name,
+                            "handle": clean_name,
+                            "text": title,
+                            "url": link,
+                            "date": pub_date,
+                            "photos": [],
+                            "videos": [],
+                            "tweet_id": hashlib.md5(title[:80].encode("utf-8")).hexdigest()
+                        })
+        except Exception as e:
+            logger.debug(f"search_twitter_for_university ({clean_name}) note: {e}")
+        return results
+
 
     def fetch_live_account_or_url_content(self, text_or_url: str) -> Tuple[str, str, List[Dict[str, Any]]]:
         """
@@ -4470,6 +4554,7 @@ class StandaloneTelegramEducationalBot:
         cb_id = cb["id"]
         from_user = cb["from"]
         chat_id = cb["message"]["chat"]["id"]
+        msg_id = cb.get("message", {}).get("message_id")
         data = cb.get("data", "")
 
         authorized, user_data = self.check_user_access(from_user)
@@ -4480,7 +4565,7 @@ class StandaloneTelegramEducationalBot:
         self.answer_callback(cb_id)
 
         if data == "panel_manage_channels":
-            self.show_channels_panel(chat_id)
+            self.show_channels_panel(chat_id, message_id=msg_id)
 
         elif data == "panel_prompt_add_channel":
             self.user_waiting_state[chat_id] = "waiting_for_target_channel"
@@ -4513,10 +4598,10 @@ class StandaloneTelegramEducationalBot:
             self.send_msg(chat_id, "📥 أرسل معرف القناة المصدر (مثال: `@KSU_News`):")
 
         elif data == "panel_sources":
-            self.show_sources_list(chat_id)
+            self.show_sources_list(chat_id, message_id=msg_id)
 
         elif data == "panel_my_account":
-            self.show_account_panel(chat_id, user_data)
+            self.show_account_panel(chat_id, user_data, message_id=msg_id)
 
         elif data == "panel_new_post":
             self.user_waiting_state[chat_id] = "waiting_for_instant_post"
@@ -4530,13 +4615,13 @@ class StandaloneTelegramEducationalBot:
                 self.send_msg(chat_id, f"{'⏸ تم الإيقاف المؤقت.' if new_val == '1' else '▶️ تم الاستئناف.'}")
 
         elif data == "panel_stats":
-            self.show_stats_panel(chat_id)
+            self.show_stats_panel(chat_id, message_id=msg_id)
 
         elif data == "panel_users":
-            self.show_users_admin_panel(chat_id)
+            self.show_users_admin_panel(chat_id, message_id=msg_id)
 
         elif data == "panel_universities":
-            self.show_universities_panel(chat_id)
+            self.show_universities_panel(chat_id, message_id=msg_id)
 
         elif data == "panel_add_university":
             self.start_add_university_wizard(chat_id)
@@ -4551,36 +4636,36 @@ class StandaloneTelegramEducationalBot:
             new_st = db.toggle_google_news_enabled()
             st_txt = "🟢 تم تفعيل جلب الأخبار من جوجل نيوز بنجاح!" if new_st else "🛑 تم إيقاف جلب الأخبار من جوجل نيوز بالكامل! سيعتمد البوت على تويتر وتيليجرام فقط."
             self.send_msg(chat_id, st_txt)
-            self.show_welcome_panel(chat_id, user_data)
+            self.show_welcome_panel(chat_id, user_data, message_id=msg_id)
 
         elif data == "panel_toggle_twitter_search":
             new_st = db.toggle_twitter_search_enabled()
             st_txt = "🐦 تم تفعيل البحث وجلب الأخبار من تويتر/X بنجاح!" if new_st else "🛑 تم إيقاف البحث وجلب الأخبار من تويتر/X."
             self.send_msg(chat_id, st_txt)
-            self.show_welcome_panel(chat_id, user_data)
+            self.show_welcome_panel(chat_id, user_data, message_id=msg_id)
 
         elif data == "panel_gnews":
             self.trigger_google_news_search(chat_id)
 
         elif data in ["panel_ad", "panel_advertisement"]:
-            self.show_ad_panel(chat_id)
+            self.show_ad_panel(chat_id, message_id=msg_id)
 
         elif data == "toggle_ad_replacement":
             cur = db.get_setting("ad_replacement_enabled", "0")
             new_val = "0" if cur == "1" else "1"
             db.set_setting("ad_replacement_enabled", new_val)
-            self.show_ad_panel(chat_id)
+            self.show_ad_panel(chat_id, message_id=msg_id)
 
         elif data == "panel_edit_ad":
             self.user_waiting_state[chat_id] = "waiting_for_custom_ad"
             self.send_msg(chat_id, "📝 أرسل الآن نص إعلانك البديل الجديد ليتم حفظه واستخدامه:")
 
         elif data == "panel_start":
-            self.show_welcome_panel(chat_id, user_data)
+            self.show_welcome_panel(chat_id, user_data, message_id=msg_id)
 
         elif data.startswith("univ_view_"):
             univ_id = data.replace("univ_view_", "")
-            self.show_single_university_dashboard(chat_id, univ_id)
+            self.show_single_university_dashboard(chat_id, univ_id, message_id=msg_id)
 
         elif data.startswith("univ_toggle_"):
             univ_id = data.replace("univ_toggle_", "")
@@ -4588,7 +4673,8 @@ class StandaloneTelegramEducationalBot:
             if new_st is not None:
                 st_txt = "🟢 تم تفعيل النشر التلقائي للجامعة بنجاح!" if new_st else "⏸️ تم إيقاف النشر التلقائي لهذه الجامعة مؤقتاً."
                 self.send_msg(chat_id, st_txt)
-            self.show_single_university_dashboard(chat_id, univ_id)
+            self.show_single_university_dashboard(chat_id, univ_id, message_id=msg_id)
+
 
         elif data.startswith("univ_crawl_") or data.startswith("crawl_univ_"):
             univ_id = data.replace("univ_crawl_", "").replace("crawl_univ_", "")
@@ -4697,8 +4783,8 @@ class StandaloneTelegramEducationalBot:
             self.univ_wizard_data.pop(chat_id, None)
             self.send_msg(chat_id, "تم الإلغاء ✅")
 
-    # ----------------- وظائف العرض والتحكم -----------------
-    def show_welcome_panel(self, chat_id: int, user_data: Dict[str, Any]):
+    # ----------------- وظائف العرض والتحكم (بدون تكرار الأزرار) -----------------
+    def show_welcome_panel(self, chat_id: int, user_data: Dict[str, Any], message_id: Optional[int] = None):
         channels = db.get_target_channels()
         role = user_data.get("role", "user")
         is_paused = db.get_setting("is_paused", "0") == "1"
@@ -4714,10 +4800,14 @@ class StandaloneTelegramEducationalBot:
 • **سحب المصادر**: مفعل (MTProto + Scraper)
 ━━━━━━━━━━━━━━━━━━━
 👇 **اختر الإجراء المطلوب من الأزرار أدناه:**"""
-        self.send_msg(chat_id, "⌨️ **لوحة المفاتيح الدائمة نشطة على شاشتك للتحكم السريع:**", self.get_main_reply_keyboard(role))
-        self.send_msg(chat_id, text, self.get_control_panel_inline_keyboard(role == "admin"))
+        kb = self.get_control_panel_inline_keyboard(role == "admin")
+        if message_id:
+            res = self.edit_msg_text(chat_id, message_id, text, kb)
+            if res.get("ok"):
+                return
+        self.send_msg(chat_id, text, kb)
 
-    def show_account_panel(self, chat_id: int, user_data: Dict[str, Any]):
+    def show_account_panel(self, chat_id: int, user_data: Dict[str, Any], message_id: Optional[int] = None):
         phone = user_data.get("phone_number") or "⚠️ غير موثق بعد (اضغط زر ربط الهاتف)"
         plan = user_data.get("plan", "free")
         expires = user_data.get("plan_expires_at", "غير محدد")
@@ -4734,9 +4824,18 @@ class StandaloneTelegramEducationalBot:
 💰 الرصيد: `{user_data.get('balance', 0.0)}` نقطة
 ━━━━━━━━━━━━━━━━━━━
 💡 *لتوثيق رقم هاتفك والاستفادة من النشر غير المحدود، أرسل /register*"""
-        self.send_msg(chat_id, text)
+        kb = {
+            "inline_keyboard": [
+                [{"text": "🔙 اللوحة الرئيسية", "callback_data": "panel_start"}]
+            ]
+        }
+        if message_id:
+            res = self.edit_msg_text(chat_id, message_id, text, kb)
+            if res.get("ok"):
+                return
+        self.send_msg(chat_id, text, kb)
 
-    def show_channels_panel(self, chat_id: int):
+    def show_channels_panel(self, chat_id: int, message_id: Optional[int] = None):
         details = db.get_target_channels_detailed()
         text = "📢 **إدارة قنوات النشر المستهدفة وإحصائياتها:**\n━━━━━━━━━━━━━━━━━━━\n"
         for i, c in enumerate(details, 1):
@@ -4749,30 +4848,54 @@ class StandaloneTelegramEducationalBot:
         kb = {
             "inline_keyboard": [
                 [{"text": "➕ إضافة قناة جديدة", "callback_data": "panel_prompt_add_channel"}],
-                [{"text": "🧪 اختبار النشر الآن", "callback_data": "panel_test_publish"}]
+                [{"text": "🧪 اختبار النشر الآن", "callback_data": "panel_test_publish"}],
+                [{"text": "🔙 اللوحة الرئيسية", "callback_data": "panel_start"}]
             ]
         }
+        if message_id:
+            res = self.edit_msg_text(chat_id, message_id, text, kb)
+            if res.get("ok"):
+                return
         self.send_msg(chat_id, text, kb)
 
-    def show_sources_list(self, chat_id: int):
+    def show_sources_list(self, chat_id: int, message_id: Optional[int] = None):
         srcs = db.get_sources()
         text = f"📋 **المصادر المراقبة حالياً ({len(srcs)}):**\n━━━━━━━━━━━━━━━━━━━\n"
         for i, s in enumerate(srcs, 1):
             last_p = f" (آخر منشور: #{s['last_post_id']})" if s.get("last_post_id") else ""
             text += f"{i}. [{s['type']}] `{s['target']}`{last_p}\n"
         text += "\n➕ لإضافة مصدر أرسل: `/add_source @channel`"
-        self.send_msg(chat_id, text)
+        kb = {
+            "inline_keyboard": [
+                [{"text": "➕ إضافة مصدر جديد", "callback_data": "panel_add_source"}],
+                [{"text": "🔙 اللوحة الرئيسية", "callback_data": "panel_start"}]
+            ]
+        }
+        if message_id:
+            res = self.edit_msg_text(chat_id, message_id, text, kb)
+            if res.get("ok"):
+                return
+        self.send_msg(chat_id, text, kb)
 
-    def show_users_admin_panel(self, chat_id: int):
+    def show_users_admin_panel(self, chat_id: int, message_id: Optional[int] = None):
         users = db.list_users(20)
         text = f"👥 **المستخدمون المسجلون ({len(users)}):**\n━━━━━━━━━━━━━━━━━━━\n"
         for u in users:
             banned = "🚫 محظور" if u["is_banned"] else "✅ نشط"
             ph = u["phone_number"] or "بلا هاتف"
             text += f"• `{u['user_id']}` (@{u.get('username') or 'بلا_يوزر'}) | {u['role']} | {banned}\n  📱 {ph}\n"
-        self.send_msg(chat_id, text)
+        kb = {
+            "inline_keyboard": [
+                [{"text": "🔙 اللوحة الرئيسية", "callback_data": "panel_start"}]
+            ]
+        }
+        if message_id:
+            res = self.edit_msg_text(chat_id, message_id, text, kb)
+            if res.get("ok"):
+                return
+        self.send_msg(chat_id, text, kb)
 
-    def show_ad_panel(self, chat_id: int):
+    def show_ad_panel(self, chat_id: int, message_id: Optional[int] = None):
         custom_ad = db.get_setting("custom_ad", "")
         ad_enabled = (db.get_setting("ad_replacement_enabled", "0") == "1")
         status_text = "🟢 مفعل (يستبدل الإعلانات التجارية الصريحة فقط)" if ad_enabled else "🔴 معطل (موصى به لضمان نشر أخبار الجامعات الأصلية كاملة مع صورها)"
@@ -4797,9 +4920,13 @@ class StandaloneTelegramEducationalBot:
                 [{"text": "🔙 اللوحة الرئيسية", "callback_data": "panel_start"}]
             ]
         }
+        if message_id:
+            res = self.edit_msg_text(chat_id, message_id, msg, kb)
+            if res.get("ok"):
+                return
         self.send_msg(chat_id, msg, kb)
 
-    def show_stats_panel(self, chat_id: int):
+    def show_stats_panel(self, chat_id: int, message_id: Optional[int] = None):
         proc = db.get_setting("processed_count", "0")
         fwd = db.get_setting("forwarded_count", "0")
         ads = db.get_setting("ad_replaced_count", "0")
@@ -4813,9 +4940,19 @@ class StandaloneTelegramEducationalBot:
 • قنوات النشر النشطة: `{len(channels)}`
 • المصادر المراقبة: `{len(srcs)}`
 • قاعدة البيانات: `SQLite3 Persistent Engine`"""
-        self.send_msg(chat_id, text)
+        kb = {
+            "inline_keyboard": [
+                [{"text": "🔄 تحديث الإحصائيات", "callback_data": "panel_stats"}],
+                [{"text": "🔙 اللوحة الرئيسية", "callback_data": "panel_start"}]
+            ]
+        }
+        if message_id:
+            res = self.edit_msg_text(chat_id, message_id, text, kb)
+            if res.get("ok"):
+                return
+        self.send_msg(chat_id, text, kb)
 
-    def show_instructions_training_panel(self, chat_id: int):
+    def show_instructions_training_panel(self, chat_id: int, message_id: Optional[int] = None):
         """لوحة تعليمات وتدريب البوت المنفصلة تماماً عن المحادثة الفورية"""
         custom_instructions = db.get_setting("custom_instructions", "")
         all_knowledge = db.get_all_university_knowledge()
@@ -4860,7 +4997,12 @@ class StandaloneTelegramEducationalBot:
                 ]
             ]
         }
+        if message_id:
+            res = self.edit_msg_text(chat_id, message_id, text, kb)
+            if res.get("ok"):
+                return
         self.send_msg(chat_id, text, kb)
+
 
     def learn_university_identity_from_sources(self, univ_id: str, chat_id: Optional[int] = None) -> Optional[str]:
         """فحص مصادر الجامعة وتعلّم هويتها الأكاديمية ونوعية المنشورات المطلوبة وتخزينها في قاعدة البيانات"""
@@ -4962,60 +5104,94 @@ class StandaloneTelegramEducationalBot:
             self.learn_university_identity_from_sources(u["id"], chat_id)
 
     def crawl_university_twitter_network(self, univ: Dict[str, Any], is_manual: bool = False):
-        """يبحث في حسابات تويتر/X المتصلة بالجامعة وينشر تغريداتها وصورها بالذكاء بدلاً من جوجل"""
-        tw_sources = univ.get("twitter_sources", [])
-        if not tw_sources:
-            return
-        
+        """يبحث في حسابات تويتر/X المتصلة بالجامعة بالإضافة للبحث بالكلمات المفتاحية وينشر التغريدات بدقة وأمان"""
         target_ch = univ.get("target_channel") or "@jhdhhdcj"
         univ_name = univ.get("name")
+        tw_sources = univ.get("twitter_sources", [])
 
-        logger.info(f"🐦 [Twitter Network] فحص ({len(tw_sources)}) حسابات تويتر متصلة بـ {univ_name}...")
-        for handle_raw in tw_sources:
-            handle = handle_raw.replace("https://x.com/", "").replace("https://twitter.com/", "").lstrip("@").split("/")[0].strip()
-            if not handle:
+        found_any_tweet = False
+        candidates: List[Dict[str, Any]] = []
+
+        # 1. فحص وسحب التغريدات من كافة حسابات تويتر المسجلة للجامعة
+        if tw_sources:
+            logger.info(f"🐦 [Twitter Network] فحص ({len(tw_sources)}) حسابات تويتر متصلة بـ {univ_name}...")
+            for handle_raw in tw_sources:
+                handle = handle_raw.replace("https://x.com/", "").replace("https://twitter.com/", "").lstrip("@").split("/")[0].strip()
+                if not handle:
+                    continue
+                try:
+                    # سحب أحدث التغريدات الفعلية المتعددة
+                    multi_tweets = self.fetch_twitter_account_tweets(handle, limit=4)
+                    if multi_tweets:
+                        candidates.extend(multi_tweets)
+                    else:
+                        # محاولة بديلة عبر البروفيل المفرد
+                        single_tw = self.fetch_twitter_post_or_profile(handle)
+                        if single_tw and single_tw.get("text") and len(single_tw.get("text", "").strip()) >= 15:
+                            candidates.append(single_tw)
+                except Exception as e:
+                    logger.debug(f"خطأ في سحب حساب تويتر @{handle}: {e}")
+
+        # 2. البحث بالكلمات المفتاحية في تويتر إذا كان البحث مفعلاً
+        if db.is_twitter_search_enabled():
+            try:
+                logger.info(f"🐦 [Twitter Search] بحث بالكلمات المفتاحية على تويتر لـ ({univ_name})...")
+                search_tweets = self.search_twitter_for_university(univ_name, limit=6)
+                if search_tweets:
+                    candidates.extend(search_tweets)
+            except Exception as e:
+                logger.debug(f"خطأ أثناء بحث تويتر بالكلمات المفتاحية لـ {univ_name}: {e}")
+
+        # 3. معالجة وتصفية التغريدات الملتقطة
+        for tw in candidates:
+            tweet_text = tw.get("text", "").strip()
+            if not tweet_text or len(tweet_text) < 15:
                 continue
 
-            try:
-                tw = self.fetch_twitter_post_or_profile(handle)
-                if not tw or not tw.get("text") or len(tw.get("text", "").strip()) < 10:
-                    continue
+            # فحص الفلترة للشأن الطلابي الحقيقي
+            is_rel, rel_reason = is_relevant_student_news(tweet_text, univ_name)
+            if not is_rel:
+                logger.info(f"🛡️ [فلترة تويتر] استبعاد تغريدة غير طلابية ({rel_reason}): {tweet_text[:40]}")
+                continue
 
-                tweet_text = tw.get("text", "").strip()
-                tweet_id = str(tw.get("tweet_id") or hashlib.md5(tweet_text[:80].encode("utf-8")).hexdigest())
+            tweet_id = str(tw.get("tweet_id") or hashlib.md5(tweet_text[:80].encode("utf-8")).hexdigest())
+            p_hash = hashlib.md5((tweet_text[:80] + tweet_id).encode("utf-8")).hexdigest()
 
-                # فحص الفلترة للشأن الطلابي الحقيقي
-                is_rel, rel_reason = is_relevant_student_news(tweet_text, univ_name)
-                if not is_rel:
-                    logger.info(f"🛡️ [فلترة تويتر] استبعاد تغريدة غير طلابية من @{handle} ({rel_reason}): {tweet_text[:40]}")
-                    continue
+            if db.is_post_seen(tweet_id, p_hash):
+                continue
 
-                p_hash = hashlib.md5((tweet_text[:80] + tweet_id).encode("utf-8")).hexdigest()
-                if db.is_post_seen(tweet_id, p_hash):
-                    continue
+            # التحقق من عدم تكرار أخبار مماثلة خلال 24 ساعة
+            is_dup, dup_reason = db.is_duplicate_published_news(tweet_text, target_univ=univ_name, max_hours=24)
+            if is_dup:
+                logger.info(f"🛡️ [منع التكرار] استبعاد تغريدة مكررة ({dup_reason}): {tweet_text[:40]}")
+                continue
 
-                db.mark_post_seen(tweet_id, p_hash, f"tw_{handle}")
+            db.mark_post_seen(tweet_id, p_hash, f"tw_{tw.get('handle', 'search')}")
+            found_any_tweet = True
 
-                photos = tw.get("photos", [])
-                photo_url = photos[0] if photos else None
-                videos = tw.get("videos", [])
-                video_url = videos[0] if videos else None
-                media_group = [{"type": "photo", "media": u} for u in photos] if len(photos) > 1 else None
+            photos = tw.get("photos", [])
+            photo_url = photos[0] if photos else None
+            videos = tw.get("videos", [])
+            video_url = videos[0] if videos else None
+            media_group = [{"type": "photo", "media": u} for u in photos] if len(photos) > 1 else None
 
-                logger.info(f"⚡️ [Twitter Network] التقاط تغريدة طلابية مميزة من @{handle} موجهة إلى {target_ch} ({univ_name})")
-                post_queue.put({
-                    "type": "twitter_post",
-                    "text": tweet_text,
-                    "photo": photo_url,
-                    "video": video_url,
-                    "media_group": media_group,
-                    "media_type": "video" if video_url else ("photo" if photo_url else "text"),
-                    "targets": [target_ch],
-                    "target_univ": univ_name,
-                    "user_id": None
-                })
-            except Exception as e:
-                logger.debug(f"خطأ في سحب حساب تويتر @{handle}: {e}")
+            logger.info(f"⚡️ [Twitter Network] التقاط تغريدة طلابية مميزة لـ {target_ch} ({univ_name}): {tweet_text[:45]}...")
+            post_queue.put({
+                "type": "twitter_post",
+                "text": tweet_text,
+                "photo": photo_url,
+                "video": video_url,
+                "media_group": media_group,
+                "media_type": "video" if video_url else ("photo" if photo_url else "text"),
+                "targets": [target_ch],
+                "target_univ": univ_name,
+                "user_id": None
+            })
+
+        # 4. في حال عدم وجود أي أخبار جديدة اليوم للمشروع الأكاديمي، نشر تذكير أكاديمي مفيد ومحبب للطلبة
+        if not found_any_tweet and is_manual:
+            logger.info(f"ℹ️ [تويتر] لم تتوفر تغريدات جديدة لـ {univ_name}")
+
 
     def crawl_all_university_twitter_job(self, chat_id: Optional[int] = None):
         univs = db.get_university_projects()
@@ -5227,7 +5403,7 @@ class StandaloneTelegramEducationalBot:
             threading.Thread(target=self.check_twitter_feed, args=(src_obj, True, proj), daemon=True).start()
         threading.Thread(target=self.check_google_news_single_university, args=(proj, True), daemon=True).start()
 
-    def show_universities_panel(self, chat_id: int):
+    def show_universities_panel(self, chat_id: int, message_id: Optional[int] = None):
         """يعرض قائمة الجامعات، ولكل جامعة زر مستقل وخاص بها للتحكم الكامل"""
         univs = db.get_university_projects()
         text = f"🏛️ **قائمة الجامعات وقنوات النشر المستقلة ({len(univs)}):**\n"
@@ -5250,14 +5426,19 @@ class StandaloneTelegramEducationalBot:
             {"text": "🎛 اللوحة الرئيسية", "callback_data": "panel_start"}
         ])
 
-        self.send_msg(chat_id, text, {"inline_keyboard": buttons})
+        kb = {"inline_keyboard": buttons}
+        if message_id:
+            res = self.edit_msg_text(chat_id, message_id, text, kb)
+            if res.get("ok"):
+                return
+        self.send_msg(chat_id, text, kb)
 
-    def show_single_university_dashboard(self, chat_id: int, univ_id: str):
+    def show_single_university_dashboard(self, chat_id: int, univ_id: str, message_id: Optional[int] = None):
         """لوحة تحكم خاصة ومستقلة حصراً بجامعة محددة دون التأثير على الجامعات الأخرى"""
         univ = db.get_university_by_id(univ_id)
         if not univ:
             self.send_msg(chat_id, "⚠️ لم يتم العثور على الجامعة المحددة.")
-            self.show_universities_panel(chat_id)
+            self.show_universities_panel(chat_id, message_id=message_id)
             return
 
         is_active = univ.get("enabled", True)
@@ -5308,7 +5489,12 @@ class StandaloneTelegramEducationalBot:
             ]
         ]
 
-        self.send_msg(chat_id, text, {"inline_keyboard": buttons})
+        kb = {"inline_keyboard": buttons}
+        if message_id:
+            res = self.edit_msg_text(chat_id, message_id, text, kb)
+            if res.get("ok"):
+                return
+        self.send_msg(chat_id, text, kb)
 
     def show_manage_sources_panel(self, chat_id: int, univ_id: str):
         """عرض مصادر الجامعة مع زر حذف مباشر لكل مصدر على حدة"""

@@ -306,8 +306,16 @@ export const SourcesManager: React.FC<Props> = ({
       });
       const data = await res.json();
       if (data.success) {
-        setUniversities((prev) => prev.filter((u) => u.id !== univId));
-        showNotice(`تم حذف جامعة "${name}" ومصادرها بنجاح 🗑️`);
+        if (data.universities && Array.isArray(data.universities)) {
+          setUniversities(data.universities);
+        } else {
+          setUniversities((prev) => prev.filter((u) => u.id !== univId));
+        }
+        if (data.sources && Array.isArray(data.sources)) {
+          onSaveSources(data.sources);
+        }
+        onRefresh();
+        showNotice(`تم حذف جامعة "${name}" وتحديث كافة الملفات والمصادر بنجاح 🗑️`);
       }
     } catch {
       showNotice('فشل حذف الجامعة');

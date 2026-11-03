@@ -19,6 +19,7 @@ import {
   Check,
   Clock,
   Send,
+  Sparkles,
 } from 'lucide-react';
 
 interface Props {
@@ -31,6 +32,11 @@ export const ActivityLogs: React.FC<Props> = ({ logs: inMemoryLogs, onClearLogs 
   const [dbLogs, setDbLogs] = useState<ActivityLogItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+
+  // Batch Selection State
+  const [selectedLogIds, setSelectedLogIds] = useState<Set<string>>(new Set());
+  const [isBatchDeleting, setIsBatchDeleting] = useState<boolean>(false);
+  const [isClearingSeenCache, setIsClearingSeenCache] = useState<boolean>(false);
 
   // Filters & Search
   const [filterType, setFilterType] = useState<'all' | 'success' | 'filtered' | 'error' | 'info'>('all');
@@ -162,11 +168,85 @@ export const ActivityLogs: React.FC<Props> = ({ logs: inMemoryLogs, onClearLogs 
       if (data.success) {
         showNotification('تم مسح جميع السجلات من قاعدة بيانات SQLite بنجاح 🧹');
         setDbLogs([]);
+      } else {
+        showNotification(`تعذر مسح السجلات: ${data.error || 'خطأ'}`);
       }
     } catch (err: unknown) {
-      showNotification(`خطأ أثناء مسح السجلات: ${err}`);
+      showNotification(`خطأ: ${err}`);
     }
   };
+
+  // Handle Batch Delete of Selected Logs / Posts
+  const handleBatchDelete = async () => {
+    if (selectedLogIds.size === 0) return;
+    if (!window.confirm(`هل أنت متأكد من حذف (${selectedLogIds.size}) سجل ومنشور محدد نهائياً من قاعدة بيانات SQLite؟`)) {
+      return;
+    }
+    setIsBatchDeleting(true);
+    try {
+      const idsArray = Array.from(selectedLogIds);
+      const res = await fetch('/api/logs/db/delete-batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: idsArray }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showNotification(`تم بنجاح حذف (${data.deleted_count || idsArray.length}) منشور وسجل من قاعدة البيانات 🗑️`);
+        setDbLogs((prev) => prev.filter((l) => !selectedLogIds.has(String(l.id))));
+        setSelectedLogIds(new Set());
+      } else {
+        showNotification(`تعذر حذف الدفعة: ${data.error || 'خطأ'}`);
+      }
+    } catch (err: unknown) {
+      showNotification(`خطأ في الحذف الجماعي: ${err}`);
+    } finally {
+      setIsBatchDeleting(false);
+    }
+  };
+
+  // Handle Clear Seen Posts & Duplicate Hash Cache
+  const handleClearSeenPostsCache = async () => {
+    if (!window.confirm('هل تريد تصفير سجل المنشورات المعالجة وكاش التكرار؟ سيتيح هذا للبوت إعادة سحب ومعالجة كافة الأخبار السابقة من الصفر دون قيود.')) {
+      return;
+    }
+    setIsClearingSeenCache(true);
+    try {
+      const res = await fetch('/api/posts/clear-seen-cache', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        showNotification(`تم تصفير كاش التكرار بنجاح (تم مسح ${data.seen_posts_cleared || 0} سجل منع تكرار) 🧹✨`);
+        fetchDbLogs();
+      } else {
+        showNotification(`فشل تصفير الكاش: ${data.error || 'خطأ'}`);
+      }
+    } catch (err: unknown) {
+      showNotification(`خطأ أثناء تصفير الكاش: ${err}`);
+    } finally {
+      setIsClearingSeenCache(false);
+    }
+  };
+
+  const toggleSelectLog = (id: string) => {
+    setSelectedLogIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedLogIds.size === filteredLogs.length && filteredLogs.length > 0) {
+      setSelectedLogIds(new Set());
+    } else {
+      setSelectedLogIds(new Set(filteredLogs.map((l) => String(l.id))));
+    }
+  };
+
 
   // Handle Add New Log
   const handleAddNewLog = async () => {
@@ -287,6 +367,16 @@ export const ActivityLogs: React.FC<Props> = ({ logs: inMemoryLogs, onClearLogs 
           {activeSource === 'sqlite' && (
             <>
               <button
+                onClick={handleClearSeenPostsCache}
+                disabled={isClearingSeenCache}
+                title="تصفير كاش التكرار وسجل المنشورات المحفوظة لإتاحة إعادة النشر فوراً"
+                className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-amber-950/50 text-slate-300 hover:text-amber-300 rounded-xl text-xs border border-slate-700 transition-colors"
+              >
+                <Sparkles className={`w-3.5 h-3.5 text-amber-400 ${isClearingSeenCache ? 'animate-spin' : ''}`} />
+                <span>تصفير كاش المنشورات المحفوظة</span>
+              </button>
+
+              <button
                 onClick={fetchDbLogs}
                 disabled={isLoading}
                 title="تحديث السجلات من قاعدة بيانات SQLite"
@@ -391,6 +481,47 @@ export const ActivityLogs: React.FC<Props> = ({ logs: inMemoryLogs, onClearLogs 
         </div>
       </div>
 
+      {/* Batch Selection Action Bar */}
+      {activeSource === 'sqlite' && filteredLogs.length > 0 && (
+        <div className="bg-slate-950/90 border border-slate-800 rounded-xl p-2.5 px-3 flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2 cursor-pointer select-none text-slate-300 hover:text-white">
+              <input
+                type="checkbox"
+                checked={selectedLogIds.size === filteredLogs.length && filteredLogs.length > 0}
+                onChange={toggleSelectAll}
+                className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+              />
+              <span className="font-medium">تحديد الكل ({filteredLogs.length})</span>
+            </label>
+            {selectedLogIds.size > 0 && (
+              <span className="text-indigo-400 font-semibold bg-indigo-950/60 border border-indigo-800/50 px-2 py-0.5 rounded-full text-[11px]">
+                تم اختيار {selectedLogIds.size} من {filteredLogs.length}
+              </span>
+            )}
+          </div>
+
+          {selectedLogIds.size > 0 && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleBatchDelete}
+                disabled={isBatchDeleting}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-lg font-bold shadow-md transition-colors cursor-pointer text-xs"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>حذف المحدد ({selectedLogIds.size}) منشور / سجل</span>
+              </button>
+              <button
+                onClick={() => setSelectedLogIds(new Set())}
+                className="text-slate-400 hover:text-white px-2 py-1 text-xs"
+              >
+                إلغاء التحديد
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Logs Table / List */}
       {filteredLogs.length === 0 ? (
         <div className="py-12 text-center text-slate-500 text-xs border border-dashed border-slate-800 rounded-xl space-y-2">
@@ -412,7 +543,9 @@ export const ActivityLogs: React.FC<Props> = ({ logs: inMemoryLogs, onClearLogs 
             <div
               key={log.id}
               className={`p-3.5 rounded-xl border text-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-3 transition-colors ${
-                log.type === 'success'
+                selectedLogIds.has(String(log.id))
+                  ? 'bg-indigo-950/30 border-indigo-700/80 shadow-sm ring-1 ring-indigo-500/30'
+                  : log.type === 'success'
                   ? 'bg-emerald-950/20 border-emerald-900/40 hover:border-emerald-700/60'
                   : log.type === 'filtered'
                   ? 'bg-amber-950/20 border-amber-900/40 hover:border-amber-700/60'
@@ -423,6 +556,14 @@ export const ActivityLogs: React.FC<Props> = ({ logs: inMemoryLogs, onClearLogs 
             >
               {/* Main Log Info */}
               <div className="flex items-start gap-3 flex-1 min-w-0">
+                {activeSource === 'sqlite' && (
+                  <input
+                    type="checkbox"
+                    checked={selectedLogIds.has(String(log.id))}
+                    onChange={() => toggleSelectLog(String(log.id))}
+                    className="w-4 h-4 mt-1 rounded border-slate-700 bg-slate-900 text-indigo-600 focus:ring-indigo-500 cursor-pointer shrink-0"
+                  />
+                )}
                 <div className="mt-1 shrink-0">
                   {log.type === 'success' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
                   {log.type === 'filtered' && <XCircle className="w-4 h-4 text-amber-400" />}

@@ -730,6 +730,27 @@ def clear_event_logs() -> bool:
             conn.close()
 
 
+def delete_event_logs_batch(log_ids: List[Any]) -> int:
+    """حذف دفعة محددة من السجلات والمنشورات دفعة واحدة"""
+    if not log_ids:
+        return 0
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            placeholders = ",".join("?" for _ in log_ids)
+            cursor.execute(f"DELETE FROM event_logs WHERE id IN ({placeholders})", [int(x) for x in log_ids if str(x).isdigit()])
+            deleted_count = cursor.rowcount
+            conn.commit()
+            return deleted_count
+        except Exception as e:
+            logger.error(f"Error batch deleting event logs: {e}")
+            return 0
+        finally:
+            conn.close()
+
+
+
 # ----------------- وظائف المصادر المراقبة -----------------
 
 def get_sources() -> List[Dict[str, Any]]:
@@ -868,6 +889,38 @@ def mark_post_seen(post_id: str, post_hash: str, channel: str = ""):
             conn.commit()
         finally:
             conn.close()
+
+
+def clear_seen_posts_cache() -> Dict[str, int]:
+    """حذف وتصفير كافة المنشورات المحفوظة وكاش التكرار للسماح بإعادة سحب ونشر الأخبار من الصفر"""
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM seen_posts")
+            seen_count = cursor.rowcount
+            cursor.execute("DELETE FROM published_news_log")
+            news_count = cursor.rowcount
+            conn.commit()
+            logger.info(f"🧹 [تصفير المنشورات المحفوظة] تم مسح {seen_count} سجل منع تكرار و {news_count} سجل أخبار منشورة")
+            return {"seen_posts_cleared": seen_count, "published_news_cleared": news_count}
+        finally:
+            conn.close()
+
+
+def delete_seen_post(post_id: str) -> bool:
+    """حذف منشور محدد من جدول المنشورات المعالجة"""
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM seen_posts WHERE post_id = ?", (str(post_id),))
+            cursor.execute("DELETE FROM published_news_log WHERE post_id = ?", (str(post_id),))
+            conn.commit()
+            return cursor.rowcount > 0
+        finally:
+            conn.close()
+
 
 
 # ----------------- خوارزمية منع التكرار الذكي والمقارنة خلال 24 ساعة -----------------
@@ -1179,16 +1232,43 @@ def get_university_projects() -> List[Dict[str, Any]]:
 
 
 def delete_university_project(univ_id: str) -> bool:
-    """حذف مشروع الجامعة بشكل نهائي ودائم بالمعرف أو الاسم مع تطهير الهوية المعرفية والمصادر"""
+    """حذف مشروع الجامعة بشكل نهائي ودائم بالمعرف أو الاسم مع تطهير الهوية المعرفية والمصادر وقنوات النشر التابعة له"""
     with _db_lock:
         conn = get_db_connection()
         try:
             cursor = conn.cursor()
+            # استخراج تفاصيل المشروع قبل الحذف لمعرفة القنوات والمصادر المرتبطة
+            cursor.execute("SELECT * FROM university_projects WHERE id = ? OR name = ?", (univ_id, univ_id))
+            proj = cursor.fetchone()
+            target_ch = proj["target_channel"] if proj else None
+            proj_name = proj["name"] if proj else univ_id
+            tg_sources = json.loads(proj["telegram_sources"] or "[]") if proj and proj["telegram_sources"] else []
+            tw_sources = json.loads(proj["twitter_sources"] or "[]") if proj and proj["twitter_sources"] else []
+
+            # 1. حذف المشروع من جدول المشاريع
             cursor.execute("DELETE FROM university_projects WHERE id = ? OR name = ?", (univ_id, univ_id))
             deleted = cursor.rowcount > 0
-            cursor.execute("DELETE FROM university_knowledge WHERE univ_id = ? OR univ_name = ?", (univ_id, univ_id))
+
+            # 2. حذف الهوية المعرفية والملخصات
+            cursor.execute("DELETE FROM university_knowledge WHERE univ_id = ? OR univ_name = ?", (univ_id, proj_name))
+
+            # 3. حذف سجلات الأخبار المنشورة الخاصة بالجامعة
+            cursor.execute("DELETE FROM published_news_log WHERE target_univ = ? OR target_univ = ?", (univ_id, proj_name))
+
+            # 4. تنظيف المصادر الحصرية التابعة لهذا المشروع من جدول sources
+            all_linked_targets = [s.strip() for s in (tg_sources + tw_sources) if s.strip()]
+            for lt in all_linked_targets:
+                cursor.execute("DELETE FROM sources WHERE target = ? OR target = ?", (lt, lt.lstrip("@")))
+
+            # 5. إذا كانت قناة النشر غير مستخدمة من أي جامعة أخرى، تنظيفها من target_channels
+            if target_ch:
+                cursor.execute("SELECT COUNT(*) as cnt FROM university_projects WHERE target_channel = ?", (target_ch,))
+                cnt_row = cursor.fetchone()
+                if cnt_row and cnt_row["cnt"] == 0:
+                    cursor.execute("DELETE FROM target_channels WHERE channel_id = ?", (target_ch,))
+
             conn.commit()
-            logger.info(f"🗑️ [حذف مشروع جامعة] تم حذف المشروع ({univ_id}) نهائياً: {deleted}")
+            logger.info(f"🗑️ [حذف مشروع جامعة] تم حذف المشروع ({univ_id} - {proj_name}) وتطهير كافة مصادره وسجلاته بنجاح")
             sync_to_json_files()
             return deleted
         finally:

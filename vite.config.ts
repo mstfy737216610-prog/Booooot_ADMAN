@@ -8,7 +8,7 @@ export default defineConfig(() => {
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': path.resolve('.'),
       },
     },
     server: {
@@ -19,6 +19,17 @@ export default defineConfig(() => {
       hmr: process.env.DISABLE_HMR !== 'true',
       watch: {
         ignored: [
+          /bot_database\.db.*/,
+          /.*\.db-journal/,
+          /.*\.db-wal/,
+          /.*\.db-shm/,
+          /.*\.sqlite.*/,
+          /.*\.log/,
+          '**/bot_database.db*',
+          '**/*-journal',
+          '**/*.db-journal',
+          '**/*.db-wal',
+          '**/*.db-shm',
           '**/*.db*',
           '**/*.sqlite*',
           '**/storage_downloads/**',

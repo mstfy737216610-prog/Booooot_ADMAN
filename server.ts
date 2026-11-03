@@ -318,6 +318,45 @@ print(json.dumps({"success": ok}))
   }
 });
 
+// حذف دفعة من السجلات والمنشورات المحددة
+app.post('/api/logs/db/delete-batch', (req: Request, res: Response) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      res.status(400).json({ success: false, error: "قائمة المعرفات مطلوبة" });
+      return;
+    }
+    const pyScript = `
+import database as db, json, sys
+ids = json.loads(sys.argv[1])
+count = db.delete_event_logs_batch(ids)
+print(json.dumps({"success": True, "deleted_count": count}))
+`;
+    const out = execFileSync('python3', ['-c', pyScript, JSON.stringify(ids)], { timeout: 6000 }).toString().trim();
+    res.json(JSON.parse(out || '{"success":true}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+// تصفير المنشورات المحفوظة وكاش التكرار
+app.post('/api/posts/clear-seen-cache', (_req: Request, res: Response) => {
+  try {
+    const pyScript = `
+import database as db, json
+res = db.clear_seen_posts_cache()
+print(json.dumps({"success": True, **res}))
+`;
+    const out = execFileSync('python3', ['-c', pyScript], { timeout: 6000 }).toString().trim();
+    res.json(JSON.parse(out || '{"success":true}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+
 // 4.1 Get Unified Full Config
 app.get('/api/config', (_req: Request, res: Response) => {
   try {
@@ -682,26 +721,40 @@ app.post('/api/university/toggle', (req: Request, res: Response) => {
 app.post('/api/university/delete', (req: Request, res: Response) => {
   try {
     const { id } = req.body;
-    const data = JSON.parse(fs.readFileSync(SOURCES_FILE, 'utf-8'));
-    if (data.university_projects) {
-      const targetProj = data.university_projects.find((p: any) => p.id === id || p.name === id);
-      const deletedName = targetProj ? targetProj.name : id;
+    let data: any = {};
+    if (fs.existsSync(SOURCES_FILE)) {
+      try {
+        data = JSON.parse(fs.readFileSync(SOURCES_FILE, 'utf-8'));
+      } catch {}
+    }
 
-      data.university_projects = data.university_projects.filter((p: any) => p.id !== id && p.name !== id);
-      data.lastUpdated = new Date().toISOString();
-      fs.writeFileSync(SOURCES_FILE, JSON.stringify(data, null, 2), 'utf-8');
+    const targetProj = (data.university_projects || []).find((p: any) => p.id === id || p.name === id);
+    const deletedName = targetProj ? targetProj.name : id;
 
-      // Permanent deletion in SQLite and disk sync
-      execFile('python3', ['-c', `
+    // 1. تنفيذ الحذف المتسلسل في SQLite
+    try {
+      execFileSync('python3', ['-c', `
 import database as db
 db.delete_university_project(${JSON.stringify(id)})
 db.delete_university_project(${JSON.stringify(deletedName)})
-`], { cwd: __dirname }, () => {});
-
-      res.json({ success: true });
-    } else {
-      res.status(404).json({ error: "الجامعة غير موجودة" });
+`], { timeout: 6000 });
+    } catch (e) {
+      console.warn("delete_university_project python error:", e);
     }
+
+    // 2. تحديث ملف sources.json وقراءة أحدث البيانات المحدثة
+    if (fs.existsSync(SOURCES_FILE)) {
+      try {
+        data = JSON.parse(fs.readFileSync(SOURCES_FILE, 'utf-8'));
+      } catch {}
+    }
+
+    res.json({
+      success: true,
+      universities: data.university_projects || [],
+      sources: data.sources || [],
+      message: `تم حذف جامعة ${deletedName} وكافة مصادرها بنجاح 🗑️`
+    });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     res.status(500).json({ error: message });
@@ -2048,6 +2101,17 @@ async function startServer() {
         middlewareMode: true,
         watch: {
           ignored: [
+            /bot_database\.db.*/,
+            /.*\.db-journal/,
+            /.*\.db-wal/,
+            /.*\.db-shm/,
+            /.*\.sqlite.*/,
+            /.*\.log/,
+            '**/bot_database.db*',
+            '**/*-journal',
+            '**/*.db-journal',
+            '**/*.db-wal',
+            '**/*.db-shm',
             '**/*.db*',
             '**/*.sqlite*',
             '**/storage_downloads/**',
