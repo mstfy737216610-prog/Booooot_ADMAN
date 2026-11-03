@@ -205,6 +205,9 @@ print(json.dumps(res, ensure_ascii=False))
     if (newConfig.ai?.geminiApiKey) process.env.GEMINI_API_KEY = newConfig.ai.geminiApiKey;
     if (newConfig.adminId) process.env.ADMIN_ID = newConfig.adminId;
 
+    // Live restart Python bot process so it immediately picks up new keys and config
+    restartPythonWorker();
+
     res.json({
       success: true,
       message: "تم حفظ كافة التعديلات مباشرة في ملفات config.json و state.json وقاعدة البيانات ووحدة التخزين الداخلية للهاتف! 💾",
@@ -220,94 +223,7 @@ print(json.dumps(res, ensure_ascii=False))
 // 4.3 AI Health & Diagnostics Endpoint
 app.get('/api/ai/health', async (_req: Request, res: Response) => {
   try {
-    const pyCmd = `
-import database as db, json, os, urllib.request, ssl, time, sys
-
-ssl_ctx = ssl.create_default_context()
-ssl_ctx.check_hostname = False
-ssl_ctx.verify_mode = ssl.CERT_NONE
-
-base = db.get_setting("ai_base_url", os.getenv("AI_BASE_URL", "https://api.hcnsec.cn/v1")).rstrip("/")
-key = db.get_setting("ai_api_key", os.getenv("AI_API_KEY", "")).strip()
-model = db.get_setting("primary_model", os.getenv("PRIMARY_MODEL", "DeepSeek-V4-Flash")).strip()
-gemini_key = db.get_setting("gemini_api_key", os.getenv("GEMINI_API_KEY", "")).strip()
-
-result = {
-    "status": "degraded",
-    "provider": base,
-    "primaryModel": model,
-    "hasKey": bool(key),
-    "hasGeminiKey": bool(gemini_key),
-    "latency_ms": 0,
-    "lastError": None,
-    "message": ""
-}
-
-# 1. Test OpenAI / DeepSeek endpoint if key is present
-if key:
-    try:
-        t0 = time.time()
-        url = f"{base}/chat/completions"
-        payload = {
-            "model": model,
-            "messages": [{"role": "user", "content": "ping"}],
-            "max_tokens": 5
-        }
-        req = urllib.request.Request(
-            url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
-        )
-        with urllib.request.urlopen(req, context=ssl_ctx, timeout=5) as r:
-            lat = int((time.time() - t0) * 1000)
-            result["status"] = "online"
-            result["latency_ms"] = lat
-            result["message"] = f"متصل بنجاح ({lat}ms)"
-            db.set_setting("last_ai_status", "online")
-            db.set_setting("last_ai_error", "")
-            db.set_setting("last_ai_latency", str(lat))
-            print(json.dumps(result))
-            sys.exit(0)
-    except Exception as e:
-        err_msg = str(e)
-        result["lastError"] = err_msg
-        if "403" in err_msg:
-            result["message"] = "مفتاح مزود الذكاء الاصطناعي محظور أو منتهي الصلاحية (HTTP 403 Forbidden)"
-        elif "401" in err_msg:
-            result["message"] = "مفتاح الذكاء الاصطناعي غير صحيح (401 Unauthorized)"
-        elif "429" in err_msg:
-            result["message"] = "تجاوزت الحصة لمزود الذكاء الاصطناعي (429 Rate Limit)"
-        else:
-            result["message"] = f"تعذر الاتصال بالمزود: {err_msg}"
-        db.set_setting("last_ai_status", "degraded")
-        db.set_setting("last_ai_error", result["message"])
-
-# 2. Test Gemini if key is present
-if gemini_key:
-    try:
-        t0 = time.time()
-        g_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key={gemini_key}"
-        g_payload = {"contents": [{"parts": [{"text": "ping"}]}]}
-        g_req = urllib.request.Request(g_url, data=json.dumps(g_payload).encode("utf-8"), headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(g_req, context=ssl_ctx, timeout=5) as gr:
-            lat = int((time.time() - t0) * 1000)
-            result["status"] = "online"
-            result["primaryModel"] = "gemini-3.1-flash-lite"
-            result["latency_ms"] = lat
-            result["message"] = f"متصل عبر Gemini بنجاح ({lat}ms)"
-            print(json.dumps(result))
-            sys.exit(0)
-    except Exception as ge:
-        result["lastError"] = str(ge)
-
-if not key and not gemini_key:
-    result["message"] = "لم يتم إدخال مفتاح ذكاء اصطناعي، والمحرك الأكاديمي الداخلي نشط بالكامل لحماية القناة."
-elif result["status"] == "degraded":
-    result["message"] = result.get("message") or "المحرك الأكاديمي المعرفي الداخلي نشط لتوفير ردود فورية ودقيقة."
-
-print(json.dumps(result))
-`;
-    const out = execSync(`python3 -c ${JSON.stringify(pyCmd)}`, { timeout: 6000 }).toString().trim();
+    const out = execFileSync('python3', ['-c', 'import database as db, json; print(json.dumps(db.check_ai_health(), ensure_ascii=False))'], { timeout: 8000 }).toString().trim();
     if (out) {
       res.json(JSON.parse(out));
       return;
@@ -320,6 +236,7 @@ print(json.dumps(result))
     });
   }
 });
+
 
 const REVOKED_TOKENS = [
   "8901693218:AAEOQmHMZLy-xaPbTUMq1KGhDwp1l0wFWP4",

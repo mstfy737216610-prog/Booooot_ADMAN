@@ -130,6 +130,45 @@ AI_MODELS_CASCADE = [
     "glm-5.3",
     "MiniMax-M3.1-Flash"
 ]
+def get_current_ai_config() -> Tuple[str, str, str, str]:
+    """استدعاء أحدث إعدادات ومفاتيح الذكاء الاصطناعي من قاعدة البيانات والملفات مباشرة لحظة بلحظة"""
+    base = db.get_setting("ai_base_url", os.getenv("AI_BASE_URL", "https://api.hcnsec.cn/v1")).rstrip("/")
+    key = db.get_setting("ai_api_key", os.getenv("AI_API_KEY", "")).strip()
+    primary = db.get_setting("primary_model", os.getenv("PRIMARY_MODEL", "DeepSeek-V4-Flash")).strip()
+    gemini_k = db.get_setting("gemini_api_key", os.getenv("GEMINI_API_KEY", "")).strip()
+    return base, key, primary, gemini_k
+
+
+def format_fallback_academic_post(raw_text: str, target_univ: Optional[str] = None, ext_links: Optional[List[str]] = None) -> str:
+    """صياغة أكاديمية موثقة ودافئة تنشر فوراً عند تعذر مزودات الذكاء الاصطناعي لحماية النشر وعدم تضييع الأخبار"""
+    lines = [l.strip() for l in raw_text.split('\n') if l.strip()]
+    first_line = lines[0] if lines else "تحديث وإعلان أكاديمي هام"
+    first_line = re.sub(r'^[•\-*#📌📢✨🎓]\s*', '', first_line).strip()
+    title = first_line[:75] if len(first_line) > 75 else first_line
+
+    bullets = []
+    for l in lines[1:]:
+        clean_l = re.sub(r'^[•\-*#📌📢✨🎓]\s*', '', l).strip()
+        if len(clean_l) > 4 and not clean_l.startswith("http") and not clean_l.startswith("@"):
+            bullets.append(f"▫️ {clean_l}")
+            if len(bullets) >= 5:
+                break
+
+    body = "\n".join(bullets) if bullets else f"▫️ {first_line}"
+    u_label = f" ({target_univ})" if target_univ else ""
+
+    links_part = ""
+    if ext_links and len(ext_links) > 0:
+        links_part = f"\n\n🔗 <b>رابط البوابة الإلكترونية المعتمدة:</b>\n{ext_links[0]}"
+
+    tag = "#جامعة"
+    if target_univ:
+        clean_tag = re.sub(r'\s+', '_', target_univ.strip())
+        tag = f"#{clean_tag} #شؤون_الطلاب #مواعيد"
+
+    return f"📌 <b>{title}</b>{u_label}\n\n{body}{links_part}\n\nدعواتنا لكم بالتوفيق والنجاح الدائم 🤲\nشاركوا التنبيه مع زملائكم الطلاب 🤝\n{tag}"
+
+
 _raw_port = safe_int(os.getenv("PORT", os.getenv("KEEPALIVE_PORT", "8088")), 8088)
 PORT = 8088 if _raw_port == 3000 else _raw_port
 
@@ -2322,8 +2361,9 @@ class StandaloneTelegramEducationalBot:
 3. تخلص تماماً من أي تكرار للكلام أو الحشو، ولا تذكر أي قنوات أو مصادر سابقة.
 4. استخدم صياغة جذابة ومباشرة للطلاب مع نقاط واضحة وعنوان رسمي مميز."""
 
+        ai_base, ai_key, primary_mdl, _ = get_current_ai_config()
         payload = {
-            "model": PRIMARY_MODEL,
+            "model": primary_mdl,
             "messages": [
                 {"role": "system", "content": merge_prompt},
                 {"role": "user", "content": f"التقرير الأول:\n{clean1}\n\nالتقرير الثاني (تفاصيل إضافية مكملة):\n{clean2}\n\nالمطلوب: صغ من هذين التقريرين منشوراً واحداً رسمياً شاملاً يجمع كافة المواعيد والتفاصيل دون أي تكرار:"}
@@ -2332,11 +2372,11 @@ class StandaloneTelegramEducationalBot:
             "max_tokens": 1500
         }
         headers = {
-            "Authorization": f"Bearer {AI_API_KEY}",
+            "Authorization": f"Bearer {ai_key}",
             "Content-Type": "application/json",
             "User-Agent": "TelegramEducationalBot/3.0"
         }
-        endpoint = f"{AI_BASE_URL}/chat/completions"
+        endpoint = f"{ai_base}/chat/completions"
 
         try:
             req = urllib.request.Request(endpoint, data=json.dumps(payload).encode("utf-8"), headers=headers)
@@ -2423,8 +2463,9 @@ class StandaloneTelegramEducationalBot:
         instruction_addon = f"توجيهات إضافية من المشرف: {custom_instruction}\n\n" if custom_instruction else ""
         user_prompt = f"{instruction_addon}[توجيه سياقي ذكي: {ctx_guide}]\n\nالمحتوى المطلوب تحليله وصياغته:\n{clean_input}"
 
+        ai_base, ai_key, primary_mdl, gemini_key = get_current_ai_config()
         payload = {
-            "model": PRIMARY_MODEL,
+            "model": primary_mdl,
             "messages": [
                 {"role": "system", "content": active_system_prompt},
                 {"role": "user", "content": user_prompt}
@@ -2434,11 +2475,11 @@ class StandaloneTelegramEducationalBot:
         }
 
         headers = {
-            "Authorization": f"Bearer {AI_API_KEY}",
+            "Authorization": f"Bearer {ai_key}",
             "Content-Type": "application/json",
             "User-Agent": "TelegramEducationalBot/3.0"
         }
-        endpoint = f"{AI_BASE_URL}/chat/completions"
+        endpoint = f"{ai_base}/chat/completions"
 
         def _process_ai_response(text: str) -> Optional[str]:
             # تنظيف أي روابط وهمية قد يكون الذكاء الاصطناعي قد اخترعها رغم التحذيرات
@@ -2454,7 +2495,6 @@ class StandaloneTelegramEducationalBot:
 
 
         # محاولة الاتصال بـ Google Gemini REST أولاً إذا توفر المفتاح
-        gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
         if gemini_key:
             for g_model in ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"]:
                 try:
@@ -2485,28 +2525,29 @@ class StandaloneTelegramEducationalBot:
                     continue
 
         # محاولة كوكبة النماذج الذكية المتتالية (Failover Cluster) بمهلة متوازنة (7.5 ثانية)
-        for model_name in AI_MODELS_CASCADE[:3]:
-            payload["model"] = model_name
-            try:
-                req = urllib.request.Request(endpoint, data=json.dumps(payload).encode("utf-8"), headers=headers)
-                with urllib.request.urlopen(req, context=ssl_ctx, timeout=7.5) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
-                    if "choices" in data and len(data["choices"]) > 0:
-                        ai_text = data["choices"][0]["message"]["content"].strip()
-                        if "IGNORE_EXPIRED" in ai_text.upper():
-                            logger.info("🛡️ [مصفاة التواريخ] تم استبعاد الخبر لأنه قديم أو انتهى وقته (Expired).")
-                            return None
-                        if "لا يمكنني الوصول إلى الروابط" in ai_text or "لا أستطيع تصفح الإنترنت" in ai_text or "لا يمكنني تصفح" in ai_text:
-                            logger.info("🛡️ تم استبعاد رد الرفض النمطي للنموذج واستدعاء بيانات الزحف الحي.")
-                            continue
-                        res = _process_ai_response(ai_text)
-                        if res:
-                            return res
-            except Exception:
-                continue
+        if ai_key and ai_key != "sk-J2ky44F6VTDMkL8Q1GHL5sfmbeIpARVDayNuwMfxKI5zCdii":
+            for model_name in AI_MODELS_CASCADE[:3]:
+                payload["model"] = model_name
+                try:
+                    req = urllib.request.Request(endpoint, data=json.dumps(payload).encode("utf-8"), headers=headers)
+                    with urllib.request.urlopen(req, context=ssl_ctx, timeout=7.5) as resp:
+                        data = json.loads(resp.read().decode("utf-8"))
+                        if "choices" in data and len(data["choices"]) > 0:
+                            ai_text = data["choices"][0]["message"]["content"].strip()
+                            if "IGNORE_EXPIRED" in ai_text.upper():
+                                logger.info("🛡️ [مصفاة التواريخ] تم استبعاد الخبر لأنه قديم أو انتهى وقته (Expired).")
+                                return None
+                            if "لا يمكنني الوصول إلى الروابط" in ai_text or "لا أستطيع تصفح الإنترنت" in ai_text or "لا يمكنني تصفح" in ai_text:
+                                logger.info("🛡️ تم استبعاد رد الرفض النمطي للنموذج واستدعاء بيانات الزحف الحي.")
+                                continue
+                            res = _process_ai_response(ai_text)
+                            if res:
+                                return res
+                except Exception:
+                    continue
 
-        logger.info("🛡️ تعذر صياغة المنشور بالذكاء الاصطناعي المعتمد، تم استبعاد الخبر تماماً لحماية القناة من أي قوالب عشوائية أو غير دقيقة.")
-        return None
+        logger.info("ℹ️ المحرك الأكاديمي الداخلي نشط: صياغة الخبر الجامعي بدقة وأمان ونشره فوراً دون تضييعه.")
+        return format_fallback_academic_post(clean_input, target_univ, ext_links)
 
     # تفويض معالجة استفسارات وتعليقات الطلاب إلى الدالة الموحدة المتقدمة أدناه
     def call_ai_for_comment_legacy(self, comment_text: str, original_post: str = "", target_univ: Optional[str] = None) -> Optional[str]:

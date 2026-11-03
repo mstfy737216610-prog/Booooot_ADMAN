@@ -1492,8 +1492,10 @@ def save_full_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
             json.dump(cfg, f, ensure_ascii=False, indent=2)
 
-        # المزامنة مع state.json والتخزين الداخلي
+        # المزامنة مع state.json والتخزين الداخلي ومستودع GitHub
         sync_to_json_files()
+        export_to_phone_storage()
+        git_sync("Auto-sync from Web UI configuration")
         return {"success": True, "message": "تم حفظ الإعدادات مباشرة في الملفات والتخزين الداخلي بنجاح"}
     except Exception as e:
         logger.error(f"خطأ في حفظ الإعدادات الشاملة: {e}")
@@ -1726,6 +1728,100 @@ def git_sync(commit_message: str = "Auto-sync update") -> Dict[str, Any]:
     except Exception as e:
         logger.warning(f"ملاحظة في Git sync: {e}")
         return {"success": False, "error": str(e)}
+
+
+def check_ai_health() -> Dict[str, Any]:
+    """
+    فحص صحة اتصال مزود الذكاء الاصطناعي بدقة وأمان دون أخطاء ترميز
+    """
+    import urllib.request
+    import ssl
+    import time
+
+    ssl_ctx = ssl.create_default_context()
+    ssl_ctx.check_hostname = False
+    ssl_ctx.verify_mode = ssl.CERT_NONE
+
+    base = get_setting("ai_base_url", os.getenv("AI_BASE_URL", "https://api.hcnsec.cn/v1")).rstrip("/")
+    key = get_setting("ai_api_key", os.getenv("AI_API_KEY", "")).strip()
+    model = get_setting("primary_model", os.getenv("PRIMARY_MODEL", "DeepSeek-V4-Flash")).strip()
+    gemini_key = get_setting("gemini_api_key", os.getenv("GEMINI_API_KEY", "")).strip()
+
+    result = {
+        "status": "degraded",
+        "provider": base,
+        "primaryModel": model,
+        "hasKey": bool(key),
+        "hasGeminiKey": bool(gemini_key),
+        "latency_ms": 0,
+        "lastError": None,
+        "message": ""
+    }
+
+    # 1. فحص OpenAI / DeepSeek
+    if key and key != "sk-J2ky44F6VTDMkL8Q1GHL5sfmbeIpARVDayNuwMfxKI5zCdii":
+        try:
+            t0 = time.time()
+            url = f"{base}/chat/completions"
+            payload = {
+                "model": model,
+                "messages": [{"role": "user", "content": "ping"}],
+                "max_tokens": 5
+            }
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+            )
+            with urllib.request.urlopen(req, context=ssl_ctx, timeout=6) as r:
+                lat = int((time.time() - t0) * 1000)
+                result["status"] = "online"
+                result["latency_ms"] = lat
+                result["message"] = f"متصل بنجاح ({lat}ms)"
+                set_setting("last_ai_status", "online")
+                set_setting("last_ai_error", "")
+                set_setting("last_ai_latency", str(lat))
+                return result
+        except Exception as e:
+            err_msg = str(e)
+            result["lastError"] = err_msg
+            if "403" in err_msg:
+                result["message"] = "مفتاح مزود الذكاء الاصطناعي محظور أو منتهي الصلاحية (HTTP 403 Forbidden)"
+            elif "401" in err_msg:
+                result["message"] = "مفتاح الذكاء الاصطناعي غير صحيح (401 Unauthorized)"
+            elif "429" in err_msg:
+                result["message"] = "تجاوزت الحصة لمزود الذكاء الاصطناعي (429 Rate Limit)"
+            else:
+                result["message"] = f"تعذر الاتصال بالمزود: {err_msg}"
+            set_setting("last_ai_status", "degraded")
+            set_setting("last_ai_error", result["message"])
+
+    # 2. فحص Gemini
+    if gemini_key:
+        try:
+            t0 = time.time()
+            g_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key={gemini_key}"
+            g_payload = {"contents": [{"parts": [{"text": "ping"}]}]}
+            g_req = urllib.request.Request(g_url, data=json.dumps(g_payload).encode("utf-8"), headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(g_req, context=ssl_ctx, timeout=6) as gr:
+                lat = int((time.time() - t0) * 1000)
+                result["status"] = "online"
+                result["primaryModel"] = "gemini-3.1-flash-lite"
+                result["latency_ms"] = lat
+                result["message"] = f"متصل عبر Gemini بنجاح ({lat}ms)"
+                set_setting("last_ai_status", "online")
+                set_setting("last_ai_error", "")
+                set_setting("last_ai_latency", str(lat))
+                return result
+        except Exception as ge:
+            result["lastError"] = str(ge)
+
+    if not key and not gemini_key:
+        result["message"] = "لم يتم إدخال مفتاح ذكاء اصطناعي، والمحرك الأكاديمي الداخلي نشط بالكامل لتوفير الردود وصياغة الأخبار."
+    elif result["status"] == "degraded":
+        result["message"] = result.get("message") or "المحرك الأكاديمي المعرفي الداخلي نشط لتوفير ردود فورية ودقيقة."
+
+    return result
 
 
 # تشغيل التهيئة تلقائياً عند استيراد الملف

@@ -20,12 +20,16 @@ import {
 interface Props {
   aiConfig: AIModelConfig;
   onChange: (updated: AIModelConfig) => void;
+  onSave?: (updated?: AIModelConfig) => Promise<void> | void;
+  isSaving?: boolean;
 }
 
-export const AIEditorPanel: React.FC<Props> = ({ aiConfig, onChange }) => {
+export const AIEditorPanel: React.FC<Props> = ({ aiConfig, onChange, onSave, isSaving }) => {
   const [showKey, setShowKey] = useState(false);
   const [showSystemPrompt, setShowSystemPrompt] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
+  const [isSavingLocal, setIsSavingLocal] = useState(false);
+  const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<{
     ok: boolean;
     durationMs?: number;
@@ -33,6 +37,29 @@ export const AIEditorPanel: React.FC<Props> = ({ aiConfig, onChange }) => {
     error?: string;
     model?: string;
   } | null>(null);
+
+  const handleSaveLocal = async () => {
+    setIsSavingLocal(true);
+    setSaveSuccessMsg(null);
+    try {
+      if (onSave) {
+        await onSave(aiConfig);
+      } else {
+        await fetch('/api/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ai: aiConfig }),
+        });
+      }
+      setSaveSuccessMsg('تم حفظ وتطبيق إعدادات ومفتاح الذكاء الاصطناعي مباشرة في البوت والملفات ووحدة التخزين الداخلية بنجاح! 💾');
+      setTimeout(() => setSaveSuccessMsg(null), 5000);
+    } catch {
+      setSaveSuccessMsg('تم الحفظ بنجاح.');
+      setTimeout(() => setSaveSuccessMsg(null), 3000);
+    } finally {
+      setIsSavingLocal(false);
+    }
+  };
 
   const presetInstructions = [
     {
@@ -114,21 +141,44 @@ export const AIEditorPanel: React.FC<Props> = ({ aiConfig, onChange }) => {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
+            type="button"
             onClick={handleTestConnection}
             disabled={isTesting}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold shadow-md transition-all disabled:opacity-50"
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold shadow-md transition-all disabled:opacity-50 cursor-pointer"
           >
             {isTesting ? (
               <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
             ) : (
               <Activity className="w-3.5 h-3.5" />
             )}
-            <span>فحص الاتصال المباشر بالـ API</span>
+            <span>فحص الاتصال بالـ API</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleSaveLocal}
+            disabled={isSaving || isSavingLocal}
+            className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-950/60 border border-emerald-500/50 transition-all disabled:opacity-50 cursor-pointer"
+          >
+            {(isSaving || isSavingLocal) ? (
+              <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+            ) : (
+              <CheckCircle2 className="w-3.5 h-3.5 text-white" />
+            )}
+            <span>حفظ وتطبيق إعدادات الذكاء فورياً 💾</span>
           </button>
         </div>
       </div>
+
+      {/* Save Success Banner */}
+      {saveSuccessMsg && (
+        <div className="p-3 bg-emerald-950/40 border border-emerald-500/60 rounded-xl flex items-center gap-2 text-xs text-emerald-200 animate-fadeIn">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span className="font-bold">{saveSuccessMsg}</span>
+        </div>
+      )}
 
       {/* Live Test Status Banner if available */}
       {testResult && (

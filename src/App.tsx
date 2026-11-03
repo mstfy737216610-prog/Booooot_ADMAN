@@ -942,8 +942,12 @@ export default function App() {
               onChange={(updatedAI) => {
                 const next = { ...config, ai: updatedAI };
                 setConfig(next);
-                handleSaveConfigDirectly(next);
               }}
+              onSave={async (updatedAI) => {
+                const next = updatedAI ? { ...config, ai: updatedAI } : config;
+                await handleSaveConfigDirectly(next);
+              }}
+              isSaving={isSavingConfig}
             />
           </section>
         )}
