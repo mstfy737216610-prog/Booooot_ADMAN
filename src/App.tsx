@@ -39,6 +39,7 @@ import {
   Zap,
   Save,
   RefreshCw,
+  Database,
 } from 'lucide-react';
 
 const STORAGE_KEY_CONFIG = 'tg_educational_config_v2';
@@ -238,7 +239,7 @@ export default function App() {
   });
 
   const [logs, setLogs] = useState<ActivityLogItem[]>(INITIAL_LOGS);
-  const [activeTab, setActiveTab] = useState<'all' | 'credentials' | 'userbot' | 'chat' | 'github' | 'sources' | 'ai' | 'ad' | 'sim' | 'code' | 'guide'>('credentials');
+  const [activeTab, setActiveTab] = useState<'all' | 'credentials' | 'userbot' | 'chat' | 'github' | 'sources' | 'ai' | 'ad' | 'sim' | 'code' | 'guide' | 'logs'>('credentials');
   const [isLicenseOpen, setIsLicenseOpen] = useState(false);
   const [isTesterModalOpen, setIsTesterModalOpen] = useState(false);
   const [isTestingBot, setIsTestingBot] = useState(false);
@@ -871,6 +872,17 @@ export default function App() {
               <FileCode className="w-3.5 h-3.5 text-purple-400" />
               <span>السكريبتات وملفات الإعدادات</span>
             </button>
+            <button
+              onClick={() => setActiveTab('logs')}
+              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-t-xl font-bold transition-all shrink-0 ${
+                activeTab === 'logs'
+                  ? 'bg-slate-800 text-white border-b-2 border-indigo-500'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Database className="w-3.5 h-3.5 text-indigo-400" />
+              <span>سجلات الأحداث (SQLite Logs)</span>
+            </button>
           </div>
           {/* Subtle scroll edge fade on mobile */}
           <div className="pointer-events-none absolute left-0 top-0 bottom-2 w-8 bg-gradient-to-r from-slate-950 to-transparent sm:hidden"></div>
@@ -990,7 +1002,7 @@ export default function App() {
         )}
 
         {/* 7. Activity Logs */}
-        {activeTab === 'all' && (
+        {(activeTab === 'all' || activeTab === 'logs') && (
           <section id="logs-section">
             <ActivityLogs logs={logs} onClearLogs={() => setLogs([])} />
           </section>

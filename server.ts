@@ -104,13 +104,71 @@ app.get('/api/sources', (_req: Request, res: Response) => {
   }
 });
 
-// 2. Save Sources
+// 2. Save Sources (مزامنة مباشرة مع SQLite وملف sources.json)
 app.post('/api/sources', (req: Request, res: Response) => {
   try {
-    const newSources = req.body;
-    newSources.lastUpdated = new Date().toISOString();
-    fs.writeFileSync(SOURCES_FILE, JSON.stringify(newSources, null, 2), 'utf-8');
-    res.json({ success: true, message: "تم حفظ وتحديث ملف sources.json بنجاح" });
+    const body = req.body;
+    let sourcesList: any[] = [];
+    let fileData: any = {};
+    if (fs.existsSync(SOURCES_FILE)) {
+      try {
+        fileData = JSON.parse(fs.readFileSync(SOURCES_FILE, 'utf-8'));
+      } catch {}
+    }
+
+    if (Array.isArray(body)) {
+      sourcesList = body;
+    } else if (body && Array.isArray(body.sources)) {
+      sourcesList = body.sources;
+    } else if (body && body.sources) {
+      sourcesList = body.sources;
+    }
+
+    fileData.sources = sourcesList;
+    fileData.lastUpdated = new Date().toISOString();
+    fs.writeFileSync(SOURCES_FILE, JSON.stringify(fileData, null, 2), 'utf-8');
+
+    // Mزامنة فورية ودائمة في SQLite
+    const pyCmd = `
+import database as db, json, sys
+sources_data = json.loads(sys.argv[1])
+ok = db.replace_all_sources(sources_data)
+print(json.dumps({"success": ok}))
+`;
+    try {
+      execFileSync('python3', ['-c', pyCmd, JSON.stringify(sourcesList)], { timeout: 6000 });
+    } catch (e) {
+      console.warn("SQLite sources sync note:", e);
+    }
+
+    res.json({ success: true, message: "تمت مزامنة المصادر مباشرة مع SQLite وملف sources.json بنجاح 💾", count: sourcesList.length });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: message });
+  }
+});
+
+// 2.1 Clear All Sources (حذف شامل لكافة المصادر)
+app.post('/api/sources/clear', (_req: Request, res: Response) => {
+  try {
+    let fileData: any = {};
+    if (fs.existsSync(SOURCES_FILE)) {
+      try {
+        fileData = JSON.parse(fs.readFileSync(SOURCES_FILE, 'utf-8'));
+      } catch {}
+    }
+    fileData.sources = [];
+    fileData.lastUpdated = new Date().toISOString();
+    fs.writeFileSync(SOURCES_FILE, JSON.stringify(fileData, null, 2), 'utf-8');
+
+    // مسح كافة المصادر من SQLite
+    try {
+      execFileSync('python3', ['-c', 'import database as db; db.clear_all_sources()'], { timeout: 6000 });
+    } catch (e) {
+      console.warn("SQLite clear sources note:", e);
+    }
+
+    res.json({ success: true, message: "تم حذف كافة المصادر بنجاح من قاعدة البيانات وملف الإعدادات 🗑️" });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     res.status(500).json({ error: message });
@@ -138,6 +196,125 @@ app.post('/api/state', (req: Request, res: Response) => {
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     res.status(500).json({ error: message });
+  }
+});
+
+// 3.1 SQLite Event Logs Management API (عرض وتعديل وحذف سجلات الأحداث المخزنة)
+app.get('/api/logs/db', (req: Request, res: Response) => {
+  try {
+    const limit = Number(req.query.limit) || 150;
+    const filterType = (req.query.type as string) || 'all';
+    const search = (req.query.search as string) || '';
+
+    const pyScript = `
+import database as db, json, sys
+limit = int(sys.argv[1])
+filter_type = sys.argv[2]
+search = sys.argv[3]
+logs = db.get_event_logs(limit=limit, filter_type=filter_type if filter_type != 'all' else None, search=search if search else None)
+print(json.dumps({"success": True, "logs": logs}, ensure_ascii=False))
+`;
+    const out = execFileSync('python3', ['-c', pyScript, String(limit), filterType, search], { timeout: 6000 }).toString().trim();
+    if (out) {
+      res.json(JSON.parse(out));
+      return;
+    }
+    res.json({ success: true, logs: [] });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+app.post('/api/logs/db/add', (req: Request, res: Response) => {
+  try {
+    const { type = 'info', messageText = '', source = 'لوحة التحكم', destination = 'قاعدة البيانات', details = '', appliedRuleName = 'إدخال يدوي' } = req.body;
+    const pyScript = `
+import database as db, json, sys
+log_id = db.add_event_log(
+    log_type=sys.argv[1],
+    message_text=sys.argv[2],
+    source=sys.argv[3],
+    destination=sys.argv[4],
+    details=sys.argv[5],
+    applied_rule_name=sys.argv[6]
+)
+print(json.dumps({"success": True, "id": str(log_id)}))
+`;
+    const out = execFileSync('python3', ['-c', pyScript, type, messageText, source, destination, details, appliedRuleName], { timeout: 6000 }).toString().trim();
+    res.json(JSON.parse(out || '{"success":true}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+app.post('/api/logs/db/update', (req: Request, res: Response) => {
+  try {
+    const { id, messageText = '', details = '', type, destination, source } = req.body;
+    if (!id) {
+      res.status(400).json({ success: false, error: "معرف السجل مطلوب" });
+      return;
+    }
+    const pyScript = `
+import database as db, json, sys
+log_id = int(sys.argv[1])
+msg = sys.argv[2]
+det = sys.argv[3]
+log_type = sys.argv[4] if sys.argv[4] != 'none' else None
+dst = sys.argv[5] if sys.argv[5] != 'none' else None
+src = sys.argv[6] if sys.argv[6] != 'none' else None
+ok = db.update_event_log(log_id, msg, det, log_type=log_type, destination=dst, source=src)
+print(json.dumps({"success": ok}))
+`;
+    const out = execFileSync('python3', [
+      '-c', pyScript,
+      String(id),
+      messageText,
+      details,
+      type || 'none',
+      destination || 'none',
+      source || 'none'
+    ], { timeout: 6000 }).toString().trim();
+    res.json(JSON.parse(out || '{"success":true}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+app.post('/api/logs/db/delete', (req: Request, res: Response) => {
+  try {
+    const { id } = req.body;
+    if (!id) {
+      res.status(400).json({ success: false, error: "معرف السجل مطلوب" });
+      return;
+    }
+    const pyScript = `
+import database as db, json, sys
+ok = db.delete_event_log(int(sys.argv[1]))
+print(json.dumps({"success": ok}))
+`;
+    const out = execFileSync('python3', ['-c', pyScript, String(id)], { timeout: 6000 }).toString().trim();
+    res.json(JSON.parse(out || '{"success":true}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+app.post('/api/logs/db/clear', (_req: Request, res: Response) => {
+  try {
+    const pyScript = `
+import database as db, json
+ok = db.clear_event_logs()
+print(json.dumps({"success": ok}))
+`;
+    const out = execFileSync('python3', ['-c', pyScript], { timeout: 6000 }).toString().trim();
+    res.json(JSON.parse(out || '{"success":true}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
   }
 });
 
@@ -1867,7 +2044,23 @@ app.post('/api/git/sync', (_req: Request, res: Response) => {
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        watch: {
+          ignored: [
+            '**/*.db*',
+            '**/*.sqlite*',
+            '**/storage_downloads/**',
+            '**/*.log',
+            '**/config.json',
+            '**/sources.json',
+            '**/state.json',
+            '**/session_forwarder*',
+            '**/__pycache__/**',
+            '**/*.pyc',
+          ],
+        },
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);

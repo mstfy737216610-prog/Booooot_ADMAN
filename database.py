@@ -177,8 +177,41 @@ def init_db():
             )
             """)
 
+            # 10. جدول سجلات الأحداث والعمليات الدائمة (Persistent SQLite Event Logs)
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS event_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT,
+                type TEXT DEFAULT 'info',
+                message_text TEXT,
+                source TEXT,
+                destination TEXT,
+                details TEXT,
+                applied_rule_name TEXT,
+                created_at TEXT
+            )
+            """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_event_logs_time ON event_logs (timestamp DESC)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_event_logs_type ON event_logs (type)")
+
+            # بذر سجلات أولية إذا كان الجدول فارغاً
+            cursor.execute("SELECT COUNT(*) as c FROM event_logs")
+            if cursor.fetchone()["c"] == 0:
+                now_str = datetime.utcnow().isoformat()
+                initial_seed = [
+                    ("success", "تم الاتصال بالبوت وتوثيق الآدمن @M_S_F_G (7607633343)", "Telegram API", "Bot Worker", "تم تعيين المشرف الرئيسي وتنشيط الاستماع للأوامر والأخبار.", "التحقق من توكن البوت والآدمن"),
+                    ("success", "تم تهيئة مصادر قنوات تيليجرام للجامعات وربطها بقنوات النشر", "@Next_Plus_BOT0", "@jhdhhdcj", "تم بدء المراقبة والزحف الذكي للمنشورات الجامعية.", "ربط المصادر المعتمدة"),
+                    ("filtered", "استبعاد إعلان تجاري غير طلابي من النشر لحماية القناة", "قناة خارجية", "محرك الفلترة", "تم استبعاد الخبر لأنه إعلان تجاري أو خدمات مدفوعة.", "مصفاة الشأن الطلابي"),
+                    ("info", "تشغيل المحرك الأكاديمي الداخلي للردود الذكية وصياغة الأخبار", "Academic Core", "Telegram Bot", "المحرك نشط لتوفير ردود فورية على استفسارات الطلاب ونسب الغياب.", "المحرك الأكاديمي الذكي")
+                ]
+                for stype, msg, src, dst, det, rule in initial_seed:
+                    cursor.execute("""
+                    INSERT INTO event_logs (timestamp, type, message_text, source, destination, details, applied_rule_name, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (now_str, stype, msg, src, dst, det, rule, now_str))
+
             conn.commit()
-            logger.info("✅ تم تهيئة جداول قاعدة البيانات SQLite بنجاح بما فيها جدول المعرفة المستفادة.")
+            logger.info("✅ تم تهيئة جداول قاعدة البيانات SQLite بنجاح بما فيها جدول المعرفة وسجلات الأحداث الدائمة.")
 
             # هجرة البيانات من ملفات JSON إن وجدت وقاعدة البيانات جديدة
             migrate_from_json(conn)
@@ -221,43 +254,29 @@ def migrate_from_json(conn: sqlite3.Connection):
             VALUES (?, ?, 'active', ?)
         """, (target_ch, "قناة النشر الرسمية", now_str))
 
-    # 3. هجرة المصادر من sources.json
+    # 3. هجرة المصادر من sources.json فقط إن وجدت وبدون فرض مصادر وهمية
     cursor.execute("SELECT COUNT(*) as cnt FROM sources")
-    if cursor.fetchone()["cnt"] == 0:
-        default_sources = [
-            ("src_tg_univ_news", "telegram", "@KSU_News", "أخبار الجامعة والقبول الرسمي", "184920"),
-            ("src_x_moe", "twitter", "@moe_gov_sa", "الحساب الرسمي لوزارة التعليم", "178294104"),
-            ("src_tg_mstfy", "telegram", "@mstfyuhhh", "قناة المحتوى الطلابي", ""),
-            ("src_bot_next", "telegram", "@Next_Plus_BOT0", "مصدر الأخبار Next Plus", ""),
-            ("src_rss_dept", "rss", "https://news.ksu.edu.sa/ar/rss", "بوابة الأخبار والفعاليات الجامعية", "rss_item_9402")
-        ]
-        if os.path.exists(SOURCES_FILE):
-            try:
-                with open(SOURCES_FILE, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    for item in data.get("sources", []):
-                        cursor.execute("""
-                            INSERT OR REPLACE INTO sources (id, type, target, title, priority, rule, enabled, last_post_id, created_at)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """, (
-                            item.get("id") or f"src_{item.get('target')}",
-                            item.get("type", "telegram"),
-                            item.get("target"),
-                            item.get("title", item.get("target")),
-                            item.get("priority", "high"),
-                            item.get("rule", "official"),
-                            1 if item.get("enabled", True) else 0,
-                            str(item.get("lastPostId", "")),
-                            now_str
-                        ))
-            except Exception as e:
-                logger.warning(f"ملاحظة في هجرة sources.json: {e}")
-        else:
-            for sid, stype, stgt, stitle, slast in default_sources:
-                cursor.execute("""
-                    INSERT OR IGNORE INTO sources (id, type, target, title, priority, rule, enabled, last_post_id, created_at)
-                    VALUES (?, ?, ?, ?, 'high', 'official', 1, ?, ?)
-                """, (sid, stype, stgt, stitle, slast, now_str))
+    if cursor.fetchone()["cnt"] == 0 and os.path.exists(SOURCES_FILE):
+        try:
+            with open(SOURCES_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                for item in data.get("sources", []):
+                    cursor.execute("""
+                        INSERT OR REPLACE INTO sources (id, type, target, title, priority, rule, enabled, last_post_id, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        item.get("id") or f"src_{item.get('target')}",
+                        item.get("type", "telegram"),
+                        item.get("target"),
+                        item.get("title", item.get("target")),
+                        item.get("priority", "high"),
+                        item.get("rule", "official"),
+                        1 if item.get("enabled", True) else 0,
+                        str(item.get("lastPostId", "")),
+                        now_str
+                    ))
+        except Exception as e:
+            logger.warning(f"ملاحظة في هجرة sources.json: {e}")
 
     # 4. إعدادات النظام الافتراضية
     defaults = {
@@ -582,6 +601,135 @@ def update_channel_health(channel_id: str, status: str, message: str):
             conn.close()
 
 
+# ----------------- وظائف سجلات الأحداث الدائمة في SQLite (Event Logs) -----------------
+
+def add_event_log(
+    log_type: str,
+    message_text: str,
+    source: str = "Telegram Engine",
+    destination: str = "Target Channel",
+    details: str = "",
+    applied_rule_name: str = "المعالجة الأكاديمية",
+    timestamp: Optional[str] = None
+) -> int:
+    """إضافة سجل حدث دائم في SQLite"""
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            now_iso = timestamp or datetime.utcnow().isoformat()
+            cursor.execute("""
+            INSERT INTO event_logs (timestamp, type, message_text, source, destination, details, applied_rule_name, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (now_iso, log_type, message_text, source, destination, details, applied_rule_name, now_iso))
+            conn.commit()
+            return cursor.lastrowid
+        except Exception as e:
+            logger.error(f"Error adding event log: {e}")
+            return 0
+        finally:
+            conn.close()
+
+
+def get_event_logs(limit: int = 150, offset: int = 0, filter_type: Optional[str] = None, search: Optional[str] = None) -> List[Dict[str, Any]]:
+    """استرجاع سجلات الأحداث المخزنة في SQLite مع الفلترة والبحث"""
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            query = "SELECT * FROM event_logs WHERE 1=1"
+            params: List[Any] = []
+            if filter_type and filter_type != "all":
+                query += " AND type = ?"
+                params.append(filter_type)
+            if search and search.strip():
+                query += " AND (message_text LIKE ? OR details LIKE ? OR source LIKE ? OR destination LIKE ?)"
+                s_param = f"%{search.strip()}%"
+                params.extend([s_param, s_param, s_param, s_param])
+            query += " ORDER BY id DESC LIMIT ? OFFSET ?"
+            params.extend([limit, offset])
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            logs = []
+            for r in rows:
+                logs.append({
+                    "id": str(r["id"]),
+                    "timestamp": r["timestamp"] or r["created_at"],
+                    "type": r["type"],
+                    "messageText": r["message_text"] or "",
+                    "source": r["source"] or "",
+                    "destination": r["destination"] or "",
+                    "details": r["details"] or "",
+                    "appliedRuleName": r["applied_rule_name"] or ""
+                })
+            return logs
+        except Exception as e:
+            logger.error(f"Error reading event logs: {e}")
+            return []
+        finally:
+            conn.close()
+
+
+def update_event_log(log_id: int, message_text: str, details: str, log_type: Optional[str] = None, destination: Optional[str] = None, source: Optional[str] = None) -> bool:
+    """تعديل سجل حدث في SQLite مباشرة"""
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            updates = ["message_text = ?", "details = ?"]
+            params: List[Any] = [message_text, details]
+            if log_type:
+                updates.append("type = ?")
+                params.append(log_type)
+            if destination is not None:
+                updates.append("destination = ?")
+                params.append(destination)
+            if source is not None:
+                updates.append("source = ?")
+                params.append(source)
+            params.append(log_id)
+            cursor.execute(f"UPDATE event_logs SET {', '.join(updates)} WHERE id = ?", params)
+            conn.commit()
+            return cursor.rowcount > 0
+        except Exception as e:
+            logger.error(f"Error updating event log: {e}")
+            return False
+        finally:
+            conn.close()
+
+
+def delete_event_log(log_id: int) -> bool:
+    """حذف سجل حدث من SQLite"""
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM event_logs WHERE id = ?", (log_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+        except Exception as e:
+            logger.error(f"Error deleting event log: {e}")
+            return False
+        finally:
+            conn.close()
+
+
+def clear_event_logs() -> bool:
+    """مسح كافة السجلات من SQLite"""
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM event_logs")
+            conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"Error clearing event logs: {e}")
+            return False
+        finally:
+            conn.close()
+
+
 # ----------------- وظائف المصادر المراقبة -----------------
 
 def get_sources() -> List[Dict[str, Any]]:
@@ -638,6 +786,60 @@ def remove_source(target: str) -> bool:
             return cursor.rowcount > 0
         finally:
             conn.close()
+
+
+def replace_all_sources(sources_list: List[Dict[str, Any]]) -> bool:
+    """استبدال كافة المصادر المخزنة في SQLite وحفظها بشكل مباشر ودائم"""
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM sources")
+            now_str = datetime.utcnow().isoformat()
+            for s in sources_list:
+                sid = s.get("id") or f"src_{int(datetime.utcnow().timestamp())}_{abs(hash(str(s.get('target', '')))) % 10000}"
+                cursor.execute("""
+                    INSERT INTO sources (id, type, target, title, priority, rule, enabled, last_post_id, added_by, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 7607633343, ?)
+                """, (
+                    sid,
+                    s.get("type", "telegram"),
+                    s.get("target", "").strip(),
+                    s.get("title", s.get("target", "")),
+                    s.get("priority", "high"),
+                    s.get("rule", "official"),
+                    1 if s.get("enabled", True) else 0,
+                    str(s.get("lastPostId", "")),
+                    now_str
+                ))
+            conn.commit()
+            sync_to_json_files()
+            return True
+        except Exception as e:
+            logger.error(f"Error in replace_all_sources: {e}")
+            return False
+        finally:
+            conn.close()
+
+
+def clear_all_sources() -> bool:
+    """مسح كافة المصادر المخزنة نهائياً من قاعدة بيانات SQLite وملف sources.json"""
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM sources")
+            # تنظيف مصادر مشاريع الجامعات أيضاً إذا طلبت
+            cursor.execute("UPDATE university_projects SET telegram_sources = '[]', twitter_sources = '[]'")
+            conn.commit()
+            sync_to_json_files()
+            return True
+        except Exception as e:
+            logger.error(f"Error in clear_all_sources: {e}")
+            return False
+        finally:
+            conn.close()
+
 
 
 # ----------------- منع التكرار وإدارة المنشورات المعالجة -----------------
