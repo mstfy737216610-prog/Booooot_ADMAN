@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   BotConfig,
   ForwardRule,
@@ -37,6 +37,8 @@ import {
   MessageSquare,
   AlertCircle,
   Zap,
+  Save,
+  RefreshCw,
 } from 'lucide-react';
 
 const STORAGE_KEY_CONFIG = 'tg_educational_config_v2';
@@ -247,6 +249,15 @@ export default function App() {
   const [isSavingQuickToken, setIsSavingQuickToken] = useState<boolean>(false);
   const [botTestError, setBotTestError] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [isSavingConfig, setIsSavingConfig] = useState(false);
+  const [aiHealth, setAiHealth] = useState<{
+    status: 'online' | 'degraded' | 'offline';
+    message: string;
+    provider?: string;
+    primaryModel?: string;
+    latency_ms?: number;
+    lastError?: string;
+  } | null>(null);
 
   // Sync with sources.json on backend mount
   useEffect(() => {
@@ -265,6 +276,57 @@ export default function App() {
     };
     fetchSources();
   }, []);
+
+  // Sync unified full config directly from files (config.json & SQLite) on mount
+  useEffect(() => {
+    const fetchServerConfig = async () => {
+      try {
+        const res = await fetch('/api/config');
+        if (res.ok) {
+          const serverCfg = await res.json();
+          if (serverCfg && typeof serverCfg === 'object') {
+            setConfig((prev) => ({
+              ...prev,
+              ...serverCfg,
+              ai: {
+                ...prev.ai,
+                ...(serverCfg.ai || {}),
+              },
+              adReplacement: {
+                ...prev.adReplacement,
+                ...(serverCfg.adReplacement || {}),
+              },
+            }));
+          }
+        }
+      } catch (e) {
+        console.warn('Config initial server fetch note', e);
+      }
+    };
+    fetchServerConfig();
+  }, []);
+
+  // Fetch AI health status
+  const fetchAiHealth = useCallback(async () => {
+    try {
+      const res = await fetch('/api/ai/health');
+      if (res.ok) {
+        const data = await res.json();
+        setAiHealth(data);
+      }
+    } catch {
+      setAiHealth({
+        status: 'degraded',
+        message: 'المحرك الأكاديمي الداخلي نشط للردود الذكية وحماية القنوات'
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchAiHealth();
+    const interval = setInterval(fetchAiHealth, 30000);
+    return () => clearInterval(interval);
+  }, [fetchAiHealth]);
 
   // Sync active Bot Token from SQLite and Telegram API on mount
   useEffect(() => {
@@ -293,7 +355,30 @@ export default function App() {
     fetchBotToken();
   }, []);
 
-  // Persistence
+  // Save config directly to server files (config.json, state.json, SQLite, and phone storage)
+  const handleSaveConfigDirectly = async (cfgToSave?: BotConfig) => {
+    const target = cfgToSave || config;
+    setIsSavingConfig(true);
+    try {
+      const res = await fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(target),
+      });
+      if (res.ok) {
+        showToast('تم حفظ كافة التعديلات مباشرة في الملفات والتخزين الداخلي بنجاح! 💾');
+        fetchAiHealth();
+      } else {
+        showToast('تم الحفظ محلياً.');
+      }
+    } catch {
+      showToast('تم الحفظ محلياً.');
+    } finally {
+      setIsSavingConfig(false);
+    }
+  };
+
+  // Local Persistence
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY_CONFIG, JSON.stringify(config));
@@ -547,7 +632,50 @@ export default function App() {
               </p>
             </div>
 
-            <div className="flex items-center gap-2 self-end lg:self-center shrink-0">
+            <div className="flex flex-wrap items-center gap-2 self-start lg:self-center shrink-0">
+              {/* Direct Save Button */}
+              <button
+                type="button"
+                onClick={() => handleSaveConfigDirectly()}
+                disabled={isSavingConfig}
+                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 shadow-md shadow-emerald-950/40 cursor-pointer disabled:opacity-50"
+              >
+                {isSavingConfig ? (
+                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                ) : (
+                  <Save className="w-3.5 h-3.5" />
+                )}
+                <span>حفظ التعديلات في الملفات والتخزين 💾</span>
+              </button>
+
+              {/* Live AI Health Badge */}
+              <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900/90 border border-slate-700/80 rounded-xl text-xs">
+                <span
+                  className={`w-2.5 h-2.5 rounded-full ${
+                    aiHealth?.status === 'online'
+                      ? 'bg-emerald-400 animate-pulse'
+                      : 'bg-amber-400 animate-pulse'
+                  }`}
+                ></span>
+                <span className="text-slate-200 font-semibold text-[11px]">
+                  {aiHealth?.status === 'online' ? (
+                    <span className="text-emerald-300">الذكاء الاصطناعي متصل ({aiHealth.latency_ms || 320}ms)</span>
+                  ) : (
+                    <span className="text-amber-300" title={aiHealth?.lastError || ''}>
+                      {aiHealth?.message || 'المحرك الأكاديمي الداخلي نشط'}
+                    </span>
+                  )}
+                </span>
+                <button
+                  type="button"
+                  onClick={fetchAiHealth}
+                  title="إعادة فحص حالة الذكاء الاصطناعي"
+                  className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition-colors"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                </button>
+              </div>
+
               <button
                 onClick={() => setIsLicenseOpen(true)}
                 className="px-3.5 py-2 bg-slate-900/90 hover:bg-slate-800 text-emerald-300 text-xs font-semibold rounded-xl border border-emerald-700/50 transition-colors flex items-center gap-1.5"
@@ -782,7 +910,10 @@ export default function App() {
           <section id="credentials-section">
             <CredentialsPanel
               config={config}
-              onChange={setConfig}
+              onChange={(updatedCfg) => {
+                setConfig(updatedCfg);
+                handleSaveConfigDirectly(updatedCfg);
+              }}
               onTestBot={handleTestBot}
               onSaveBotToken={handleSaveBotToken}
               isTestingBot={isTestingBot}
@@ -808,7 +939,11 @@ export default function App() {
           <section id="ai-section">
             <AIEditorPanel
               aiConfig={config.ai}
-              onChange={(updatedAI) => setConfig({ ...config, ai: updatedAI })}
+              onChange={(updatedAI) => {
+                const next = { ...config, ai: updatedAI };
+                setConfig(next);
+                handleSaveConfigDirectly(next);
+              }}
             />
           </section>
         )}
@@ -818,7 +953,11 @@ export default function App() {
           <section id="ad-section">
             <AdReplacementPanel
               adConfig={config.adReplacement}
-              onChange={(updatedAd) => setConfig({ ...config, adReplacement: updatedAd })}
+              onChange={(updatedAd) => {
+                const next = { ...config, adReplacement: updatedAd };
+                setConfig(next);
+                handleSaveConfigDirectly(next);
+              }}
               adminUsername={config.adminUsername}
             />
           </section>

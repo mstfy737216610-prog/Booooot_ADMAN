@@ -1,0 +1,40 @@
+{
+  "botToken": "8901693218:AAH0hoZdTq9qGaLYOhu_Cvxg9TEzTPAVADw",
+  "adminId": "7607633343",
+  "adminUsername": "M_S_F_G",
+  "ai": {
+    "apiBase": "https://api.hcnsec.cn/v1",
+    "apiKey": "sk-J2ky44F6VTDMkL8Q1GHL5sfmbeIpARVDayNuwMfxKI5zCdii",
+    "primaryModel": "DeepSeek-V4-Flash",
+    "fallbackModel": "DeepSeek-V4.1-Flash",
+    "systemPrompt": "",
+    "customInstructions": "أنت ممثل الدفعة ومستشار طلابي خليجي مقرب: ادخل في صلب الموضوع فوراً بدون أي قوالب مكررة (لا تبدأ أبداً بـ \"تنبيه لطلاب\" ولا تكتب \"أبرز التفاصيل\")، ركز 100% على ما يهم الطالب (التسجيل، السمر، جداول الاختبارات، الأدفايزر، إعلانات الدكاترة)، واجعل المواعيد والأوقات بخط عريض <b>...</b>، واحتفظ بالأدعية وذكر الصلاة على النبي والأذكار بروح خليجية ودية صادقة.",
+    "geminiApiKey": "",
+    "enableWebSearch": true,
+    "lastAiStatus": "active",
+    "lastAiError": "",
+    "lastAiLatency": "0"
+  },
+  "adReplacement": {
+    "enabled": false,
+    "adDetectionKeywords": [],
+    "customStudentAd": ""
+  },
+  "telethon": {
+    "apiId": "20123456",
+    "apiHash": "",
+    "phoneNumber": "",
+    "sessionName": "session_forwarder",
+    "stringSession": "",
+    "library": "telethon"
+  },
+  "mediaHandling": {
+    "downloadPhotos": true,
+    "downloadVideos": true,
+    "downloadDocuments": true
+  },
+  "targetChannels": [
+    "@jhdhhdcj"
+  ],
+  "lastUpdated": "2026-11-02T22:02:31.810515"
+}

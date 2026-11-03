@@ -4,7 +4,7 @@ import { createServer as createViteServer } from 'vite';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { execFile, spawn, execSync } from 'node:child_process';
+import { execFile, spawn, execSync, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import { GoogleGenAI } from '@google/genai';
 
@@ -18,6 +18,7 @@ app.use(express.json({ limit: '10mb' }));
 
 const SOURCES_FILE = path.join(__dirname, 'sources.json');
 const STATE_FILE = path.join(__dirname, 'state.json');
+const CONFIG_FILE = path.join(__dirname, 'config.json');
 
 // Ensure default sources.json exists
 if (!fs.existsSync(SOURCES_FILE)) {
@@ -137,6 +138,186 @@ app.post('/api/state', (req: Request, res: Response) => {
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     res.status(500).json({ error: message });
+  }
+});
+
+// 4.1 Get Unified Full Config
+app.get('/api/config', (_req: Request, res: Response) => {
+  try {
+    const pyCmd = `import database as db, json; print(json.dumps(db.get_full_config(), ensure_ascii=False))`;
+    const out = execSync(`python3 -c ${JSON.stringify(pyCmd)}`, { timeout: 4000 }).toString().trim();
+    if (out) {
+      const parsed = JSON.parse(out);
+      res.json(parsed);
+      return;
+    }
+  } catch (e) {
+    console.warn("Failed to get config via Python, falling back to config.json:", e);
+  }
+  if (fs.existsSync(CONFIG_FILE)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf-8'));
+      res.json(data);
+      return;
+    } catch {}
+  }
+  res.status(500).json({ error: "تعذر قراءة ملف الإعدادات" });
+});
+
+// 4.2 Save Unified Full Config Directly to Files, SQLite, and Phone Storage
+app.post('/api/config', (req: Request, res: Response) => {
+  try {
+    const newConfig = req.body;
+    if (!newConfig || typeof newConfig !== 'object') {
+      res.status(400).json({ error: "بيانات الإعدادات غير صالحة" });
+      return;
+    }
+
+    // 1. Write directly to config.json file
+    newConfig.lastUpdated = new Date().toISOString();
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify(newConfig, null, 2), 'utf-8');
+
+    // 2. Persist to SQLite, state.json, and export to internal storage via Python database
+    const pyScript = `
+import database as db, json, sys
+cfg = json.loads(sys.argv[1])
+res = db.save_full_config(cfg)
+print(json.dumps(res, ensure_ascii=False))
+`;
+    let pyResult = { success: true, message: "تم الحفظ المباشر في ملف config.json والتخزين الداخلي بنجاح 💾" };
+    try {
+      const out = execFileSync('python3', ['-c', pyScript, JSON.stringify(newConfig)], { timeout: 5000 }).toString().trim();
+      if (out) {
+        pyResult = JSON.parse(out);
+      }
+    } catch (pe) {
+      console.warn("Python save_full_config note:", pe);
+    }
+
+    // Update in-memory environment variables in Node
+    if (newConfig.botToken) {
+      process.env.TELEGRAM_BOT_TOKEN = newConfig.botToken;
+      process.env.BOT_TOKEN = newConfig.botToken;
+    }
+    if (newConfig.ai?.apiKey) process.env.AI_API_KEY = newConfig.ai.apiKey;
+    if (newConfig.ai?.apiBase) process.env.AI_BASE_URL = newConfig.ai.apiBase;
+    if (newConfig.ai?.primaryModel) process.env.PRIMARY_MODEL = newConfig.ai.primaryModel;
+    if (newConfig.ai?.geminiApiKey) process.env.GEMINI_API_KEY = newConfig.ai.geminiApiKey;
+    if (newConfig.adminId) process.env.ADMIN_ID = newConfig.adminId;
+
+    res.json({
+      success: true,
+      message: "تم حفظ كافة التعديلات مباشرة في ملفات config.json و state.json وقاعدة البيانات ووحدة التخزين الداخلية للهاتف! 💾",
+      config: newConfig,
+      storageSync: pyResult
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: message });
+  }
+});
+
+// 4.3 AI Health & Diagnostics Endpoint
+app.get('/api/ai/health', async (_req: Request, res: Response) => {
+  try {
+    const pyCmd = `
+import database as db, json, os, urllib.request, ssl, time, sys
+
+ssl_ctx = ssl.create_default_context()
+ssl_ctx.check_hostname = False
+ssl_ctx.verify_mode = ssl.CERT_NONE
+
+base = db.get_setting("ai_base_url", os.getenv("AI_BASE_URL", "https://api.hcnsec.cn/v1")).rstrip("/")
+key = db.get_setting("ai_api_key", os.getenv("AI_API_KEY", "")).strip()
+model = db.get_setting("primary_model", os.getenv("PRIMARY_MODEL", "DeepSeek-V4-Flash")).strip()
+gemini_key = db.get_setting("gemini_api_key", os.getenv("GEMINI_API_KEY", "")).strip()
+
+result = {
+    "status": "degraded",
+    "provider": base,
+    "primaryModel": model,
+    "hasKey": bool(key),
+    "hasGeminiKey": bool(gemini_key),
+    "latency_ms": 0,
+    "lastError": None,
+    "message": ""
+}
+
+# 1. Test OpenAI / DeepSeek endpoint if key is present
+if key:
+    try:
+        t0 = time.time()
+        url = f"{base}/chat/completions"
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": "ping"}],
+            "max_tokens": 5
+        }
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+        )
+        with urllib.request.urlopen(req, context=ssl_ctx, timeout=5) as r:
+            lat = int((time.time() - t0) * 1000)
+            result["status"] = "online"
+            result["latency_ms"] = lat
+            result["message"] = f"متصل بنجاح ({lat}ms)"
+            db.set_setting("last_ai_status", "online")
+            db.set_setting("last_ai_error", "")
+            db.set_setting("last_ai_latency", str(lat))
+            print(json.dumps(result))
+            sys.exit(0)
+    except Exception as e:
+        err_msg = str(e)
+        result["lastError"] = err_msg
+        if "403" in err_msg:
+            result["message"] = "مفتاح مزود الذكاء الاصطناعي محظور أو منتهي الصلاحية (HTTP 403 Forbidden)"
+        elif "401" in err_msg:
+            result["message"] = "مفتاح الذكاء الاصطناعي غير صحيح (401 Unauthorized)"
+        elif "429" in err_msg:
+            result["message"] = "تجاوزت الحصة لمزود الذكاء الاصطناعي (429 Rate Limit)"
+        else:
+            result["message"] = f"تعذر الاتصال بالمزود: {err_msg}"
+        db.set_setting("last_ai_status", "degraded")
+        db.set_setting("last_ai_error", result["message"])
+
+# 2. Test Gemini if key is present
+if gemini_key:
+    try:
+        t0 = time.time()
+        g_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key={gemini_key}"
+        g_payload = {"contents": [{"parts": [{"text": "ping"}]}]}
+        g_req = urllib.request.Request(g_url, data=json.dumps(g_payload).encode("utf-8"), headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(g_req, context=ssl_ctx, timeout=5) as gr:
+            lat = int((time.time() - t0) * 1000)
+            result["status"] = "online"
+            result["primaryModel"] = "gemini-3.1-flash-lite"
+            result["latency_ms"] = lat
+            result["message"] = f"متصل عبر Gemini بنجاح ({lat}ms)"
+            print(json.dumps(result))
+            sys.exit(0)
+    except Exception as ge:
+        result["lastError"] = str(ge)
+
+if not key and not gemini_key:
+    result["message"] = "لم يتم إدخال مفتاح ذكاء اصطناعي، والمحرك الأكاديمي الداخلي نشط بالكامل لحماية القناة."
+elif result["status"] == "degraded":
+    result["message"] = result.get("message") or "المحرك الأكاديمي المعرفي الداخلي نشط لتوفير ردود فورية ودقيقة."
+
+print(json.dumps(result))
+`;
+    const out = execSync(`python3 -c ${JSON.stringify(pyCmd)}`, { timeout: 6000 }).toString().trim();
+    if (out) {
+      res.json(JSON.parse(out));
+      return;
+    }
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.json({
+      status: "degraded",
+      message: `المحرك الأكاديمي الداخلي نشط للردود الذكية (${message})`
+    });
   }
 });
 
@@ -1558,7 +1739,7 @@ app.post('/api/ai/test-connection', async (req: Request, res: Response) => {
       messages: [{ role: 'user', content: 'رد بكلمة واحدة فقط: جاهز' }],
       max_tokens: 15
     };
-    const data = await callAICurl(apiBase, apiKey, payload, 5);
+    const data = await callAICurl(apiBase, apiKey, payload, 6);
     const durationMs = Date.now() - tStart;
     const reply = data.choices?.[0]?.message?.content?.trim() || 'جاهز';
     res.json({
@@ -1567,16 +1748,27 @@ app.post('/api/ai/test-connection', async (req: Request, res: Response) => {
       durationMs,
       reply,
       usage: data.usage || null,
-      message: `الاتصال بنموذج ${model} ناجح ومستقر (${durationMs}ms)`
+      message: `الاتصال بنموذج ${model} ناجح ومستقر (${durationMs}ms) ✅`
     });
-  } catch {
+  } catch (err: unknown) {
     const durationMs = Date.now() - tStart;
+    const errStr = err instanceof Error ? err.message : String(err);
+    let userMsg = `تعذر الاتصال بالمزود (${durationMs}ms)`;
+    if (errStr.includes('403')) {
+      userMsg = 'مفتاح مزود الذكاء الاصطناعي محظور أو منتهي الصلاحية (HTTP 403 Forbidden). يرجى تجديد المفتاح.';
+    } else if (errStr.includes('401')) {
+      userMsg = 'مفتاح الذكاء الاصطناعي غير صحيح أو غير مصرح (HTTP 401 Unauthorized).';
+    } else if (errStr.includes('429')) {
+      userMsg = 'تجاوزت الحصة لمزود الذكاء الاصطناعي (HTTP 429 Too Many Requests).';
+    } else if (errStr.includes('timeout') || errStr.includes('ETIMEDOUT')) {
+      userMsg = 'مهلة الاتصال انتهت مع المزود (Connection Timeout).';
+    }
     res.json({
-      ok: true,
+      ok: false,
       model,
       durationMs,
-      reply: 'جاهز (استجابة احتياطية مستقرة)',
-      message: `المحرك يعمل بالوضع الآمن السريع (${durationMs}ms)`
+      error: errStr,
+      message: userMsg
     });
   }
 });

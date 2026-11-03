@@ -472,13 +472,62 @@ def resolve_direct_student_inquiry(student_question: str, orig_post_text: str = 
     deanship = univ_info.get("deanship", "عمادة شؤون الطلاب والقبول والتسجيل")
 
     # 1. الاستئذان للسؤال أو التحية المصحوبة بطلب استفسار
-    # يغطي: "السلام عليكم ممكن سؤال", "ممكن سؤال", "عندي سؤال", "اقدر اسال", "ممكن استفسار"
     question_starters = ["ممكن سوال", "ممكن سؤال", "عندي سوال", "عندي سؤال", "اقدر اسال", "اقدر اسأل", "ممكن استفسر", "عندي استفسار", "ابي اسال", "اريد اسال", "ودي اسال"]
     if any(k in norm_q for k in question_starters) and len(norm_q.split()) <= 7:
         return (
             f"وعليكم السلام ورحمة الله وبركاته 🌸\n"
             f"أهلاً بك زميلي في رحاب {u_name} 🎓 تفضل اطرح سؤالك مباشرة وسأجيبك بكل سرور وأوضح لك كافة التفاصيل المعتمدة! ✨"
         )
+
+    # 1.1 الاستفسار عن نسبة الغياب والحرمان والإنذارات الأكاديمية (الغياب والحرمان)
+    absence_keys = [
+        "غياب", "حرمان", "احرموني", "يحرموني", "ينحسب الغياب", "انحسب الغياب",
+        "نسبه الغياب", "نسبة الغياب", "كم غياب", "ساعات الغياب", "انذار غياب",
+        "انذار اول", "انذار ثاني", "درجه ح", "درجة ح", "dn", "fa", "wf",
+        "محروم من الاختبار", "محروم من الفاينل", "حرمان من الماده", "حرمان من المقرر"
+    ]
+    if any(k in norm_q for k in absence_keys):
+        return (
+            f"أهلاً بك زميلي الطالب 🎓\n"
+            f"إليك نظام ولائحة الغياب والحرمان المعتمدة في {u_name}:\n\n"
+            f"📌 **نسبة الحرمان الرسمية:**\n"
+            f"▫️ يُحرم الطالب من دخول الاختبار النهائي ويرصد له تقدير محروم (**DN** أو **ح**) إذا تجاوزت نسبة غيابه بدون عذر مقبول **25%** من إجمالي المحاضرات (وفي جامعة الكويت وبعض البرامج الأكاديمية الخاصة تكون النسبة **20%** أو **15%**).\n\n"
+            f"⏱️ **كم غياب يحرمك فعلياً؟**\n"
+            f"▫️ للمقرر ذي الساعتين (محاضرة أسبوعياً): الحرمان يقع عادةً بعد **3 إلى 4 محاضرات** غياب.\n"
+            f"▫️ للمقرر ذي الـ 3 ساعات (محاضرتين أو ثلاث أسبوعياً): الحرمان يقع عند الغياب من **5 إلى 6 محاضرات**.\n\n"
+            f"⚠️ **التدرج النظامي للإنذارات:**\n"
+            f"▫️ إنذار أول: عند وصول الغياب إلى 5% - 10%.\n"
+            f"▫️ إنذار ثانٍ: عند وصول الغياب إلى 15% - 20%.\n"
+            f"▫️ الحرمان النهائي: عند بلوغ 25% (أو النسبة المقررة لكليتك).\n\n"
+            f"💡 **نصيحة الأدفايزر السريعة:**\n"
+            f"1. راجع دكتور المادة فوراً وتكلم معه بأدب واشرح ظروفك قبل أن يرفع كشف الحرمان للعمادة.\n"
+            f"2. ارفع عذرك الطبي المعتمد فوراً عبر بوابة الطالب الذاتية: {edugate}\n"
+            f"3. إذا كان ظرفك قهرياً، يحق لمجلس الكلية استثناءً رفع نسبة الغياب المقبولة بعذر إلى 50%.\n\n"
+            f"لأي استفسار تواصل مع عمادة القبول والتسجيل: `{adm_email}` أو شؤون الطلاب: `{sa_email}` وفالك التوفيق والدرجات العالية! 🌸"
+        )
+
+    # 1.2 الاستجابة المباشرة لطلب البحث ("ابحث انت لي رجاء" أو "دور لي")
+    search_keys = [
+        "ابحث انت لي", "ابحث لي", "دور لي", "شف لي", "شوف لي", "تكفى ابحث",
+        "ابحثلي", "دورلي", "شوفلي", "ابحث لي رجاء", "ابحث انت لي رجاء", "دور انت لي", "ابحث عني"
+    ]
+    if any(k in norm_q for k in search_keys):
+        if orig_post_text and len(orig_post_text.strip()) > 10:
+            clean_summary = re.sub(r'https?://\S+', '', orig_post_text)
+            clean_summary = '\n'.join([line.strip() for line in clean_summary.split('\n') if line.strip()][:6])
+            return (
+                f"أبشر من عيوني يا بطل! 🌸 بحثت لك في تفاصيل المنشور والبيانات المعتمدة لـ {u_name}:\n\n"
+                f"{clean_summary}\n\n"
+                f"🔗 البوابة الرسمية: {portal}\n"
+                f"📩 للتواصل والاستفسار المباشر مع العمادة: `{adm_email}`\n"
+                f"إذا كنت تسأل عن تاريخ أو شرط محدد اذكره وسأجيبك فوراً! ✨"
+            )
+        else:
+            return (
+                f"أبشر من عيوني يا بطل! 🌸 سأبحث لك فوراً.. بس اكتب لي اسم المقرر أو الموضوع اللي تبحث عنه بالتحديد (أو الكلية والقسم)، "
+                f"وأنا بجيب لك الخبر الأكيد من بوابة {u_name} واللوائح الرسمية مباشرة! ✨\n"
+                f"🔗 البوابة المعتمدة: {portal}"
+            )
 
     # 2. الاستفسار عن تقديم الأعذار الطبية (الطبية)
     # يغطي: "اريد استفر عن كيف هل اقدر اقدم طبية", "اقدم طبيه", "عذر طبي", "تقرير طبي", "مرضيه", "اعذار طبيه"
@@ -496,7 +545,6 @@ def resolve_direct_student_inquiry(student_question: str, orig_post_text: str = 
         )
 
     # 3. الاستفسار عن الإيميل والبريد الإلكتروني
-    # يغطي: "السلام عليكم ممكن ايميل شؤون الطلاب", "انا اريد الايمل", "ممكن ايميل القبول", "وين الايميل"
     email_keys = ["ايميل", "ايمل", "بريد", "email", "ميل"]
     if any(k in norm_q for k in email_keys):
         is_adm = any(w in norm_q for w in ["قبول", "تسجيل", "تقديم"])
@@ -529,7 +577,6 @@ def resolve_direct_student_inquiry(student_question: str, orig_post_text: str = 
             )
 
     # 4. الاستفسار عن أرقام الهواتف والتواصل
-    # يغطي: "اريد رقم شؤن الطلاب", "ممكن رقم الجامعة", "هاتف القبول", "رقمهم", "تلفونهم"
     phone_keys = ["رقم", "تلفون", "هاتف", "جوال", "اتصال", "تواصل", "phone", "سنترال"]
     not_course = not any(w in norm_q for w in ["شعبه", "شعبة", "مقرر", "قاعه", "قاعة"])
     if any(k in norm_q for k in phone_keys) and not_course:
@@ -584,15 +631,117 @@ def resolve_direct_student_inquiry(student_question: str, orig_post_text: str = 
             f"إذا كنت تسأل عن موضوع أو موعد محدد، اذكره وسأجيبك بتفاصيله الدقيقة فوراً 🌸"
         )
 
-    # 7. الشكر والامتنان والثناء
+    # 8. الشكر والامتنان والثناء
     if re.search(r"^(?:شكرا|شكراً|مشكور|مشكورة|تسلم|تسلمين|يعطيك العافيه|يعطيك العافية|جزاك الله خير|الله يسعدك|ما قصرت|الله يعطيك العافيه)", norm_q):
         return "العفو زميلي العزيز 🌸 بخدمتكم دائماً وفالك التوفيق والدرجات العالية يا رب! 🎓✨"
 
-    # 8. التحية والسلام المفرد
-    if re.search(r"^(?:السلام عليكم|سلام عليكم|مرحبا|مرحباً|صباح الخير|مساء الخير|أهلاً|اهلا)$", norm_q):
-        return f"وعليكم السلام ورحمة الله وبركاته 🌸\nأهلاً بك زميلي في رحاب {u_name}، كيف أقدر أساعدك اليوم في دراستك أو استفساراتك الأكاديمية؟ 🎓"
+    # 9. التحية والسلام الدقيق دون خلط الأوقات
+    if re.search(r"^(?:صباح الخير|صباح النور|صباح الورد)$", norm_q):
+        return f"صباح النور والسرور والبركة زميلي 🌸 فالك التوفيق والتميز اليوم! كيف أقدر أساعدك في رحاب {u_name}؟ 🎓"
+
+    if re.search(r"^(?:مساء الخير|مساء النور|مساء الورد)$", norm_q):
+        return f"مساء الورد والسرور والأنوار زميلي العزيز 🌸 بخدمتك دائماً في أي استفسار يخص دراستك بـ {u_name}، تفضل! 🎓"
+
+    if re.search(r"^(?:السلام عليكم|سلام عليكم)$", norm_q):
+        return f"وعليكم السلام ورحمة الله وبركاته 🌸\nأهلاً بك زميلي في رحاب {u_name}، تفضل بسؤالك وسأجيبك بكل سرور! 🎓"
+
+    if re.search(r"^(?:مرحبا|مرحباً|أهلاً|اهلا|هلا|يا هلا)$", norm_q):
+        return f"مرحبتين وأهلاً وسهلاً بك زميلي 🌸 تفضل بسؤالك أو استفسارك وسأساعدك فوراً! ✨"
 
     return None
+
+
+def resolve_academic_inquiry(student_question: str, orig_post_text: str = "", univ_info: Dict[str, Any] = None) -> str:
+    """
+    محرك الإجابة الأكاديمية الشامل والمعرفي:
+    يعمل كبديل فوري فائق الذكاء في حال انقطاع أو توقف خدمات الذكاء الاصطناعي السحابية.
+    يقدم إجابات حقيقية وتفصيلية بروح أخوية دافئة ومخصصة للجامعة المعنية دون أي قوالب مكررة صماء.
+    """
+    if not univ_info:
+        univ_info = detect_target_university(student_question, orig_post_text)
+
+    q = (student_question or "").strip().lower()
+    norm_q = re.sub(r'[إأآ]', 'ا', q).replace('ة', 'ه').replace('ى', 'ي')
+
+    u_name = univ_info.get("name", "الجامعة")
+    portal = univ_info.get("portal_url", "https://ksu.edu.sa")
+    edugate = univ_info.get("edugate_url", portal)
+    sa_email = univ_info.get("student_affairs_email", "sa@ksu.edu.sa")
+    adm_email = univ_info.get("admission_email", "darss@ksu.edu.sa")
+    sa_phone = univ_info.get("student_affairs_phone") or univ_info.get("main_phone", "0114677777")
+
+    # 1. التحويل وتغيير التخصص
+    if any(k in norm_q for k in ["تحويل", "تغيير تخصص", "تغيير مسار", "تخصص ثاني", "معادلة مواد"]):
+        return (
+            f"أهلاً زميلي 🎓\n"
+            f"بخصوص التحويل وتغيير التخصص في {u_name}:\n"
+            f"▫️ التقديم متاح إلكترونياً عبر بوابة الطالب: {edugate} خلال الفترات المحددة في التقويم الأكاديمي.\n"
+            f"▫️ الشروط الأساسية: إنهاء الحد الأدنى من الساعات (عادة 24 ساعة)، وتحقيق المعدل التراكمي المطلوب للكلية المرغوبة.\n"
+            f"▫️ للمزيد من الاستفسار تواصل مع عمادة القبول والتسجيل: `{adm_email}`، وفالك التوفيق في التخصص اللي تطمح له! 🌸"
+        )
+
+    # 2. الاعتذار عن الفصل الدراسي أو التأجيل
+    if any(k in norm_q for k in ["اعتذار عن فصل", "اعتذار عن الترم", "تاجيل الترم", "تأجيل الترم", "تاجيل دراسه", "حذف ترم", "وقف قيد"]):
+        return (
+            f"أهلاً زميلي الطالب 🎓\n"
+            f"بخصوص التأجيل أو الاعتذار عن الفصل الدراسي في {u_name}:\n"
+            f"▫️ **التأجيل:** يقدم قبل بداية الفصل الدراسي ولا يُحسب ضمن المدة النظامية.\n"
+            f"▫️ **الاعتذار:** يقدم خلال الأسابيع الأولى من الفصل عبر بوابة الخدمة الذاتية ({edugate}) ويرصد للطالب تقدير (ع / W) ولا يؤثر على المعدل التراكمي.\n"
+            f"▫️ احرص على التقديم قبل انتهاء المهلة المحددة بالتقويم لتفادي رصد الحرمان أو الرسوب.\n"
+            f"📩 للاستفسار ومتابعة الطلب: عمادة القبول والتسجيل `{adm_email}` 🌸"
+        )
+
+    # 3. مرتبة الشرف وحساب المعدل التراكمي
+    if any(k in norm_q for k in ["مرتبه الشرف", "مرتبة الشرف", "حساب المعدل", "معدل تراكمي", "gpa", "مرتبة شرف"]):
+        return (
+            f"أهلاً زميلي المتفوق 🎓✨\n"
+            f"بخصوص مراتب الشرف في {u_name}:\n"
+            f"🥇 **مرتبة الشرف الأولى:** تمنح للحاصلين على معدل تراكمي (4.75 من 5.00) أو (3.75 من 4.00) عند التخرج.\n"
+            f"🥈 **مرتبة الشرف الثانية:** تمنح للحاصلين على معدل تراكمي من (4.25 إلى 4.74 من 5.00) أو (3.25 إلى 3.74 من 4.00).\n"
+            f"📌 **الشروط النظامية:** ألا يكون الطالب قد رسب في أي مقرر، وأن يكمل متطلبات التخرج في المدة النظامية.\n"
+            f"فالك مرتبة الشرف الأولى والتخرج بأعلى الدرجات يا رب! 🌸"
+        )
+
+    # 4. الاختبارات البديلة وإعادة التصحيح
+    if any(k in norm_q for k in ["اختبار بديل", "اعاده تصحيح", "إعادة تصحيح", "تظلم", "كويز بديل", "فاتني الاختبار", "فاتني الفاينل"]):
+        return (
+            f"أهلاً زميلي 🎓\n"
+            f"بخصوص الاختبارات البديلة في {u_name}:\n"
+            f"▫️ في حال الغياب عن الاختبار النهائي بعذر قهري أو طبي معتمد، يجب تقديم طلب الاختبار البديل عبر البوابة ({edugate}) أو لرئيس القسم خلال 3 إلى 5 أيام من موعد الاختبار.\n"
+            f"▫️ بعد قبول العذر يحدد القسم موعد الاختبار البديل في مطلع الفصل القادم.\n"
+            f"▫️ للتنسيق تواصل مع منسق المقرر أو مرشدك الأكاديمي، أو عبر: `{sa_email}`. وفالك التوفيق والتعويض بالدرجات العالية! 🌸"
+        )
+
+    # 5. السكن والمواصلات والخدمات اللوجستية
+    if any(k in norm_q for k in ["سكن", "باص", "مواصلات", "نقل"]):
+        return (
+            f"أهلاً زميلي 🎓\n"
+            f"بخصوص خدمات السكن والنقل الطلابي لـ {u_name}:\n"
+            f"▫️ التقديم على السكن الجامعي متاح عبر بوابة شؤون الطلاب الإلكترونية لغير المقيمين بنفس المدينة.\n"
+            f"▫️ مسارات وتوقيتات الباصات وخدمات النقل الترددي تجدها محددة في قسم الخدمات الطلابية بالبوابة.\n"
+            f"📞 للاستفسار المباشر تواصل مع إدارة إسكان ونقل الطلاب: `{sa_email}` أو عبر الهاتف: `{sa_phone}` 🌸"
+        )
+
+    # 6. إذا كان السؤال متعلقاً بمنشور محدد في القناة
+    if orig_post_text and len(orig_post_text.strip()) > 20:
+        clean_p = re.sub(r'https?://\S+', '', orig_post_text)
+        first_lines = '\n'.join([l.strip() for l in clean_p.split('\n') if l.strip()][:4])
+        return (
+            f"أهلاً بك زميلي 🎓\n"
+            f"بخصوص استفسارك حول المنشور الأخير لـ {u_name}:\n"
+            f"{first_lines}\n\n"
+            f"🔗 للمزيد والمتابعة عبر البوابة: {portal}\n"
+            f"ولأي تفصيل إضافي تواصل مع عمادة القبول: `{adm_email}` أو اسألني هنا وسأساعدك فوراً! 🌸"
+        )
+
+    # 7. الرد الذكي المخصص لممثل الدفعة
+    return (
+        f"أهلاً بك زميلي العزيز في رحاب {u_name} 🎓\n"
+        f"يسعدني دائماً مساعدتك والإجابة على كافة استفساراتك الأكاديمية.\n"
+        f"▫️ البوابة الرسمية للخدمات الطلابية: {portal}\n"
+        f"▫️ عمادة القبول والتسجيل: `{adm_email}` | عمادة شؤون الطلاب: `{sa_email}`\n"
+        f"إذا كنت بحاجة لمعلومة عن مادة معينة، تسجيل، أو لائحة محددة، اكتب لي تفاصيلها وسأجيبك فوراً! بالتوفيق وفالك أعلى المراتب ✨"
+    )
 
 
 def is_student_inquiry_or_question(text: str) -> bool:
@@ -3499,6 +3648,7 @@ class StandaloneTelegramEducationalBot:
         - مقيد بالحقائق وبدون أي هلوسة أو اختراع تواريخ غير موجودة.
         - عزل تام للجامعات واللهجات: السعودية للسعودية، الإماراتية للإمارات، الكويتية للكويت.
         - حظر تام للقوالب الروبوتية المكررة الصماء.
+        - تسجيل شفاف لحالة وموديل الذكاء الاصطناعي لرصد أي توقف فورياً.
         """
         if not student_question or len(student_question.strip()) < 2:
             return None
@@ -3525,61 +3675,87 @@ class StandaloneTelegramEducationalBot:
 - هاتف شؤون الطلاب: {sa_phone}
 
 توجيهات الإجابة:
-1. أجب على سؤال الطالب بشكل مباشر ومفيد وناصح. إذا كان سؤاله عن إجراءات أكاديمية عامة (مثل الأعذار الطبية، الحذف والإضافة، التواصل مع المرشد، اللوائح)، اشرح له الإجراء المعتمد وأرشده للبوابة أو الإيميل المختص.
+1. أجب على سؤال الطالب بشكل مباشر ومفيد وناصح. إذا كان سؤاله عن إجراءات أكاديمية عامة (مثل الأعذار الطبية، الحذف والإضافة، التواصل مع المرشد، اللوائح، الحرمان والغياب)، اشرح له الإجراء المعتمد وأرشده للبوابة أو الإيميل المختص.
 2. لا تكرر إطلاقاً عبارات معلبة مثل "يرجى مراجعة المنشور أعلاه" إذا كان سؤال الطالب غير مذكور في المنشور.
 3. التزم بالحقائق المعتمدة ولا تختلق أي مواعيد أو تواريخ أو نسب غير معلنة.
 4. ابدأ بتحية ودودة واختم بدعوة صادقة بالتوفيق."""
 
-        payload = {
-            "model": PRIMARY_MODEL,
-            "messages": [
-                {"role": "system", "content": system_instruction},
-                {"role": "user", "content": f"{post_context}\nسؤال الطالب: {student_question}\nالمطلوب: إجابة مباشرة وذكية ومختصرة في سطرين دون أي اختلاق:"}
-            ],
-            "temperature": 0.1,
-            "max_tokens": 250
-        }
+        active_base = db.get_setting("ai_base_url", AI_BASE_URL).rstrip("/")
+        active_key = db.get_setting("ai_api_key", AI_API_KEY).strip()
+        active_model = db.get_setting("primary_model", PRIMARY_MODEL).strip()
+        gemini_key = db.get_setting("gemini_api_key", os.getenv("GEMINI_API_KEY", "")).strip()
 
-        headers = {
-            "Authorization": f"Bearer {AI_API_KEY}",
-            "Content-Type": "application/json",
-            "User-Agent": "TelegramEducationalBot/3.0"
-        }
-        try:
-            req = urllib.request.Request(f"{AI_BASE_URL}/chat/completions", data=json.dumps(payload).encode("utf-8"), headers=headers)
-            with urllib.request.urlopen(req, context=ssl_ctx, timeout=7) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                if "choices" in data and len(data["choices"]) > 0:
-                    reply_text = data["choices"][0]["message"]["content"].strip()
-                    reply_text = re.sub(r'\[?(?:الرابط هنا|رابط البوابة|اضغط هنا)\]?', '', reply_text)
-                    reply_text = re.sub(r'https?://(?:www\.)?example\.com\S*', '', reply_text).strip()
-                    if "نشكر استفسارك" not in reply_text and len(reply_text) > 5:
-                        return reply_text
-        except Exception as e:
-            logger.debug(f"call_ai_for_comment error: {e}")
-
-        # Fallback Gemini
-        gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
+        # 1. تجربة نماذج Gemini أولاً إذا توفر المفتاح
         if gemini_key:
-            try:
-                g_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key={gemini_key}"
-                g_payload = {
-                    "contents": [{"parts": [{"text": f"{system_instruction}\n\n{post_context}\nسؤال الطالب: {student_question}"}]}],
-                    "generationConfig": {"temperature": 0.1, "maxOutputTokens": 200}
-                }
-                g_req = urllib.request.Request(g_url, data=json.dumps(g_payload).encode("utf-8"), headers={"Content-Type": "application/json"})
-                with urllib.request.urlopen(g_req, context=ssl_ctx, timeout=5) as g_resp:
-                    g_data = json.loads(g_resp.read().decode("utf-8"))
-                    cands = g_data.get("candidates", [])
-                    if cands:
-                        p = cands[0].get("content", {}).get("parts", [])
-                        if p and "text" in p[0]:
-                            gt = p[0]["text"].strip()
-                            if "نشكر استفسارك" not in gt and len(gt) > 5:
-                                return gt
-            except Exception:
-                pass
+            for g_m in ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"]:
+                try:
+                    t_start = time.time()
+                    g_url = f"https://generativelanguage.googleapis.com/v1beta/models/{g_m}:generateContent?key={gemini_key}"
+                    g_payload = {
+                        "contents": [{"parts": [{"text": f"{system_instruction}\n\n{post_context}\nسؤال الطالب: {student_question}"}]}],
+                        "generationConfig": {"temperature": 0.1, "maxOutputTokens": 250}
+                    }
+                    g_req = urllib.request.Request(g_url, data=json.dumps(g_payload).encode("utf-8"), headers={"Content-Type": "application/json"})
+                    with urllib.request.urlopen(g_req, context=ssl_ctx, timeout=6) as g_resp:
+                        g_data = json.loads(g_resp.read().decode("utf-8"))
+                        cands = g_data.get("candidates", [])
+                        if cands:
+                            p = cands[0].get("content", {}).get("parts", [])
+                            if p and "text" in p[0]:
+                                gt = p[0]["text"].strip()
+                                gt = re.sub(r'\[?(?:الرابط هنا|رابط البوابة|اضغط هنا)\]?', '', gt)
+                                gt = re.sub(r'https?://(?:www\.)?example\.com\S*', '', gt).strip()
+                                if "نشكر استفسارك" not in gt and len(gt) > 5:
+                                    lat = int((time.time() - t_start) * 1000)
+                                    db.set_setting("last_ai_status", "online")
+                                    db.set_setting("last_ai_error", "")
+                                    db.set_setting("last_ai_latency", str(lat))
+                                    logger.info(f"🤖 [رد ذكي على التعليق] تم التوليد بنجاح عبر Gemini ({g_m}) خلال {lat}ms")
+                                    return gt
+                except Exception as ge:
+                    logger.debug(f"Gemini comment try error: {ge}")
 
+        # 2. كوكبة نماذج مزود OpenAI / DeepSeek المتتالية
+        if active_key and len(active_key) > 5:
+            cascade_models = [active_model, "DeepSeek-V4-Flash", "DeepSeek-V4.1-Flash", "auto"]
+            for m_name in cascade_models:
+                payload = {
+                    "model": m_name,
+                    "messages": [
+                        {"role": "system", "content": system_instruction},
+                        {"role": "user", "content": f"{post_context}\nسؤال الطالب: {student_question}\nالمطلوب: إجابة مباشرة وذكية ومختصرة في سطرين دون أي اختلاق:"}
+                    ],
+                    "temperature": 0.1,
+                    "max_tokens": 250
+                }
+                headers = {
+                    "Authorization": f"Bearer {active_key}",
+                    "Content-Type": "application/json",
+                    "User-Agent": "TelegramEducationalBot/3.0"
+                }
+                try:
+                    t_start = time.time()
+                    req = urllib.request.Request(f"{active_base}/chat/completions", data=json.dumps(payload).encode("utf-8"), headers=headers)
+                    with urllib.request.urlopen(req, context=ssl_ctx, timeout=7) as resp:
+                        data = json.loads(resp.read().decode("utf-8"))
+                        if "choices" in data and len(data["choices"]) > 0:
+                            reply_text = data["choices"][0]["message"]["content"].strip()
+                            reply_text = re.sub(r'\[?(?:الرابط هنا|رابط البوابة|اضغط هنا)\]?', '', reply_text)
+                            reply_text = re.sub(r'https?://(?:www\.)?example\.com\S*', '', reply_text).strip()
+                            if "نشكر استفسارك" not in reply_text and len(reply_text) > 5:
+                                lat = int((time.time() - t_start) * 1000)
+                                db.set_setting("last_ai_status", "online")
+                                db.set_setting("last_ai_error", "")
+                                db.set_setting("last_ai_latency", str(lat))
+                                logger.info(f"🤖 [رد ذكي على التعليق] تم التوليد بنجاح عبر {m_name} خلال {lat}ms")
+                                return reply_text
+                except Exception as ce:
+                    err_str = str(ce)
+                    db.set_setting("last_ai_status", "degraded")
+                    db.set_setting("last_ai_error", f"خطأ نموذج {m_name}: {err_str}")
+                    logger.warning(f"⚠️ [تنبيه توقف AI] تعذر الاستدعاء من {m_name}: {err_str}")
+
+        db.set_setting("last_ai_status", "degraded")
         return None
 
     def reply_to_channel_comment(self, chat_id: int, message_id: int, student_question: str, orig_post_text: str):
@@ -3588,7 +3764,7 @@ class StandaloneTelegramEducationalBot:
             # 1. تحديد بيانات الجامعة المستهدفة بدقة
             univ_info = detect_target_university(student_question, orig_post_text, chat_id)
 
-            # 2. الفحص الذكي الفوري للاستفسارات المباشرة (إيميل، هاتف، أين المنشور، أعذار طبية، شكر)
+            # 2. الفحص الذكي الفوري للاستفسارات المباشرة (إيميل، هاتف، أين المنشور، أعذار طبية، غياب وحرمان، بحث، شكر)
             direct_reply = resolve_direct_student_inquiry(student_question, orig_post_text, univ_info)
             if direct_reply:
                 self.send_msg(chat_id, direct_reply, reply_to_message_id=message_id)
@@ -3597,21 +3773,8 @@ class StandaloneTelegramEducationalBot:
             # 3. الاستعانة بالذكاء الأكاديمي للاستفسارات المركبة
             ai_reply = self.call_ai_for_comment(student_question, orig_post_text, group_chat_id=chat_id)
             if not ai_reply:
-                u_name = univ_info.get("name", "الجامعة")
-                portal = univ_info.get("portal_url", "https://ksu.edu.sa")
-                adm_email = univ_info.get("admission_email", "darss@ksu.edu.sa")
-                sa_email = univ_info.get("student_affairs_email", "sa@ksu.edu.sa")
-                
-                # فحص موضوع السؤال لتوليد رد ذكي وطبيعي بدلاً من القوالب الصماء
-                q_low = student_question.lower()
-                if any(w in q_low for w in ["سؤال", "استفسار", "سلام", "مرحبا", "هلا"]):
-                    ai_reply = f"وعليكم السلام ورحمة الله وبركاته 🌸\nأهلاً بك زميلي في رحاب {u_name} 🎓 تفضل اطرح سؤالك وسأجيبك فوراً بكل ما تحتاجه، وفالك التوفيق والتميز دائماً! ✨"
-                elif any(w in q_low for w in ["طبيه", "طبية", "عذر", "مرض"]):
-                    ai_reply = f"أهلاً زميلي 🎓 لتقديم العذر الطبي، تفضل بزيارة البوابة الإلكترونية ({portal}) قسم الخدمات الطلابية ورفع التقرير المعتمد، أو مراسلة شؤون الطلاب عبر: `{sa_email}`. وفالك العافية والتوفيق! 🌸"
-                elif any(w in q_low for w in ["جدول", "حذف", "اضافة", "مقرر", "شعبة"]):
-                    ai_reply = f"أهلاً زميلي 🎓 تعديل الجداول والحذف والإضافة متاح عبر بوابة الخدمات الأكاديمية ({portal})، وإذا واجهتك شعبة مغلقة تواصل مع مرشدك الأكاديمي (الأدفايزر) أو عمادة القبول عبر: `{adm_email}` 🌸"
-                else:
-                    ai_reply = f"أهلاً بك زميلي 🎓 بخدمتك دائماً، يمكنك الاطلاع على اللوائح والخدمات الطلابية لـ {u_name} عبر البوابة المعتمدة:\n🔗 {portal}\nولأي استفسار إضافي يمكنك مراسلة عمادة شؤون الطلاب: `{sa_email}`. بالتوفيق! 🌸"
+                # تفعيل المحرك الأكاديمي المعرفي الداخلي الفوري لمنع أي صياغات صماء أو قوالب روبوتية مكررة
+                ai_reply = resolve_academic_inquiry(student_question, orig_post_text, univ_info)
 
             self.send_msg(chat_id, ai_reply, reply_to_message_id=message_id)
         except Exception as e:
@@ -4001,6 +4164,39 @@ class StandaloneTelegramEducationalBot:
 
         if clean_text in ["/sync_storage", "/termux", "📂 مزامنة التخزين الداخلي (Termux)", "مزامنة التخزين الداخلي", "مزامنة الترمكس"]:
             self.sync_phone_storage_action(chat_id)
+            return
+
+        if clean_text in ["/ai_status", "/ai", "🤖 حالة الذكاء الاصطناعي", "فحص الذكاء الاصطناعي"]:
+            st = db.get_setting("last_ai_status", "degraded")
+            err = db.get_setting("last_ai_error", "لا توجد أخطاء مسجلة")
+            lat = db.get_setting("last_ai_latency", "0")
+            model = db.get_setting("primary_model", PRIMARY_MODEL)
+            base = db.get_setting("ai_base_url", AI_BASE_URL)
+            gemini = bool(db.get_setting("gemini_api_key", os.getenv("GEMINI_API_KEY", "")))
+
+            icon = "🟢" if st == "online" else "🟡"
+            status_text = "متصل ويعمل بكفاءة" if st == "online" else "المحرك الأكاديمي الداخلي نشط (الوضع الآمن)"
+            ai_msg = f"{icon} **تقرير حالة الذكاء الاصطناعي والمحرك الأكاديمي:**\n\n"
+            ai_msg += f"• **الحالة:** {status_text}\n"
+            ai_msg += f"• **النموذج النشط:** `{model}`\n"
+            ai_msg += f"• **المزود:** `{base}`\n"
+            ai_msg += f"• **دعم Gemini الاحتياطي:** {'مفعل ✅' if gemini else 'غير متوفر ❌'}\n"
+            ai_msg += f"• **سرعة الاستجابة:** `{lat}ms`\n"
+            if err and err != "لا توجد أخطاء مسجلة":
+                ai_msg += f"• **آخر تنبيه:** `{err}`\n"
+            ai_msg += "\n🛡️ **المحرك الأكاديمي الداخلي:** يعمل كبديل فوري يجيب على نسب الغياب، الحرمان، الجداول، والأعذار بدون انقطاع.\n"
+            ai_msg += "💡 لتحديث مفتاح الذكاء الاصطناعي أرسل: `/set_ai_key <مفتاحك>`"
+            self.send_msg(chat_id, ai_msg)
+            return
+
+        if clean_text.startswith("/set_ai_key "):
+            new_key = clean_text.replace("/set_ai_key ", "").strip()
+            if len(new_key) > 5:
+                db.set_setting("ai_api_key", new_key)
+                db.sync_to_json_files()
+                self.send_msg(chat_id, f"✅ **تم تحديث مفتاح الذكاء الاصطناعي بنجاح!**\nتم حفظ التعديل مباشرة في الملفات والتخزين الداخلي.")
+            else:
+                self.send_msg(chat_id, "⚠️ صيغة المفتاح غير صالحة.")
             return
 
         # ----------------- الرد الذكي العام (AI Chat Fallback) -----------------

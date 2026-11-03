@@ -1,12 +1,9 @@
 {
   "_info": "Telegram University Educational AutoForwarder Watchlist (Synced from SQLite)",
   "version": "3.1.0",
-  "lastUpdated": "2026-11-02T20:26:47.057796",
+  "lastUpdated": "2026-11-02T22:02:31.811957",
   "target_channels": [
-    "@jhdhhdcj",
-    "@test_channel_ch",
-    "@new_target_ch",
-    "@temp_channel"
+    "@jhdhhdcj"
   ],
   "university_projects": [
     {
@@ -103,36 +100,6 @@
       "rule": "official",
       "enabled": true,
       "lastPostId": "tw_f29dae4407968875e4a6492a"
-    },
-    {
-      "id": "src_test_channel_ch_10855",
-      "type": "telegram",
-      "target": "@src_tg_test",
-      "title": "مصدر جامعة اختبار",
-      "priority": "high",
-      "rule": "official",
-      "enabled": true,
-      "lastPostId": "0"
-    },
-    {
-      "id": "src_tw_test_channel_ch_86492",
-      "type": "twitter",
-      "target": "@src_tw_test",
-      "title": "تويتر جامعة اختبار",
-      "priority": "high",
-      "rule": "official",
-      "enabled": true,
-      "lastPostId": "0"
-    },
-    {
-      "id": "src_new_target_ch_46933",
-      "type": "telegram",
-      "target": "@src_tg_extra",
-      "title": "مصدر جامعة اختبار",
-      "priority": "high",
-      "rule": "official",
-      "enabled": true,
-      "lastPostId": "0"
     }
   ]
 }

@@ -22,6 +22,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_FILE = os.path.join(BASE_DIR, "bot_database.db")
 SOURCES_FILE = os.path.join(BASE_DIR, "sources.json")
 STATE_FILE = os.path.join(BASE_DIR, "state.json")
+CONFIG_FILE = os.path.join(BASE_DIR, "config.json")
 
 # قفل عودي لضمان سلامة العمليات متزامنة بين الـ Threads دون deadlock
 _db_lock = threading.RLock()
@@ -1335,22 +1336,168 @@ def sync_to_json_files():
 
         state_data = {
             "bot_status": get_setting("bot_status", "active"),
-            "admin_id": "7607633343",
-            "admin_user": "@M_S_F_G",
-            "bot_username": "admiuin_bot",
+            "admin_id": get_setting("admin_id", "7607633343"),
+            "admin_user": get_setting("admin_user", "@M_S_F_G"),
+            "bot_username": get_setting("bot_username", "admiuin_bot"),
             "processed_count": int(get_setting("processed_count", "18")),
             "forwarded_count": int(get_setting("forwarded_count", "15")),
             "ad_replaced_count": int(get_setting("ad_replaced_count", "3")),
             "custom_instructions": get_setting("custom_instructions", ""),
+            "ai_primary_model": get_setting("primary_model", "DeepSeek-V4-Flash"),
+            "ai_base_url": get_setting("ai_base_url", "https://api.hcnsec.cn/v1"),
+            "last_ai_status": get_setting("last_ai_status", "active"),
+            "last_ai_error": get_setting("last_ai_error", ""),
             "last_run_timestamp": datetime.utcnow().isoformat()
         }
         with open(STATE_FILE, "w", encoding="utf-8") as f:
             json.dump(state_data, f, ensure_ascii=False, indent=2)
 
+        # حفظ نسخة موحدة في config.json
+        if not os.path.exists(CONFIG_FILE):
+            try:
+                full_cfg = get_full_config()
+                with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+                    json.dump(full_cfg, f, ensure_ascii=False, indent=2)
+            except Exception:
+                pass
+
         # مزامنة وتصدير فوري لوحدة التخزين الداخلية ومجلد التنزيلات (Termux Downloads)
         export_to_phone_storage()
     except Exception as e:
         logger.warning(f"ملاحظة في مزامنة JSON: {e}")
+
+
+def get_full_config() -> Dict[str, Any]:
+    """استرجاع الإعدادات الشاملة المدمجة بين قاعدة البيانات وملفات config.json و state.json"""
+    bot_token = get_setting("bot_token", os.getenv("BOT_TOKEN", os.getenv("TELEGRAM_BOT_TOKEN", "")))
+    admin_id = get_setting("admin_id", os.getenv("ADMIN_ID", "7607633343"))
+    admin_user = get_setting("admin_user", os.getenv("ADMIN_USERNAME", "M_S_F_G")).replace("@", "")
+    ai_api_key = get_setting("ai_api_key", os.getenv("AI_API_KEY", "sk-J2ky44F6VTDMkL8Q1GHL5sfmbeIpARVDayNuwMfxKI5zCdii"))
+    ai_base_url = get_setting("ai_base_url", os.getenv("AI_BASE_URL", "https://api.hcnsec.cn/v1"))
+    primary_model = get_setting("primary_model", os.getenv("PRIMARY_MODEL", "DeepSeek-V4-Flash"))
+    fallback_model = get_setting("fallback_model", os.getenv("FALLBACK_MODEL", "DeepSeek-V4.1-Flash"))
+    system_prompt = get_setting("ai_system_prompt", "")
+    custom_instructions = get_setting("custom_instructions", "")
+    gemini_key = get_setting("gemini_api_key", os.getenv("GEMINI_API_KEY", ""))
+    custom_ad = get_setting("custom_student_ad", "")
+    ad_enabled = get_setting("ad_replacement_enabled", "false") == "true"
+    ad_keywords_raw = get_setting("ad_keywords", "[]")
+    try:
+        ad_keywords = json.loads(ad_keywords_raw) if isinstance(ad_keywords_raw, str) else ad_keywords_raw
+    except Exception:
+        ad_keywords = [
+            "حل واجبات بمقابل", "حل واجبات واختبارات", "حل كويزات", "حل فاينل",
+            "حل اسايمنت", "كتابة بحوث بمقابل", "عمل بحوث ورسائل بمقابل", "إعلان مدفوع للخدمات"
+        ]
+
+    last_ai_status = get_setting("last_ai_status", "active")
+    last_ai_error = get_setting("last_ai_error", "")
+    last_ai_latency = get_setting("last_ai_latency", "0")
+
+    file_cfg: Dict[str, Any] = {}
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                file_cfg = json.load(f)
+        except Exception:
+            pass
+
+    return {
+        "botToken": bot_token or file_cfg.get("botToken", ""),
+        "adminId": admin_id or file_cfg.get("adminId", "7607633343"),
+        "adminUsername": admin_user or file_cfg.get("adminUsername", "M_S_F_G"),
+        "ai": {
+            "apiBase": ai_base_url or file_cfg.get("ai", {}).get("apiBase", "https://api.hcnsec.cn/v1"),
+            "apiKey": ai_api_key or file_cfg.get("ai", {}).get("apiKey", ""),
+            "primaryModel": primary_model or file_cfg.get("ai", {}).get("primaryModel", "DeepSeek-V4-Flash"),
+            "fallbackModel": fallback_model or file_cfg.get("ai", {}).get("fallbackModel", "DeepSeek-V4.1-Flash"),
+            "systemPrompt": system_prompt or file_cfg.get("ai", {}).get("systemPrompt", ""),
+            "customInstructions": custom_instructions or file_cfg.get("ai", {}).get("customInstructions", ""),
+            "geminiApiKey": gemini_key or file_cfg.get("ai", {}).get("geminiApiKey", ""),
+            "enableWebSearch": True,
+            "lastAiStatus": last_ai_status,
+            "lastAiError": last_ai_error,
+            "lastAiLatency": last_ai_latency
+        },
+        "adReplacement": {
+            "enabled": ad_enabled if ad_enabled is not None else file_cfg.get("adReplacement", {}).get("enabled", False),
+            "adDetectionKeywords": ad_keywords or file_cfg.get("adReplacement", {}).get("adDetectionKeywords", []),
+            "customStudentAd": custom_ad or file_cfg.get("adReplacement", {}).get("customStudentAd", "")
+        },
+        "telethon": file_cfg.get("telethon", {
+            "apiId": "20123456",
+            "apiHash": "",
+            "phoneNumber": "",
+            "sessionName": "session_forwarder",
+            "stringSession": "",
+            "library": "telethon"
+        }),
+        "mediaHandling": file_cfg.get("mediaHandling", {
+            "downloadPhotos": True,
+            "downloadVideos": True,
+            "downloadDocuments": True
+        }),
+        "targetChannels": get_target_channels(),
+        "lastUpdated": datetime.utcnow().isoformat()
+    }
+
+
+def save_full_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    حفظ الإعدادات الشاملة فورياً في:
+    1. قاعدة البيانات الدائمة (SQLite)
+    2. ملف config.json المباشر
+    3. ملف state.json
+    4. تصديرها فورياً لوحدة التخزين الداخلية ومجلد التنزيلات بالهاتف
+    """
+    try:
+        # حفظ التوكن وبيانات الآدمن
+        if "botToken" in cfg and cfg["botToken"]:
+            set_setting("bot_token", str(cfg["botToken"]).strip())
+        if "adminId" in cfg and cfg["adminId"]:
+            set_setting("admin_id", str(cfg["adminId"]).strip())
+        if "adminUsername" in cfg and cfg["adminUsername"]:
+            set_setting("admin_user", str(cfg["adminUsername"]).replace("@", "").strip())
+
+        # حفظ إعدادات الذكاء الاصطناعي
+        ai = cfg.get("ai", {})
+        if isinstance(ai, dict):
+            if "apiBase" in ai and ai["apiBase"]:
+                set_setting("ai_base_url", str(ai["apiBase"]).strip())
+            if "apiKey" in ai and ai["apiKey"]:
+                set_setting("ai_api_key", str(ai["apiKey"]).strip())
+            if "primaryModel" in ai and ai["primaryModel"]:
+                set_setting("primary_model", str(ai["primaryModel"]).strip())
+            if "fallbackModel" in ai and ai["fallbackModel"]:
+                set_setting("fallback_model", str(ai["fallbackModel"]).strip())
+            if "systemPrompt" in ai and ai["systemPrompt"]:
+                set_setting("ai_system_prompt", str(ai["systemPrompt"]).strip())
+            if "customInstructions" in ai and ai["customInstructions"]:
+                set_setting("custom_instructions", str(ai["customInstructions"]).strip())
+            if "geminiApiKey" in ai:
+                set_setting("gemini_api_key", str(ai["geminiApiKey"]).strip())
+
+        # حفظ إعدادات استبدال الإعلانات
+        ad = cfg.get("adReplacement", {})
+        if isinstance(ad, dict):
+            if "enabled" in ad:
+                set_setting("ad_replacement_enabled", "true" if ad["enabled"] else "false")
+            if "customStudentAd" in ad:
+                set_setting("custom_student_ad", str(ad["customStudentAd"]).strip())
+            if "adDetectionKeywords" in ad and isinstance(ad["adDetectionKeywords"], list):
+                set_setting("ad_keywords", json.dumps(ad["adDetectionKeywords"], ensure_ascii=False))
+
+        # كتابة ملف config.json المباشر
+        cfg["lastUpdated"] = datetime.utcnow().isoformat()
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, ensure_ascii=False, indent=2)
+
+        # المزامنة مع state.json والتخزين الداخلي
+        sync_to_json_files()
+        return {"success": True, "message": "تم حفظ الإعدادات مباشرة في الملفات والتخزين الداخلي بنجاح"}
+    except Exception as e:
+        logger.error(f"خطأ في حفظ الإعدادات الشاملة: {e}")
+        return {"success": False, "error": str(e)}
 
 
 def get_phone_storage_paths() -> List[str]:
@@ -1439,6 +1586,10 @@ def export_to_phone_storage() -> Dict[str, Any]:
                 # 3. state.json copy
                 if os.path.exists(STATE_FILE):
                     shutil.copy2(STATE_FILE, os.path.join(folder, "state.json"))
+
+                # 3.1 config.json copy
+                if os.path.exists(CONFIG_FILE):
+                    shutil.copy2(CONFIG_FILE, os.path.join(folder, "config.json"))
 
                 # 4. sqlite database copy
                 if os.path.exists(DB_FILE):
