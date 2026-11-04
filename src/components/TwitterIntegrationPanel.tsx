@@ -49,6 +49,7 @@ export interface TwitterAccount {
   custom_hashtags?: string;
   theme_color?: string;
   logo_path?: string;
+  monitoring_sources?: string[];
   created_at?: string;
   updated_at?: string;
 }
@@ -130,6 +131,7 @@ export const TwitterIntegrationPanel: React.FC = () => {
     custom_hashtags: '#جامعة_نجران #أخبار_الجامعات #صوت_الطالب'
   });
   const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [newSourceInputs, setNewSourceInputs] = useState<Record<string, string>>({});
 
   // Common UI State
   const [testingSessionId, setTestingSessionId] = useState<string | null>(null);
@@ -138,6 +140,50 @@ export const TwitterIntegrationPanel: React.FC = () => {
   const showToastMsg = (msg: string) => {
     setToast(msg);
     setTimeout(() => setToast(null), 3500);
+  };
+
+  const handleAddSource = async (accId: string) => {
+    const src = (newSourceInputs[accId] || '').trim();
+    if (!src) {
+      showToastMsg('يرجى إدخال اسم المصدر أو الحساب (مثل @Najran_Univ)');
+      return;
+    }
+    try {
+      const res = await fetch(`/api/twitter/accounts/${accId}/sources`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: src })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToastMsg(`تمت إضافة المصدر ${src} لمراقبة الحساب بنجاح 📡`);
+        setNewSourceInputs(prev => ({ ...prev, [accId]: '' }));
+        fetchAccounts();
+      } else {
+        showToastMsg(data.error || 'تعذر إضافة المصدر');
+      }
+    } catch {
+      showToastMsg('خطأ أثناء إضافة المصدر');
+    }
+  };
+
+  const handleRemoveSource = async (accId: string, src: string) => {
+    try {
+      const res = await fetch(`/api/twitter/accounts/${accId}/sources`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: src })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToastMsg(`تم حذف المصدر ${src} 🗑️`);
+        fetchAccounts();
+      } else {
+        showToastMsg(data.error || 'تعذر حذف المصدر');
+      }
+    } catch {
+      showToastMsg('خطأ أثناء حذف المصدر');
+    }
   };
 
   // Fetch Accounts
@@ -217,10 +263,17 @@ export const TwitterIntegrationPanel: React.FC = () => {
     }
 
     try {
+      const sourcesArr = Array.isArray(editingAccount.monitoring_sources)
+        ? editingAccount.monitoring_sources
+        : typeof (editingAccount as unknown as { monitoring_sources?: string }).monitoring_sources === 'string'
+          ? ((editingAccount as unknown as { monitoring_sources?: string }).monitoring_sources as string).split(',').map((s: string) => s.trim()).filter(Boolean)
+          : [];
+
       const payload: Partial<TwitterAccount> = {
         ...editingAccount,
         username: editingAccount.username.startsWith('@') ? editingAccount.username : `@${editingAccount.username}`,
         display_name: editingAccount.display_name || 'صوت الطالب المعتمد',
+        monitoring_sources: sourcesArr,
         is_active: editingAccount.is_active ?? 1,
         auto_publish: editingAccount.auto_publish ?? 1,
         auto_reply: editingAccount.auto_reply ?? 1,
@@ -607,6 +660,66 @@ export const TwitterIntegrationPanel: React.FC = () => {
                       <span className="truncate">
                         {acc.auth_token ? `auth_token: ${acc.auth_token.substring(0, 10)}... (محفوظ)` : 'لا توجد كوكيز مسجلة'}
                       </span>
+                    </div>
+
+                    {/* Dedicated Monitoring Sources */}
+                    <div className="mt-3 p-2.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-2">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="font-bold text-sky-300 flex items-center gap-1.5">
+                          <Hash className="w-3.5 h-3.5 text-sky-400" />
+                          <span>مصادر المراقبة الخاصة بهذا الحساب ({acc.monitoring_sources?.length || 0}):</span>
+                        </span>
+                        <span className="text-slate-500 text-[10px]">مراقبة تلقائية وسحب الأخبار</span>
+                      </div>
+
+                      {/* Chips list */}
+                      <div className="flex flex-wrap gap-1.5">
+                        {acc.monitoring_sources && acc.monitoring_sources.length > 0 ? (
+                          acc.monitoring_sources.map(src => (
+                            <span
+                              key={src}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-mono font-bold bg-sky-500/15 text-sky-300 border border-sky-500/30"
+                            >
+                              <span>{src}</span>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveSource(acc.id, src)}
+                                className="hover:text-rose-400 transition-colors cursor-pointer"
+                                title="حذف هذا المصدر"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </span>
+                          ))
+                        ) : (
+                          <span className="text-[11px] text-slate-500 italic">لا توجد مصادر مخصصة بعد لهذا الحساب</span>
+                        )}
+                      </div>
+
+                      {/* Inline quick add input */}
+                      <div className="flex items-center gap-1.5 pt-1">
+                        <input
+                          type="text"
+                          value={newSourceInputs[acc.id] || ''}
+                          onChange={e => setNewSourceInputs(prev => ({ ...prev, [acc.id]: e.target.value }))}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleAddSource(acc.id);
+                            }
+                          }}
+                          placeholder="أضف معرف تويتر للمراقبة (مثل: @Najran_Univ)..."
+                          className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 text-[11px] text-white focus:outline-none focus:border-sky-500 font-mono"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleAddSource(acc.id)}
+                          className="px-2.5 py-1 bg-sky-600 hover:bg-sky-500 text-white font-bold text-[11px] rounded-lg transition-all flex items-center gap-1 cursor-pointer shrink-0"
+                        >
+                          <Plus className="w-3 h-3" />
+                          <span>إضافة</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
 
@@ -1222,6 +1335,27 @@ export const TwitterIntegrationPanel: React.FC = () => {
                   placeholder="جامعة نجران / جامعة الملك سعود"
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white"
                 />
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-bold mb-1 flex items-center justify-between">
+                  <span>مصادر المراقبة الخاصة بهذا الحساب (حسابات تويتر للمتابعة):</span>
+                  <span className="text-[10px] text-sky-400 font-normal">مفصولة بفواصل</span>
+                </label>
+                <input
+                  type="text"
+                  value={Array.isArray(editingAccount.monitoring_sources) ? editingAccount.monitoring_sources.join(', ') : ((editingAccount as unknown as { monitoring_sources?: string }).monitoring_sources || '')}
+                  onChange={e => {
+                    const val = e.target.value;
+                    const items = val.split(',').map(s => s.trim()).filter(Boolean);
+                    setEditingAccount(p => ({ ...p, monitoring_sources: items }));
+                  }}
+                  placeholder="@Najran_Univ, @NU_Admission, @KSU_Official"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono text-xs focus:border-sky-500"
+                />
+                <p className="text-[10px] text-slate-400 mt-1">
+                  أضف الحسابات الرسمية والعمادات التابعة لهذه الجامعة حصراً (مثلاً: @Najran_Univ). سيقوم النظام بمراقبتها خصيصاً لهذا الحساب.
+                </p>
               </div>
 
               <div>

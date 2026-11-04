@@ -292,10 +292,16 @@ def init_db():
                 custom_hashtags TEXT DEFAULT '#جامعة_نجران #طلاب_نجران',
                 theme_color TEXT DEFAULT '#0284c7',
                 logo_path TEXT DEFAULT '',
+                monitoring_sources TEXT DEFAULT '[]',
                 created_at TEXT,
                 updated_at TEXT
             )
             """)
+
+            try:
+                cursor.execute("ALTER TABLE twitter_accounts ADD COLUMN monitoring_sources TEXT DEFAULT '[]'")
+            except Exception:
+                pass
 
             # 15. جدول سجل الرد على تعليقات الطلاب في تويتر (Twitter Comments & Auto-Reply Log)
             cursor.execute("""
@@ -2874,6 +2880,20 @@ def is_twitter_publishing_enabled() -> bool:
 # 14. دوال إدارة حسابات تويتر المتعددة والمستقلة (Multi-Account)
 # ========================================================
 
+def _format_twitter_account(row: Dict[str, Any]) -> Dict[str, Any]:
+    """تهيئة وتحليل حقول حساب تويتر بما فيها مصادر المراقبة"""
+    d = dict(row)
+    sources_raw = d.get("monitoring_sources")
+    if isinstance(sources_raw, str):
+        try:
+            d["monitoring_sources"] = json.loads(sources_raw)
+        except Exception:
+            d["monitoring_sources"] = [s.strip() for s in sources_raw.split(",") if s.strip()]
+    elif not isinstance(sources_raw, list):
+        d["monitoring_sources"] = []
+    return d
+
+
 def get_twitter_accounts() -> List[Dict[str, Any]]:
     """استرجاع كافة حسابات تويتر المستقلة"""
     with _db_lock:
@@ -2882,7 +2902,7 @@ def get_twitter_accounts() -> List[Dict[str, Any]]:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM twitter_accounts ORDER BY is_active DESC, updated_at DESC")
             rows = cursor.fetchall()
-            return [dict(row) for row in rows]
+            return [_format_twitter_account(row) for row in rows]
         except Exception as e:
             logger.error(f"❌ خطأ في get_twitter_accounts: {e}")
             return []
@@ -2898,7 +2918,7 @@ def get_twitter_account(account_id: str) -> Optional[Dict[str, Any]]:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM twitter_accounts WHERE id = ?", (account_id,))
             row = cursor.fetchone()
-            return dict(row) if row else None
+            return _format_twitter_account(row) if row else None
         except Exception as e:
             logger.error(f"❌ خطأ في get_twitter_account: {e}")
             return None
@@ -2907,21 +2927,34 @@ def get_twitter_account(account_id: str) -> Optional[Dict[str, Any]]:
 
 
 def save_twitter_account(acc: Dict[str, Any]) -> bool:
-    """إضافة أو تحديث حساب تويتر مستقل"""
+    """إضافة أو تحديث حساب تويتر مستقل مع مصادر المراقبة الخاصة به"""
     with _db_lock:
         conn = get_db_connection()
         try:
             cursor = conn.cursor()
             now_str = datetime.utcnow().isoformat()
             acc_id = acc.get("id") or f"acc_{int(datetime.utcnow().timestamp()*1000)}"
+
+            sources = acc.get("monitoring_sources", [])
+            if isinstance(sources, list):
+                sources_json = json.dumps(sources, ensure_ascii=False)
+            elif isinstance(sources, str):
+                if sources.strip().startswith("["):
+                    sources_json = sources.strip()
+                else:
+                    sources_list = [s.strip() for s in sources.split(",") if s.strip()]
+                    sources_json = json.dumps(sources_list, ensure_ascii=False)
+            else:
+                sources_json = "[]"
+
             cursor.execute("""
             INSERT INTO twitter_accounts (
                 id, username, display_name, university, auth_token, ct0, cookies_json,
                 proxy, api_key, api_secret, access_token, access_secret, bearer_token,
                 status, is_active, auto_publish, auto_reply, reply_persona, custom_hashtags,
-                theme_color, logo_path, created_at, updated_at
+                theme_color, logo_path, monitoring_sources, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 username = excluded.username,
                 display_name = excluded.display_name,
@@ -2943,6 +2976,7 @@ def save_twitter_account(acc: Dict[str, Any]) -> bool:
                 custom_hashtags = excluded.custom_hashtags,
                 theme_color = excluded.theme_color,
                 logo_path = excluded.logo_path,
+                monitoring_sources = excluded.monitoring_sources,
                 updated_at = excluded.updated_at
             """, (
                 acc_id,
@@ -2966,6 +3000,7 @@ def save_twitter_account(acc: Dict[str, Any]) -> bool:
                 str(acc.get("custom_hashtags", "#أخبار_الجامعات")),
                 str(acc.get("theme_color", "#0284c7")),
                 str(acc.get("logo_path", "")),
+                sources_json,
                 acc.get("created_at") or now_str,
                 now_str
             ))
@@ -2976,6 +3011,41 @@ def save_twitter_account(acc: Dict[str, Any]) -> bool:
             return False
         finally:
             conn.close()
+
+
+def add_twitter_account_source(account_id: str, source: str) -> bool:
+    """إضافة مصدر مراقبة خاص بحساب تويتر محدد"""
+    clean_src = source.strip()
+    if not clean_src:
+        return False
+    if not clean_src.startswith("@") and not clean_src.startswith("#") and not clean_src.startswith("http"):
+        clean_src = f"@{clean_src}"
+
+    acc = get_twitter_account(account_id)
+    if not acc:
+        return False
+
+    sources = acc.get("monitoring_sources", [])
+    if clean_src not in sources:
+        sources.append(clean_src)
+        acc["monitoring_sources"] = sources
+        return save_twitter_account(acc)
+    return True
+
+
+def remove_twitter_account_source(account_id: str, source: str) -> bool:
+    """إزالة مصدر مراقبة من حساب تويتر"""
+    clean_src = source.strip()
+    acc = get_twitter_account(account_id)
+    if not acc:
+        return False
+
+    sources = acc.get("monitoring_sources", [])
+    if clean_src in sources:
+        sources.remove(clean_src)
+        acc["monitoring_sources"] = sources
+        return save_twitter_account(acc)
+    return True
 
 
 def delete_twitter_account(account_id: str) -> bool:

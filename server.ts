@@ -740,6 +740,55 @@ print(json.dumps({"success": ok}))
   }
 });
 
+// 3.4.1.1 Add/Remove Dedicated Monitoring Source for Twitter Account
+app.post('/api/twitter/accounts/:id/sources', (req: Request, res: Response) => {
+  try {
+    const accountId = req.params.id;
+    const { source = '' } = req.body;
+    if (!source.trim()) {
+      res.status(400).json({ success: false, error: "معرف المصدر مطلوب (مثل @Najran_Univ)" });
+      return;
+    }
+
+    const pyScript = `
+import database as db, sys, json
+ok = db.add_twitter_account_source(sys.argv[1], sys.argv[2])
+acc = db.get_twitter_account(sys.argv[1])
+sources = acc.get("monitoring_sources", []) if acc else []
+print(json.dumps({"success": ok, "sources": sources}, ensure_ascii=False))
+`;
+    const out = execFileSync('python3', ['-c', pyScript, accountId, source], { timeout: 5000 }).toString().trim();
+    res.json(JSON.parse(out || '{"success":true}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+app.delete('/api/twitter/accounts/:id/sources', (req: Request, res: Response) => {
+  try {
+    const accountId = req.params.id;
+    const { source = '' } = req.body;
+    if (!source.trim()) {
+      res.status(400).json({ success: false, error: "معرف المصدر المراد حذفه مطلوب" });
+      return;
+    }
+
+    const pyScript = `
+import database as db, sys, json
+ok = db.remove_twitter_account_source(sys.argv[1], sys.argv[2])
+acc = db.get_twitter_account(sys.argv[1])
+sources = acc.get("monitoring_sources", []) if acc else []
+print(json.dumps({"success": ok, "sources": sources}, ensure_ascii=False))
+`;
+    const out = execFileSync('python3', ['-c', pyScript, accountId, source], { timeout: 5000 }).toString().trim();
+    res.json(JSON.parse(out || '{"success":true}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
 // 3.4.2 Session and Cookie Validation for Isolated Account
 app.post('/api/twitter/accounts/:id/test-session', (req: Request, res: Response) => {
   try {
