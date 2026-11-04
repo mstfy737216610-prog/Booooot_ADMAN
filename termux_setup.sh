@@ -49,8 +49,8 @@ else
 fi
 
 # 4. تثبيت مكتبات بايثون المطلوبة
-echo -e "\n${YELLOW}[4/6] تثبيت مكتبات بايثون (Telethon, Pillow, Requests, Dotenv, Feedparser)...${NC}"
-pip install -r requirements.txt --break-system-packages 2>/dev/null || pip install -r requirements.txt 2>/dev/null || pip install requests python-dotenv telethon feedparser aiohttp pillow arabic-reshaper python-bidi --break-system-packages 2>/dev/null || true
+echo -e "\n${YELLOW}[4/6] تثبيت مكتبات بايثون (Telethon, twscrape, Pillow, Requests, Dotenv, Feedparser)...${NC}"
+pip install -r requirements.txt --break-system-packages 2>/dev/null || pip install -r requirements.txt 2>/dev/null || pip install twscrape requests python-dotenv telethon feedparser aiohttp pillow arabic-reshaper python-bidi --break-system-packages 2>/dev/null || true
 
 # 5. تثبيت مكتبات Node.js وواجهة الويب
 echo -e "\n${YELLOW}[5/6] تثبيت مكتبات واجهة الويب (npm install)...${NC}"

@@ -2346,10 +2346,33 @@ class StandaloneTelegramEducationalBot:
             return None
 
     def fetch_twitter_account_tweets(self, handle: str, limit: int = 5) -> List[Dict[str, Any]]:
-        """سحب أحدث التغريدات الفعلية المتعددة لحساب تويتر عبر RSS والمحركات المفتوحة"""
+        """سحب أحدث التغريدات الفعلية المتعددة لحساب تويتر عبر مكتبة twscrape بالكوكيز الحقيقية للمستخدم بدون API رسمي"""
         clean_handle = handle.replace("https://x.com/", "").replace("https://twitter.com/", "").lstrip("@").split("/")[0].split("?")[0].strip()
         if not clean_handle:
             return []
+
+        # 1. استخدام محرك twscrape المعتمد على الكوكيز الحقيقية للمستخدم
+        try:
+            import twitter_engine as te
+            res = te.fetch_tweets(clean_handle, limit=limit)
+            if res.get("ok") and res.get("tweets"):
+                formatted = []
+                for t in res["tweets"]:
+                    formatted.append({
+                        "name": clean_handle,
+                        "handle": clean_handle,
+                        "text": t.get("text", ""),
+                        "url": t.get("url", f"https://x.com/{clean_handle}/status/{t.get('id', '')}"),
+                        "date": t.get("date", ""),
+                        "photos": t.get("photos", []),
+                        "videos": t.get("videos", []),
+                        "tweet_id": t.get("id") or hashlib.md5(t.get("text", "")[:80].encode("utf-8")).hexdigest()
+                    })
+                logger.info(f"✅ [twscrape] تم جلب {len(formatted)} تغريدة حقيقية بالكوكيز لحساب @{clean_handle}")
+                return formatted
+        except Exception as e:
+            logger.debug(f"twscrape fetch error in main: {e}")
+
         tweets = []
         try:
             # 1. نستعلم عن status لجلب التغريدات الحقيقية الفردية المنشورة بواسطة الحساب

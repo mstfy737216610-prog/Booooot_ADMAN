@@ -24,7 +24,8 @@ import {
   Check,
   X,
   Palette,
-  Maximize2
+  Maximize2,
+  Search
 } from 'lucide-react';
 
 export interface TwitterAccount {
@@ -79,7 +80,15 @@ export interface ReplyLog {
 }
 
 export const TwitterIntegrationPanel: React.FC = () => {
-  const [subTab, setSubTab] = useState<'accounts' | 'studio' | 'replies' | 'settings'>('accounts');
+  const [subTab, setSubTab] = useState<'accounts' | 'fetcher' | 'studio' | 'replies' | 'settings'>('accounts');
+
+  // twscrape Real Tweet Fetcher state
+  const [fetchHandle, setFetchHandle] = useState('');
+  const [fetchLimit, setFetchLimit] = useState(10);
+  const [fetchedTweets, setFetchedTweets] = useState<any[]>([]);
+  const [isFetchingTweets, setIsFetchingTweets] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [fetchAccountUsed, setFetchAccountUsed] = useState('');
 
   // Accounts state
   const [accounts, setAccounts] = useState<TwitterAccount[]>([]);
@@ -363,6 +372,47 @@ export const TwitterIntegrationPanel: React.FC = () => {
     }
   };
 
+  // Fetch Real Tweets via twscrape
+  const handleFetchTweets = async () => {
+    const handle = fetchHandle.trim().replace(/^@/, '');
+    if (!handle) {
+      showToastMsg('يرجى إدخال اسم مستخدم تويتر أو حسابه (مثلاً: Najran_Univ أو KSU_News)');
+      return;
+    }
+    setIsFetchingTweets(true);
+    setFetchError(null);
+    setFetchedTweets([]);
+
+    try {
+      const res = await fetch('/api/twitter/fetch-tweets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: handle,
+          limit: fetchLimit,
+          accountId: fetchAccountUsed || undefined
+        })
+      });
+      const data = await res.json();
+      if (data.success && Array.isArray(data.tweets)) {
+        setFetchedTweets(data.tweets);
+        if (data.tweets.length === 0) {
+          showToastMsg(`لم يُعثر على تغريدات حديثة للحساب @${handle}`);
+        } else {
+          showToastMsg(`تم جلب ${data.tweets.length} تغريدة حقيقية بنجاح عبر twscrape 📡`);
+        }
+      } else {
+        setFetchError(data.error || 'فشل جلب التغريدات. تأكد من استيراد الكوكيز الخاصة بك أولاً.');
+        showToastMsg(data.error || 'تعذر جلب التغريدات');
+      }
+    } catch {
+      setFetchError('حدث خطأ أثناء الاتصال بالخادم لجلب التغريدات الحقيقية.');
+      showToastMsg('خطأ في الاتصال أثناء جلب التغريدات');
+    } finally {
+      setIsFetchingTweets(false);
+    }
+  };
+
   // Render Image Card
   const handleRenderCard = async () => {
     if (!cardTitle.trim() || !cardBody.trim()) {
@@ -540,6 +590,18 @@ export const TwitterIntegrationPanel: React.FC = () => {
         </button>
 
         <button
+          onClick={() => setSubTab('fetcher')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all shrink-0 ${
+            subTab === 'fetcher'
+              ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm'
+              : 'text-slate-400 hover:text-white bg-slate-950/50'
+          }`}
+        >
+          <Radio className="w-4 h-4 text-cyan-400" />
+          <span>📡 جلب التغريدات الحقيقية (twscrape)</span>
+        </button>
+
+        <button
           onClick={() => setSubTab('studio')}
           className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all shrink-0 ${
             subTab === 'studio'
@@ -580,7 +642,7 @@ export const TwitterIntegrationPanel: React.FC = () => {
       {subTab === 'accounts' && (
         <div className="space-y-4">
           <div className="flex items-center justify-between text-xs text-slate-400">
-            <span>كل حساب يعمل في بيئة جلسة مستقلة تماماً مع كوكيز مشفرة ومصادقة منفصلة.</span>
+            <span>كل حساب يعمل في بيئة جلسة مستقلة تماماً مع كوكيز مشفرة ومصادقة منفصلة. لا توجد أي حسابات وهمية مسبقة.</span>
             <button
               onClick={fetchAccounts}
               disabled={loadingAccounts}
@@ -590,6 +652,42 @@ export const TwitterIntegrationPanel: React.FC = () => {
               <span>تحديث الحسابات</span>
             </button>
           </div>
+
+          {accounts.length === 0 ? (
+            <div className="bg-slate-950/80 border border-dashed border-slate-800 rounded-2xl p-8 text-center space-y-4">
+              <div className="w-14 h-14 mx-auto rounded-2xl bg-sky-500/10 border border-sky-500/30 flex items-center justify-center text-sky-400">
+                <Users className="w-7 h-7" />
+              </div>
+              <div className="max-w-md mx-auto space-y-1">
+                <h4 className="text-base font-black text-white">لا توجد حسابات مضافة حالياً (نظام نقي 100%)</h4>
+                <p className="text-xs text-slate-400">
+                  تم حذف جميع الحسابات والمصادر التجريبية. قم بالضغط على "إضافة حساب جديد" أدناه لإضافة حسابك الحقيقي وربط الكوكيز الخاصة بك.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingAccount({
+                    id: `acc_${Date.now()}`,
+                    username: '@',
+                    display_name: 'حسابي الجامعي 🎓',
+                    university: '',
+                    theme_color: '#0284c7',
+                    status: 'needs_cookie',
+                    is_active: 1,
+                    auto_publish: 1,
+                    auto_reply: 1,
+                    reply_persona: 'زميلك الأكاديمي الناصح وصوت الطالب الحقيقي، تنقل وتجيب بأمانة ولهجة سعودية بيضاء راقية دون اختلاق تواريخ وهمية.'
+                  });
+                  setIsAccountModalOpen(true);
+                }}
+                className="px-4 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs inline-flex items-center gap-2 shadow-lg cursor-pointer transition-all"
+              >
+                <Plus className="w-4 h-4" />
+                <span>إضافة أول حساب لك الآن</span>
+              </button>
+            </div>
+          ) : (
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {accounts.map(acc => {
@@ -772,6 +870,217 @@ export const TwitterIntegrationPanel: React.FC = () => {
                 </div>
               );
             })}
+          </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB: REAL TWEET FETCHER (TWSCRAPE) */}
+      {subTab === 'fetcher' && (
+        <div className="space-y-6">
+          <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h4 className="font-extrabold text-white text-base flex items-center gap-2">
+                  <Radio className="w-5 h-5 text-cyan-400 animate-pulse" />
+                  <span>محرك جلب التغريدات الحقيقية (twscrape المفتوح بدون API رسمي)</span>
+                </h4>
+                <p className="text-xs text-slate-400 mt-1">
+                  يعتمد 100% على الكوكيز الحقيقية المستوردة (<code className="text-amber-300">auth_token</code> و <code className="text-amber-300">ct0</code>). يجلب التغريدات ومرفقات الصور مباشرة من X دون واجهات مدفوعة.
+                </p>
+              </div>
+
+              {accounts.filter(a => a.status === 'valid').length === 0 && (
+                <div className="bg-amber-500/10 border border-amber-500/30 text-amber-300 px-3 py-2 rounded-xl text-xs flex items-center gap-2 shrink-0">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>تنبيه: يلزم إضافة حساب واستيراد الكوكيز الخاصة به أولاً للاتصال بتويتر</span>
+                </div>
+              )}
+            </div>
+
+            {/* Input Form */}
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 pt-2">
+              <div className="sm:col-span-5">
+                <label className="block text-xs font-bold text-slate-300 mb-1">
+                  معرف حساب تويتر المراد جلب تغريداته (Username):
+                </label>
+                <div className="relative">
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 font-mono">@</span>
+                  <input
+                    type="text"
+                    value={fetchHandle}
+                    onChange={e => setFetchHandle(e.target.value.replace(/^@/, ''))}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleFetchTweets();
+                      }
+                    }}
+                    placeholder="مثال: Najran_Univ أو KSU_News"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl pr-8 pl-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500 font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="sm:col-span-3">
+                <label className="block text-xs font-bold text-slate-300 mb-1">
+                  الحساب المستخدم (الكوكيز):
+                </label>
+                <select
+                  value={fetchAccountUsed}
+                  onChange={e => setFetchAccountUsed(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500"
+                >
+                  <option value="">تلقائي (أي حساب نشط في المجمع)</option>
+                  {accounts.map(acc => (
+                    <option key={acc.id} value={acc.id}>
+                      {acc.display_name} ({acc.username}) - {acc.status === 'valid' ? 'كوكيز نشطة' : 'غير مهيأ'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-bold text-slate-300 mb-1">
+                  العدد المطلوب:
+                </label>
+                <select
+                  value={fetchLimit}
+                  onChange={e => setFetchLimit(Number(e.target.value))}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500"
+                >
+                  <option value={5}>5 تغريدات</option>
+                  <option value={10}>10 تغريدات</option>
+                  <option value={20}>20 تغريدة</option>
+                  <option value={30}>30 تغريدة</option>
+                </select>
+              </div>
+
+              <div className="sm:col-span-2 flex items-end">
+                <button
+                  type="button"
+                  onClick={handleFetchTweets}
+                  disabled={isFetchingTweets}
+                  className="w-full bg-cyan-500 hover:bg-cyan-400 active:bg-cyan-600 disabled:opacity-50 text-slate-950 font-black text-xs py-2.5 px-4 rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-md shadow-cyan-950/50 cursor-pointer"
+                >
+                  <RefreshCw className={`w-4 h-4 ${isFetchingTweets ? 'animate-spin' : ''}`} />
+                  <span>{isFetchingTweets ? 'جارٍ السحب...' : 'جلب التغريدات 📡'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Error Message */}
+            {fetchError && (
+              <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-rose-400" />
+                <div className="space-y-1">
+                  <div className="font-bold">تعذر جلب التغريدات الحقيقية:</div>
+                  <div className="font-mono text-[11px] leading-relaxed">{fetchError}</div>
+                  <div className="text-[11px] text-rose-300/80">
+                    💡 تلميح: توجه إلى تبويب "الحسابات المستقلة"، ثم اضغط "استيراد الكوكيز 🍪" وضع auth_token و ct0 الخاصة بحسابك في X.
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Results Grid */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between text-xs text-slate-400">
+              <span className="font-bold text-slate-300">
+                التغريدات المسترجعة عبر twscrape ({fetchedTweets.length}):
+              </span>
+              {fetchedTweets.length > 0 && (
+                <span className="text-[11px] text-cyan-400">
+                  بيانات حقيقية مباشرة وموثقة
+                </span>
+              )}
+            </div>
+
+            {fetchedTweets.length === 0 && !isFetchingTweets && !fetchError && (
+              <div className="bg-slate-950/60 border border-slate-800/80 rounded-2xl p-8 text-center text-slate-500 text-xs space-y-2">
+                <Radio className="w-8 h-8 mx-auto text-slate-600" />
+                <p>أدخل معرف أي حساب تويتر واضغط "جلب التغريدات" لسحب التغريدات الحقيقية فورياً.</p>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {fetchedTweets.map((tw: any, idx: number) => {
+                const tweetUrl = tw.url || `https://x.com/${tw.author?.username || fetchHandle}/status/${tw.id}`;
+                const photos: string[] = tw.photos || [];
+                const author = tw.author || {};
+
+                return (
+                  <div
+                    key={tw.id || idx}
+                    className="bg-slate-950/90 border border-slate-800 hover:border-slate-700 rounded-2xl p-4 sm:p-5 flex flex-col justify-between gap-3 shadow-lg transition-all"
+                  >
+                    <div>
+                      {/* Author Header */}
+                      <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-800/80">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-white text-xs">
+                            {author.display_name || author.username || `@${fetchHandle}`}
+                          </span>
+                          <span className="text-[11px] font-mono text-cyan-400">
+                            @{author.username || fetchHandle}
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-slate-500 font-mono">
+                          {tw.date ? new Date(tw.date).toLocaleString('ar-SA') : ''}
+                        </span>
+                      </div>
+
+                      {/* Tweet Content */}
+                      <div className="mt-3 text-xs sm:text-sm text-slate-200 leading-relaxed whitespace-pre-wrap font-sans">
+                        {tw.text}
+                      </div>
+
+                      {/* Media Photos if present */}
+                      {photos.length > 0 && (
+                        <div className="mt-3 grid grid-cols-2 gap-2">
+                          {photos.slice(0, 4).map((imgUrl, pIdx) => (
+                            <img
+                              key={pIdx}
+                              src={imgUrl}
+                              alt="مرفق التغريدة"
+                              className="rounded-lg object-cover w-full h-32 border border-slate-800"
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Actions on this Tweet */}
+                    <div className="pt-3 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-2 text-xs">
+                      <a
+                        href={tweetUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-cyan-400 hover:text-cyan-300 font-bold text-[11px] flex items-center gap-1"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span>فتح التغريدة على X</span>
+                      </a>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCardTitle(`منشور معتمد: @${author.username || fetchHandle}`);
+                          setCardBody(tw.text || '');
+                          setSubTab('studio');
+                          showToastMsg('تم نقل نص التغريدة إلى استوديو تصميم البطاقات 🎨');
+                        }}
+                        className="px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                      >
+                        <Palette className="w-3 h-3" />
+                        <span>تصميم بطاقة للنشر 🎨</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}

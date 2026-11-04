@@ -16,7 +16,15 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests
+import asyncio
 from PIL import Image, ImageDraw, ImageFont, ImageEnhance, ImageOps
+
+# مكتبة twscrape لجلب بيانات تويتر بالكوكيز بدون API رسمي
+try:
+    from twscrape import API, gather
+    TWSCRAPE_AVAILABLE = True
+except ImportError:
+    TWSCRAPE_AVAILABLE = False
 
 # مكتبات تشكيل ومعالجة اللغة العربية وBidi
 try:
@@ -36,6 +44,7 @@ FONTS_DIR = BASE_DIR / "assets" / "fonts"
 ASSETS_DIR = BASE_DIR / "assets"
 OUTPUT_DIR = BASE_DIR / "public" / "storage_downloads" / "cards"
 SESSIONS_DIR = BASE_DIR / "data" / "twitter_sessions"
+TWSCRAPE_DB_PATH = SESSIONS_DIR / "twscrape_pool.db"
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
@@ -267,7 +276,7 @@ def render_student_card(
     logger.info(f"✅ تم تصميم وحفظ البطاقة الأكاديمية: {local_path}")
 
     # حفظها في قاعدة البيانات
-    acc_id = acc.get("id") or "acc_najran_main"
+    acc_id = acc.get("id") or "custom_card"
     db.add_designed_card(
         account_id=acc_id,
         title=title,
@@ -371,6 +380,185 @@ def validate_twitter_session(auth_token: str, ct0: str, proxy: Optional[str] = N
             "status": "error",
             "message": f"تعذر الاتصال بـ X: {str(e)}"
         }
+
+
+# ==============================================================================
+# وحدة جلب بيانات تويتر الحقيقية بالكوكيز عبر مكتبة twscrape (بدون API رسمي)
+# ==============================================================================
+
+async def sync_user_accounts_to_pool(api: Any) -> int:
+    """
+    مزامنة الحسابات والكوكيز الحقيقية التي أدخلها المستخدم فقط من واجهة التطبيق إلى مجمع twscrape
+    بدون أي حسابات وهمية أو افتراضية
+    """
+    accounts = db.get_twitter_accounts()
+    synced_count = 0
+    for acc in accounts:
+        auth_token = acc.get("auth_token", "").strip()
+        ct0 = acc.get("ct0", "").strip()
+        if not auth_token or auth_token.startswith("demo_"):
+            continue
+        clean_user = acc.get("username", "").lstrip("@").strip()
+        if not clean_user:
+            clean_user = f"user_{acc.get('id', 'acc')}"
+
+        cookies_str = f"auth_token={auth_token}; ct0={ct0}"
+        proxy = acc.get("proxy") or None
+        try:
+            pool_acc = await api.pool.get(clean_user)
+            if not pool_acc:
+                await api.pool.add_account(
+                    username=clean_user,
+                    password="user_cookie_session",
+                    email=f"{clean_user}@cookie.session",
+                    email_password="user_cookie_pass",
+                    cookies=cookies_str,
+                    proxy=proxy
+                )
+            else:
+                await api.pool.add_account_cookies(clean_user, cookies_str)
+            synced_count += 1
+        except Exception as e:
+            logger.warning(f"ملاحظة أثناء مزامنة حساب {clean_user} في twscrape: {e}")
+    return synced_count
+
+
+async def fetch_tweets_async(
+    username: str,
+    limit: int = 20,
+    account_id: Optional[str] = None,
+    custom_cookies: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    جلب التغريدات الحقيقية لحساب معين باستخدام مكتبة twscrape والكوكيز المدخلة من المستخدم
+    بدون واجهات API رسمية أو مفاتيح مدفوعة
+    """
+    if not TWSCRAPE_AVAILABLE:
+        return {
+            "ok": False,
+            "error": "مكتبة twscrape غير مثبتة في البيئة الحالية. يرجى تثبيتها عبر: pip install twscrape --break-system-packages",
+            "tweets": []
+        }
+
+    clean_target = username.lstrip("@").strip()
+    if not clean_target:
+        return {"ok": False, "error": "اسم المستخدم المطلوب مراقبته فارغ.", "tweets": []}
+
+    api = API(str(TWSCRAPE_DB_PATH))
+
+    # إذا تم تمرير كوكيز مخصصة مباشرة في الطلب
+    if custom_cookies:
+        parsed_c = parse_twitter_cookies(custom_cookies)
+        auth_tok = parsed_c.get("auth_token", "")
+        ct0_tok = parsed_c.get("ct0", "")
+        if auth_tok:
+            c_str = f"auth_token={auth_tok}; ct0={ct0_tok}"
+            try:
+                await api.pool.add_account(
+                    username="session_user",
+                    password="user_pass",
+                    email="session@user.local",
+                    email_password="user_pass",
+                    cookies=c_str
+                )
+            except Exception:
+                pass
+
+    # مزامنة حسابات المستخدم المحفوظة في قاعدة البيانات
+    await sync_user_accounts_to_pool(api)
+
+    # التحقق هل يوجد أي حساب نشط في المجمع
+    try:
+        pool_stats = await api.pool.stats()
+        total_pool_accs = pool_stats.get("total", 0) if isinstance(pool_stats, dict) else 0
+    except Exception:
+        total_pool_accs = 0
+
+    if total_pool_accs == 0:
+        return {
+            "ok": False,
+            "error": "لا يوجد أي حساب تويتر مربوط بكوكيز حقيقية حالياً. للوصول إلى تويتر بدون API رسمي، يجب إضافة حسابك الفعلي واستيراد الكوكيز الخاصة به (auth_token و ct0) من تبويب تويتر.",
+            "tweets": []
+        }
+
+    try:
+        # جلب معرف المستخدم
+        user = await api.user_by_login(clean_target)
+        if not user:
+            return {
+                "ok": False,
+                "error": f"تعذر العثور على حساب تويتر @{clean_target}. تأكد من صحة المعرف أو أن الحساب عام وغير مقيد.",
+                "tweets": []
+            }
+
+        # جلب التغريدات الحقيقية
+        raw_tweets = await gather(api.user_tweets(user.id, limit=limit))
+        tweets = []
+        for t in raw_tweets:
+            tweets.append({
+                "id": str(t.id),
+                "text": t.rawContent,
+                "date": t.date.isoformat() if t.date else "",
+                "url": t.url,
+                "retweetCount": getattr(t, "retweetCount", 0),
+                "likeCount": getattr(t, "likeCount", 0),
+                "replyCount": getattr(t, "replyCount", 0),
+                "photos": [m.url for m in (t.media.photos if t.media else []) if hasattr(m, "url")],
+                "videos": [m.url for m in (t.media.videos if t.media else []) if hasattr(m, "url")],
+                "author": {
+                    "id": str(user.id),
+                    "username": user.username,
+                    "displayname": user.displayname,
+                    "avatar": getattr(user, "profileImageUrl", "")
+                }
+            })
+
+        return {
+            "ok": True,
+            "count": len(tweets),
+            "target": f"@{clean_target}",
+            "tweets": tweets
+        }
+    except Exception as e:
+        logger.error(f"خطأ أثناء جلب تغريدات @{clean_target} عبر twscrape: {e}")
+        return {
+            "ok": False,
+            "error": f"خطأ أثناء جلب تغريدات تويتر بالكوكيز: {str(e)}. يرجى التأكد من تجديد الكوكيز.",
+            "tweets": []
+        }
+
+
+def fetch_tweets(
+    username: str,
+    limit: int = 20,
+    account_id: Optional[str] = None,
+    custom_cookies: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    تغليف متزامن لدالة جلب التغريدات الحقيقية عبر twscrape
+    مناسب للاستدعاء المباشر من واجهات Express API وسكربتات Python
+    """
+    try:
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(
+                        asyncio.run,
+                        fetch_tweets_async(username, limit, account_id, custom_cookies)
+                    )
+                    return future.result(timeout=35)
+            else:
+                return loop.run_until_complete(
+                    fetch_tweets_async(username, limit, account_id, custom_cookies)
+                )
+        except RuntimeError:
+            return asyncio.run(
+                fetch_tweets_async(username, limit, account_id, custom_cookies)
+            )
+    except Exception as e:
+        return {"ok": False, "error": f"استثناء عام في fetch_tweets: {e}", "tweets": []}
 
 
 def generate_smart_reply_for_comment(

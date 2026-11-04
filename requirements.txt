@@ -8,3 +8,5 @@ telethon>=1.36.0
 pillow>=9.4.0
 arabic-reshaper>=3.0.0
 python-bidi>=0.4.2
+twscrape>=0.20.1
+httpx>=0.26.0

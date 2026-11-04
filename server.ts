@@ -691,6 +691,61 @@ print(json.dumps({"success": True, "formattedTweet": formatted, "result": res}, 
   }
 });
 
+// 3.4.2.1 Real Tweet Fetcher via twscrape (Cookie-based, No Official Paid API)
+app.post('/api/twitter/fetch-tweets', (req: Request, res: Response) => {
+  try {
+    const { username = '', limit = 15, accountId = '', cookies = '' } = req.body;
+    if (!username || !username.trim()) {
+      res.status(400).json({ ok: false, error: 'اسم الحساب المطلوب مراقبته إلزامي.' });
+      return;
+    }
+
+    const pyScript = `
+import twitter_engine as te, json, sys
+username = sys.argv[1]
+limit = int(sys.argv[2])
+acc_id = sys.argv[3] if len(sys.argv) > 3 and sys.argv[3] else None
+cookies = sys.argv[4] if len(sys.argv) > 4 and sys.argv[4] else None
+
+res = te.fetch_tweets(username=username, limit=limit, account_id=acc_id, custom_cookies=cookies)
+print(json.dumps(res, ensure_ascii=False))
+`;
+    const out = execFileSync('python3', ['-c', pyScript, username, String(limit), accountId || '', cookies || ''], { timeout: 45000 }).toString().trim();
+    res.json(JSON.parse(out || '{"ok":false,"error":"لا توجد استجابة"}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ ok: false, error: message, tweets: [] });
+  }
+});
+
+app.get('/api/twitter/fetch-tweets', (req: Request, res: Response) => {
+  try {
+    const username = (req.query.username as string) || '';
+    const limit = Number(req.query.limit) || 15;
+    const accountId = (req.query.accountId as string) || '';
+
+    if (!username.trim()) {
+      res.status(400).json({ ok: false, error: 'يرجى تزويد بارامتر username' });
+      return;
+    }
+
+    const pyScript = `
+import twitter_engine as te, json, sys
+username = sys.argv[1]
+limit = int(sys.argv[2])
+acc_id = sys.argv[3] if len(sys.argv) > 3 and sys.argv[3] else None
+
+res = te.fetch_tweets(username=username, limit=limit, account_id=acc_id)
+print(json.dumps(res, ensure_ascii=False))
+`;
+    const out = execFileSync('python3', ['-c', pyScript, username, String(limit), accountId], { timeout: 45000 }).toString().trim();
+    res.json(JSON.parse(out || '{"ok":false,"error":"لا توجد استجابة"}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ ok: false, error: message, tweets: [] });
+  }
+});
+
 // 3.4.1 Twitter Multi-Account Management
 app.get('/api/twitter/accounts', (_req: Request, res: Response) => {
   try {
