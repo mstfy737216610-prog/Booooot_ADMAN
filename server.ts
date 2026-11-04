@@ -2813,6 +2813,15 @@ async function startServer() {
       },
       appType: 'spa',
     });
+    app.use('/storage_downloads', express.static(path.join(__dirname, 'public', 'storage_downloads')));
+    app.get('/download/project-update.zip', (_req: Request, res: Response) => {
+      const zipPath = path.join(__dirname, 'public', 'storage_downloads', 'Booooot_ADMAN_updated.zip');
+      if (fs.existsSync(zipPath)) {
+        res.download(zipPath, 'Booooot_ADMAN_updated.zip');
+      } else {
+        res.status(404).send('Not found');
+      }
+    });
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(__dirname, 'dist');

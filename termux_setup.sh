@@ -19,15 +19,19 @@ echo -e "${GREEN}  📲 التثبيت والإعداد التلقائي الش�
 echo -e "${SKY}  Telegram Bot & Web Studio (Dual Architecture)${NC}"
 echo -e "${SKY}==================================================================${NC}\n"
 
-# 1. طلب إذن الوصول إلى وحدة التخزين الداخلية للهاتف ومجلد التنزيلات
-echo -e "${YELLOW}[1/6] طلب صلاحية الوصول لوحدة التخزين الداخلية (مجلد Downloads)...${NC}"
-termux-setup-storage 2>/dev/null || true
-sleep 1
+# 1. طلب إذن الوصول إلى وحدة التخزين الداخلية للهاتف ومجلد التنزيلات (فقط إذا لم يكن مهيئاً مسبقاً)
+if [ ! -d "$HOME/storage" ]; then
+    echo -e "${YELLOW}[1/6] طلب صلاحية الوصول لوحدة التخزين الداخلية (مجلد Downloads)...${NC}"
+    termux-setup-storage 2>/dev/null || true
+    sleep 1
+else
+    echo -e "${GREEN}[1/6] وحدة التخزين الداخلية (storage) مهيأة ومربوطة مسبقاً ✅${NC}"
+fi
 
 # 2. تحديث مستودعات Termux وتثبيت الحزم المطلوبة
 echo -e "\n${YELLOW}[2/6] تحديث حزم Termux وتثبيت الأدوات الأساسية (Git, Python, Node.js)...${NC}"
 pkg update -y && pkg upgrade -y
-pkg install -y git python nodejs-lts clang make libjpeg-turbo libcrypt
+pkg install -y git python python-pip nodejs-lts clang make libjpeg-turbo libcrypt
 
 # 3. التحقق من وجود مجلد المشروع أو الانتقال إليه
 echo -e "\n${YELLOW}[3/6] التحقق من مسار المشروع والمستودع...${NC}"
@@ -38,15 +42,15 @@ if [ ! -d "$REPO_DIR" ]; then
     git clone https://github.com/mstfy737216610-prog/Booooot_ADMAN.git "$REPO_DIR"
     cd "$REPO_DIR"
 else
-    echo -e "   المشروع موجود مسبقاً، جاري الانتقال وسحب أحدث التحديثات..."
+    echo -e "   المشروع موجود مسبقاً، جاري الانتقال وسحب أحدث التحديثات (فرع main)...${NC}"
     cd "$REPO_DIR"
-    git pull origin master || true
+    git branch -M main 2>/dev/null || true
+    git pull origin main || git pull origin master || true
 fi
 
 # 4. تثبيت مكتبات بايثون المطلوبة
-echo -e "\n${YELLOW}[4/6] تثبيت مكتبات بايثون (Telethon, Requests, Dotenv, Feedparser)...${NC}"
-pip install --upgrade pip
-pip install -r requirements.txt || pip install requests python-dotenv telethon feedparser
+echo -e "\n${YELLOW}[4/6] تثبيت مكتبات بايثون (Telethon, Pillow, Requests, Dotenv, Feedparser)...${NC}"
+pip install -r requirements.txt --break-system-packages 2>/dev/null || pip install -r requirements.txt 2>/dev/null || pip install requests python-dotenv telethon feedparser aiohttp pillow arabic-reshaper python-bidi --break-system-packages 2>/dev/null || true
 
 # 5. تثبيت مكتبات Node.js وواجهة الويب
 echo -e "\n${YELLOW}[5/6] تثبيت مكتبات واجهة الويب (npm install)...${NC}"

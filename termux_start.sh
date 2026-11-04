@@ -21,8 +21,8 @@ echo -e "${SKY}=================================================================
 cd "$(dirname "$0")"
 
 # 1. سحب التحديثات من GitHub تلقائياً
-echo -e "\n${YELLOW}📡 سحب أحدث التحديثات من مستودع GitHub...${NC}"
-git pull origin master 2>/dev/null || true
+echo -e "\n${YELLOW}📡 سحب أحدث التحديثات من مستودع GitHub (فرع main)...${NC}"
+git pull origin main 2>/dev/null || git pull origin master 2>/dev/null || true
 
 # 2. مزامنة التخزين الداخلي للهاتف وحزمة ملف_النشر
 python3 -c "
