@@ -57,8 +57,8 @@ export const InteractiveIdeaBoard: React.FC = () => {
   const [formDescription, setFormDescription] = useState('');
   const [formOperationalNotes, setFormOperationalNotes] = useState('');
   const [formPriority, setFormPriority] = useState<'low' | 'medium' | 'high'>('medium');
+  const [formUnivName, setFormUnivName] = useState('شأن طلابي عام');
   const [formTags, setFormTags] = useState('');
-  const [formUnivName, setFormUnivName] = useState('جامعة الملك سعود');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const showToastMsg = (msg: string) => {
@@ -99,7 +99,7 @@ export const InteractiveIdeaBoard: React.FC = () => {
     setIsSubmitting(true);
     const parsedTags = formTags
       .split(',')
-      .map(t => t.trim().replace(/^#/, ''))
+      .map((t: string) => t.trim().replace(/^#/, ''))
       .filter(Boolean);
 
     try {
@@ -158,7 +158,7 @@ export const InteractiveIdeaBoard: React.FC = () => {
     setFormOperationalNotes('');
     setFormPriority('medium');
     setFormTags('');
-    setFormUnivName('جامعة الملك سعود');
+    setFormUnivName('شأن طلابي عام');
   };
 
   const handleMoveStatus = async (id: number, newStatus: string) => {
@@ -219,7 +219,7 @@ export const InteractiveIdeaBoard: React.FC = () => {
     setFormOperationalNotes(idea.operational_notes || '');
     setFormPriority(idea.priority || 'medium');
     setFormTags(Array.isArray(idea.tags) ? idea.tags.join(', ') : '');
-    setFormUnivName(idea.university_name || 'جامعة الملك سعود');
+    setFormUnivName(idea.university_name || 'شأن طلابي عام');
   };
 
   return (
@@ -289,11 +289,11 @@ export const InteractiveIdeaBoard: React.FC = () => {
             onChange={(e) => setSelectedUniv(e.target.value)}
             className="w-full sm:w-64 px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-amber-500"
           >
-            <option value="all">جميع الجامعات والمشاريع</option>
-            <option value="جامعة الملك سعود">جامعة الملك سعود</option>
-            <option value="جامعة AUM">جامعة AUM</option>
-            <option value="جامعة نجران">جامعة نجران</option>
-            <option value="كليات التقنية العليا">كليات التقنية العليا</option>
+            <option value="all">جميع المشاريع والجامعات</option>
+            <option value="شأن طلابي عام">شأن طلابي عام</option>
+            {Array.from(new Set(ideas.map(i => i.university_name).filter(Boolean))).filter(u => u !== 'شأن طلابي عام').map(u => (
+              <option key={u} value={u}>{u}</option>
+            ))}
           </select>
         </div>
       </div>
@@ -529,18 +529,14 @@ export const InteractiveIdeaBoard: React.FC = () => {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="text-slate-300 font-semibold block mb-1">الجامعة المستهدفة:</label>
-                  <select
+                  <label className="text-slate-300 font-semibold block mb-1">الجامعة أو المشروع المستهدف:</label>
+                  <input
+                    type="text"
                     value={formUnivName}
                     onChange={(e) => setFormUnivName(e.target.value)}
+                    placeholder="مثال: شأن طلابي عام أو اسم جامعتك المحددة"
                     className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white focus:outline-none focus:border-amber-500"
-                  >
-                    <option value="جامعة الملك سعود">جامعة الملك سعود</option>
-                    <option value="جامعة AUM">جامعة AUM</option>
-                    <option value="جامعة نجران">جامعة نجران</option>
-                    <option value="كليات التقنية العليا">كليات التقنية العليا</option>
-                    <option value="شأن طلابي عام">شأن طلابي عام</option>
-                  </select>
+                  />
                 </div>
 
                 <div>

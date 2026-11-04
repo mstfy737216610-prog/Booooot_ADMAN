@@ -1,7 +1,7 @@
 {
-  "_info": "Telegram & Twitter University Watchlist (Clean User Defined)",
+  "_info": "Telegram University Educational AutoForwarder Watchlist (Synced from SQLite)",
   "version": "3.1.0",
-  "lastUpdated": "",
+  "lastUpdated": "2026-11-04T14:31:36.640615",
   "target_channels": [],
   "university_projects": [],
   "channel_mappings": [],

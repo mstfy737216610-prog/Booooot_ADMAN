@@ -33,8 +33,6 @@
     "downloadVideos": true,
     "downloadDocuments": true
   },
-  "targetChannels": [
-    "@jhdhhdcj"
-  ],
+  "targetChannels": [],
   "lastUpdated": "2026-11-02T22:02:31.810515"
 }

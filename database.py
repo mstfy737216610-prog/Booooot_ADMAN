@@ -355,11 +355,12 @@ def init_db():
 
             # إزالة أي بيانات وهمية أو تجريبية سابقة لضمان أن النظام يبدأ نظيفاً وفارغاً تماماً
             try:
-                cursor.execute("DELETE FROM twitter_accounts WHERE auth_token LIKE 'demo_%' OR id IN ('acc_najran_main', 'acc_ksu_voice')")
+                cursor.execute("DELETE FROM target_channels WHERE channel_id = '@jhdhhdcj' OR title LIKE '%قناة النشر الرسمية%'")
+                cursor.execute("DELETE FROM twitter_accounts WHERE auth_token LIKE 'demo_%' OR id IN ('acc_najran_main', 'acc_ksu_voice') OR auth_token = ''")
                 cursor.execute("DELETE FROM post_audit_log WHERE post_id LIKE 'seed_log_%'")
                 cursor.execute("DELETE FROM future_ideas WHERE tags LIKE '%المعدل_التراكمي%' OR title LIKE '%المعدل الفصلي%'")
-                cursor.execute("DELETE FROM sources WHERE target IN ('@KSU_News', '@moe_gov_sa', 'https://news.ksu.edu.sa/ar/rss')")
-                cursor.execute("DELETE FROM university_projects WHERE name LIKE '%جامعة الملك سعود%' AND target_channel = '@jhdhhdcj'")
+                cursor.execute("DELETE FROM sources WHERE target IN ('@KSU_News', '@moe_gov_sa', 'https://news.ksu.edu.sa/ar/rss', '@mstfyuhhh', '@Next_Plus_BOT0', '@Next_Plus_BOT1', '@ksu_news')")
+                cursor.execute("DELETE FROM university_projects WHERE name LIKE '%جامعة الملك سعود%' OR target_channel = '@jhdhhdcj'")
                 conn.commit()
             except Exception:
                 pass
@@ -399,14 +400,8 @@ def migrate_from_json(conn: sqlite3.Connection):
         VALUES (?, ?, ?, 'admin', 'vip', '2099-12-31T23:59:59', ?, ?)
     """, (admin_id, admin_user, "المشرف العام", now_str, now_str))
 
-    # 2. هجرة قنوات النشر
-    cursor.execute("SELECT COUNT(*) as cnt FROM target_channels")
-    if cursor.fetchone()["cnt"] == 0:
-        target_ch = "@jhdhhdcj"
-        cursor.execute("""
-            INSERT OR IGNORE INTO target_channels (channel_id, title, status, created_at)
-            VALUES (?, ?, 'active', ?)
-        """, (target_ch, "قناة النشر الرسمية", now_str))
+    # 2. قنوات النشر (يضيفها المستخدم يدوياً فقط بدون قنوات افتراضية)
+    # لا نقوم بإضافة أي قناة افتراضية مطلقاً
 
     # 3. هجرة المصادر من sources.json فقط إن وجدت وبدون فرض مصادر وهمية
     cursor.execute("SELECT COUNT(*) as cnt FROM sources")
@@ -652,7 +647,7 @@ def get_target_channels() -> List[str]:
             cursor.execute("SELECT channel_id FROM target_channels WHERE status != 'deleted'")
             rows = cursor.fetchall()
             chs = [r["channel_id"] for r in rows if is_valid_telegram_channel(r["channel_id"])]
-            return chs if chs else ["@jhdhhdcj"]
+            return chs if chs else []
         finally:
             conn.close()
 
@@ -3209,7 +3204,7 @@ def run_comprehensive_diagnostics() -> Dict[str, Any]:
 
     # 1. فحص بوت التيليجرام
     token = get_setting("bot_token", "") or os.environ.get("BOT_TOKEN", "")
-    target_channels = get_target_channels() or ["@jhdhhdcj"]
+    target_channels = get_target_channels() or []
 
     if not token or len(token) < 20 or ":" not in token:
         has_warnings = True

@@ -476,10 +476,16 @@ def detect_target_university(text: str = "", orig_post_text: str = "", group_cha
     except Exception:
         pass
 
-    # 3. الافتراضي المعتمد: جامعة الملك سعود مع قناة النشر المعتمدة
-    default_ksu = dict(UNIVERSITY_DIRECTORY["ksu"])
-    default_ksu["channel"] = "@jhdhhdcj"
-    return default_ksu
+    # 3. إذا لم يقم المستخدم بإضافة أي جامعة بعد، إرجاع هوية عامة بدون فرض جامعة أو قناة وهمية
+    return {
+        "id": "general",
+        "name": "الجامعة",
+        "channel": "",
+        "portal": "",
+        "student_affairs_email": "",
+        "phone": "",
+        "aliases": []
+    }
 
 
 def resolve_direct_student_inquiry(student_question: str, orig_post_text: str = "", univ_info: Dict[str, Any] = None) -> Optional[str]:
@@ -3160,7 +3166,7 @@ class StandaloneTelegramEducationalBot:
         يبحث في تويتر/X، قنوات تيليجرام، وبوابات الإنترنت المعتمدة قبل الإجابة
         ويستخرج أحدث الحقائق والمواعيد والبيانات الحقيقية في أجزاء من الثانية.
         """
-        u_name = univ_info.get("name", "جامعة الملك سعود")
+        u_name = univ_info.get("name", "الجامعة")
         clean_q = re.sub(r'^(ممكن|اريد|أريد|كيف|متى|هل|ما هو|ما هي|وين|اين|أين|عطني|لو سمحت|بالله|تكفى)\s*', '', query, flags=re.IGNORECASE).strip()
         search_kw = clean_q if clean_q else query
 
