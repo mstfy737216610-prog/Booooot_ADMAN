@@ -1038,6 +1038,254 @@ print(json.dumps({"success": True, "package": "ملف_النشر", "paths": path
   }
 });
 
+// 3.4.9 Live System Diagnostics & Error Tracker API
+app.get('/api/diagnostics', (_req: Request, res: Response) => {
+  try {
+    const pyScript = `
+import database as db, json
+diags = db.get_active_diagnostics()
+print(json.dumps({"success": True, "diagnostics": diags}, ensure_ascii=False))
+`;
+    const out = execFileSync('python3', ['-c', pyScript], { timeout: 6000 }).toString().trim();
+    res.json(JSON.parse(out || '{"success":true,"diagnostics":[]}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+app.post('/api/diagnostics/run-test', (_req: Request, res: Response) => {
+  try {
+    const pyScript = `
+import database as db, json
+report = db.run_comprehensive_diagnostics()
+print(json.dumps({"success": True, "report": report}, ensure_ascii=False))
+`;
+    const out = execFileSync('python3', ['-c', pyScript], { timeout: 15000 }).toString().trim();
+    res.json(JSON.parse(out || '{"success":true}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+app.post('/api/diagnostics/:id/resolve', (req: Request, res: Response) => {
+  try {
+    const diagId = Number(req.params.id);
+    const pyScript = `
+import database as db, json, sys
+ok = db.resolve_diagnostic(int(sys.argv[1]))
+print(json.dumps({"success": ok}))
+`;
+    const out = execFileSync('python3', ['-c', pyScript, String(diagId)], { timeout: 5000 }).toString().trim();
+    res.json(JSON.parse(out || '{"success":true}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+app.post('/api/diagnostics/clear', (_req: Request, res: Response) => {
+  try {
+    const pyScript = `
+import database as db, json
+ok = db.clear_all_diagnostics()
+print(json.dumps({"success": ok}))
+`;
+    const out = execFileSync('python3', ['-c', pyScript], { timeout: 5000 }).toString().trim();
+    res.json(JSON.parse(out || '{"success":true}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+// 3.4.10 Comprehensive Test Publishing Engine (نظام النشر التجريبي المباشر والتحقق الفوري)
+app.post('/api/publish/test-simulate', (req: Request, res: Response) => {
+  try {
+    const {
+      platform = 'both',
+      title = 'إعلان تجريبي للطلاب 🎓',
+      bodyText = 'هذا منشور تجريبي لاختبار سلامة محرك النشر التلقائي وقنوات التيليجرام وحسابات تويتر والتأكد من وصول المنشورات بدقة.',
+      targetChannel = '',
+      twitterAccountId = '',
+      botToken = '',
+      includeCard = true
+    } = req.body;
+
+    const pyScript = `
+import database as db, twitter_engine as te, json, sys, os, urllib.request, urllib.parse
+
+data = json.loads(sys.argv[1])
+platform = data.get("platform", "both")
+title = data.get("title", "إعلان تجريبي للطلاب 🎓")
+body_text = data.get("bodyText", "")
+custom_channel = data.get("targetChannel", "").strip()
+tw_acc_id = data.get("twitterAccountId", "").strip()
+custom_token = data.get("botToken", "").strip()
+include_card = data.get("includeCard", True)
+
+steps = []
+card_url = None
+card_path = None
+tg_result = None
+tw_result = None
+
+# إذا زوّد المستخدم توكن جديد للبوت، نقوم بحفظه في قاعدة البيانات فوراً
+if custom_token:
+    db.set_setting("bot_token", custom_token)
+    os.environ["BOT_TOKEN"] = custom_token
+    steps.append({"step": "bot_token_saved", "status": "ok", "msg": "تم حفظ وتحديث توكن البوت الجديد في قاعدة البيانات بنجاح ✅"})
+
+token = custom_token or db.get_setting("bot_token", "") or os.environ.get("BOT_TOKEN", "")
+
+# 1. تصميم البطاقة فائقة الدقة إن طُلبت
+if include_card:
+    try:
+        acc = db.get_twitter_account(tw_acc_id) if tw_acc_id else None
+        c_path, c_url = te.render_student_card(
+            title=title,
+            body_text=body_text,
+            account=acc,
+            width=1080,
+            height=1350
+        )
+        card_url = c_url
+        card_path = c_path
+        steps.append({"step": "card_rendered", "status": "ok", "msg": f"تم تصميم البطاقة فائقة الدقة (1080x1350) بنجاح: {c_url}"})
+    except Exception as e:
+        steps.append({"step": "card_rendered", "status": "error", "msg": f"تعذر رسم البطاقة: {e}"})
+        db.log_diagnostic_error("CARD_RENDER_ERROR", "warning", "twitter", "تعذر رسم البطاقة في النشر التجريبي", str(e))
+
+# 2. فحص وتنفيذ النشر على التيليجرام
+if platform in ["telegram", "both"]:
+    dest_channel = custom_channel or (db.get_target_channels() or ["@jhdhhdcj"])[0]
+    if not token or len(token) < 20 or ":" not in token:
+        steps.append({
+            "step": "telegram_publish",
+            "status": "warning",
+            "msg": "لم يتم إرسال المنشور لقناة التيليجرام لعدم وجود توكن فعال من @BotFather. يرجى إدخال التوكن لتفعيل البوت.",
+            "target": dest_channel
+        })
+        tg_result = {"ok": False, "description": "توكن البوت غير مضبوط. احصل على توكن من @BotFather وأدخله هنا."}
+    else:
+        try:
+            full_msg = f"<b>{title}</b>\\n\\n{body_text}\\n\\n#إعلان_تجريبي #جامعة_الملك_سعود #جامعة_نجران"
+            if card_path and os.path.exists(card_path) and include_card:
+                # إرسال صورة مع كابشن
+                import mimetypes
+                boundary = "----WebKitFormBoundaryTelegramTest"
+                with open(card_path, "rb") as f:
+                    file_bytes = f.read()
+                
+                body = []
+                body.extend([f"--{boundary}".encode(), f'Content-Disposition: form-data; name="chat_id"'.encode(), b"", dest_channel.encode()])
+                body.extend([f"--{boundary}".encode(), f'Content-Disposition: form-data; name="caption"'.encode(), b"", full_msg.encode()])
+                body.extend([f"--{boundary}".encode(), f'Content-Disposition: form-data; name="parse_mode"'.encode(), b"", b"HTML"])
+                body.extend([f"--{boundary}".encode(), f'Content-Disposition: form-data; name="photo"; filename="card.png"'.encode(), b"Content-Type: image/png", b"", file_bytes])
+                body.extend([f"--{boundary}--".encode(), b""])
+                payload = b"\\r\\n".join(body)
+                
+                req = urllib.request.Request(
+                    f"https://api.telegram.org/bot{token}/sendPhoto",
+                    data=payload,
+                    headers={"Content-Type": f"multipart/form-data; boundary={boundary}"}
+                )
+            else:
+                post_data = urllib.parse.urlencode({"chat_id": dest_channel, "text": full_msg, "parse_mode": "HTML"}).encode()
+                req = urllib.request.Request(f"https://api.telegram.org/bot{token}/sendMessage", data=post_data)
+            
+            with urllib.request.urlopen(req, timeout=12) as resp:
+                resp_data = json.loads(resp.read().decode("utf-8"))
+                if resp_data.get("ok"):
+                    msg_id = resp_data["result"].get("message_id")
+                    steps.append({"step": "telegram_publish", "status": "ok", "msg": f"تم نشر المنشور التجريبي بنجاح في القناة {dest_channel} (معرف الرسالة: {msg_id}) ✅"})
+                    tg_result = {"ok": True, "message_id": msg_id, "channel": dest_channel}
+                    db.resolve_diagnostics_by_code("TELEGRAM_BOT_TOKEN_MISSING", "telegram")
+                    db.resolve_diagnostics_by_code("CHANNEL_PUBLISH_FAILED", "telegram")
+                else:
+                    err_desc = resp_data.get("description", "خطأ غير معروف من تيليجرام")
+                    steps.append({"step": "telegram_publish", "status": "error", "msg": f"فشل النشر في {dest_channel}: {err_desc}"})
+                    tg_result = {"ok": False, "description": err_desc}
+                    db.log_diagnostic_error("CHANNEL_PUBLISH_FAILED", "warning", "telegram", f"فشل النشر التجريبي في {dest_channel}", err_desc)
+        except urllib.error.HTTPError as he:
+            err_body = he.read().decode("utf-8", errors="ignore")
+            steps.append({"step": "telegram_publish", "status": "error", "msg": f"خطأ من تيليجرام ({he.code}): {err_body}"})
+            tg_result = {"ok": False, "code": he.code, "description": err_body}
+            db.log_diagnostic_error("CHANNEL_PUBLISH_FAILED", "warning", "telegram", f"خطأ اتصال بتيليجرام ({he.code})", err_body)
+        except Exception as e:
+            steps.append({"step": "telegram_publish", "status": "error", "msg": f"تعذر الاتصال بخوادم تيليجرام: {e}"})
+            tg_result = {"ok": False, "description": str(e)}
+
+# 3. فحص وتنفيذ محاكاة تويتر
+if platform in ["twitter", "both"]:
+    tw_acc = db.get_twitter_account(tw_acc_id) if tw_acc_id else (db.get_twitter_accounts() or [{}])[0]
+    acc_name = tw_acc.get("username", "@Najran_Univ")
+    univ_name = tw_acc.get("university", "جامعة نجران")
+    tags = tw_acc.get("custom_hashtags", "#جامعة_نجران")
+    
+    tw_text = f"{title}\\n\\n{body_text[:180]}...\\n\\n{tags}"
+    steps.append({
+        "step": "twitter_publish",
+        "status": "ok",
+        "msg": f"تم تجهيز التغريدة لحساب {acc_name} ({univ_name}) بنجاح مع ربط البطاقة المصممة 🐦",
+        "account": acc_name,
+        "preview": tw_text
+    })
+    tw_result = {
+        "ok": True,
+        "account": acc_name,
+        "university": univ_name,
+        "tweet_text": tw_text,
+        "card_url": card_url,
+        "status": tw_acc.get("status", "valid")
+    }
+
+# توثيق في سجل التدقيق
+try:
+    db.add_audit_log(
+        status="published" if (tg_result and tg_result.get("ok")) else "simulated",
+        title=title,
+        raw_content=body_text,
+        final_content=title + "\\n" + body_text,
+        source_type="test_publish",
+        source_origin="لوحة التحكم - النشر التجريبي المباشر",
+        target_destination=custom_channel or "قناة النشر الافتراضية",
+        target_univ="تجريبي",
+        media_type="photo" if card_url else "text",
+        media_url=card_url
+    )
+except Exception:
+    pass
+
+res = {
+    "success": True,
+    "steps": steps,
+    "card_url": card_url,
+    "telegram": tg_result,
+    "twitter": tw_result
+}
+print(json.dumps(res, ensure_ascii=False))
+`;
+
+    const payload = JSON.stringify({
+      platform,
+      title,
+      bodyText,
+      targetChannel,
+      twitterAccountId,
+      botToken,
+      includeCard
+    });
+
+    const out = execFileSync('python3', ['-c', pyScript, payload], { timeout: 25000 }).toString().trim();
+    res.json(JSON.parse(out || '{"success":true}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
 // 4.1 Get Unified Full Config
 app.get('/api/config', (_req: Request, res: Response) => {
   try {

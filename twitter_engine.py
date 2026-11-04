@@ -156,13 +156,12 @@ def render_student_card(
     # رسم البطاقة الأساسية بزوايا دائرية
     draw.rounded_rectangle(card_box, radius=36, fill=card_bg, outline=border_color, width=2)
 
-    # رسم شريط التمييز العلوي الجذاب
-    accent_bar_h = 16
+    # رسم شريط التمييز العلوي الجذاب (بقياسات هندسية آمنة ومتوافقة مع بايثون 3.14 وPillow 11+)
+    accent_bar_h = 24
     draw.rounded_rectangle(
-        (margin, margin, width - margin, margin + accent_bar_h + 10),
-        radius=36, fill=accent_rgb
+        (margin, margin, width - margin, margin + accent_bar_h),
+        radius=16, fill=accent_rgb
     )
-    draw.rectangle((margin, margin + 20, width - margin, margin + accent_bar_h), fill=accent_rgb)
 
     # دمج شعار الجامعة / اللوجو كعلامة مائية خفيفة
     logo_file = Path(acc.get("logo_path") or DEFAULT_LOGO)

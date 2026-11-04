@@ -25,6 +25,7 @@ import { PostAuditLogPanel } from './components/PostAuditLogPanel.tsx';
 import { InteractiveIdeaBoard } from './components/InteractiveIdeaBoard.tsx';
 import { TwitterIntegrationPanel } from './components/TwitterIntegrationPanel.tsx';
 import { KnowledgeIntelPanel } from './components/KnowledgeIntelPanel.tsx';
+import { DiagnosticsAndTestPublishPanel } from './components/DiagnosticsAndTestPublishPanel.tsx';
 import {
   Shield,
   Sparkles,
@@ -246,7 +247,7 @@ export default function App() {
   });
 
   const [logs, setLogs] = useState<ActivityLogItem[]>(INITIAL_LOGS);
-  const [activeTab, setActiveTab] = useState<'all' | 'credentials' | 'userbot' | 'chat' | 'github' | 'sources' | 'ai' | 'ad' | 'sim' | 'code' | 'guide' | 'logs' | 'audit' | 'ideas' | 'twitter' | 'knowledge'>('credentials');
+  const [activeTab, setActiveTab] = useState<'all' | 'diagnostics' | 'credentials' | 'userbot' | 'chat' | 'github' | 'sources' | 'ai' | 'ad' | 'sim' | 'code' | 'guide' | 'logs' | 'audit' | 'ideas' | 'twitter' | 'knowledge'>('diagnostics');
   const [isLicenseOpen, setIsLicenseOpen] = useState(false);
   const [isTesterModalOpen, setIsTesterModalOpen] = useState(false);
   const [isTestingBot, setIsTestingBot] = useState(false);
@@ -779,6 +780,18 @@ export default function App() {
               عرض الكل
             </button>
             <button
+              onClick={() => setActiveTab('diagnostics')}
+              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-t-xl font-bold transition-all shrink-0 ${
+                activeTab === 'diagnostics'
+                  ? 'bg-slate-800 text-white border-b-2 border-rose-500 shadow-sm'
+                  : 'text-rose-400 hover:text-white'
+              }`}
+            >
+              <AlertCircle className="w-3.5 h-3.5 text-rose-400" />
+              <span className="font-extrabold text-rose-300">مركز التشخيص والنشر التجريبي 🛠️</span>
+              <span className="px-1.5 py-0.2 text-[10px] bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-full font-mono">حي</span>
+            </button>
+            <button
               onClick={() => setActiveTab('credentials')}
               className={`flex items-center gap-1.5 px-3.5 py-2 rounded-t-xl font-bold transition-all shrink-0 ${
                 activeTab === 'credentials'
@@ -939,6 +952,20 @@ export default function App() {
           <div className="pointer-events-none absolute left-0 top-0 bottom-2 w-8 bg-gradient-to-r from-slate-950 to-transparent sm:hidden"></div>
           <div className="pointer-events-none absolute right-0 top-0 bottom-2 w-8 bg-gradient-to-l from-slate-950 to-transparent sm:hidden"></div>
         </div>
+
+        {/* 0. Live System Diagnostics & Instant Test Publishing Engine */}
+        {(activeTab === 'all' || activeTab === 'diagnostics') && (
+          <section id="diagnostics-section">
+            <DiagnosticsAndTestPublishPanel
+              currentBotToken={config.botToken}
+              onBotTokenUpdated={(tok) => {
+                setConfig((prev) => ({ ...prev, botToken: tok }));
+                handleSaveConfigDirectly({ ...config, botToken: tok });
+              }}
+              defaultChannel={config.targetChannels?.[0] || '@jhdhhdcj'}
+            />
+          </section>
+        )}
 
         {/* UserBot & Channel Scraping (Telethon / Pyrogram Session) */}
         {(activeTab === 'all' || activeTab === 'userbot') && (

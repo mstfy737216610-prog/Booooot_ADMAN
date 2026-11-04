@@ -31,8 +31,8 @@ if [ ! -d "$HOME/storage/downloads" ] && [ ! -d "/sdcard/Download" ]; then
 fi
 
 # 3. سحب التحديثات من GitHub
-echo -e "${YELLOW}📡 فحص وسحب أحدث التحديثات من GitHub...${NC}"
-git pull origin master 2>/dev/null || true
+echo -e "${YELLOW}📡 فحص وسحب أحدث التحديثات من GitHub (فرع main)...${NC}"
+git pull origin main 2>/dev/null || git pull origin master 2>/dev/null || true
 
 # 4. بناء ومزامنة حزمة «ملف_النشر» في وحدة التخزين الداخلية (Download/ملف_النشر)
 echo -e "\n${PURPLE}📂 مزامنة وإنشاء هيكل «ملف_النشر» في مجلد التنزيلات بالهاتف:${NC}"

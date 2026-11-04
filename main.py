@@ -43,8 +43,11 @@ import database as db
 
 # تحميل متغيرات البيئة
 try:
+    import warnings
     from dotenv import load_dotenv
-    load_dotenv()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        load_dotenv(override=False)
 except Exception:
     pass
 
@@ -2848,38 +2851,40 @@ class StandaloneTelegramEducationalBot:
                     post_queue.task_done()
                     continue
 
-                # 2. فحص الفلترة الصارمة للشأن الطلابي (إسقاط أي حشو سياسي أو اقتصادي خارجي)
-                is_rel, rel_reason = is_relevant_student_news(raw_text, target_univ_name)
-                if not is_rel and not has_media_item:
-                    logger.info(f"🛡️ [فلترة الشأن الطلابي] تم استبعاد خبر غير طلابي أو حشو سياسي/اقتصادي ({rel_reason}): {(raw_text[:50] if raw_text else '')}...")
-                    db.add_audit_log(
-                        status="rejected",
-                        title=first_line,
-                        raw_content=raw_text,
-                        rejection_reason=f"محتوى غير أكاديمي أو خارج الشأن الطلابي ({rel_reason})",
-                        source_type="crawler",
-                        target_destination="مصفاة الشأن الطلابي",
-                        target_univ=target_univ_name or "عام"
-                    )
-                    post_queue.task_done()
-                    continue
+                # 2. فحص الفلترة الصارمة للشأن الطلابي (إسقاط أي حشو سياسي أو اقتصادي خارجي للمصادر الآلية فقط)
+                is_direct_or_forced = (task_type == "direct_post" or task.get("force_publish") is True)
+                if not is_direct_or_forced:
+                    is_rel, rel_reason = is_relevant_student_news(raw_text, target_univ_name)
+                    if not is_rel and not has_media_item:
+                        logger.info(f"🛡️ [فلترة الشأن الطلابي] تم استبعاد خبر غير طلابي أو حشو سياسي/اقتصادي ({rel_reason}): {(raw_text[:50] if raw_text else '')}...")
+                        db.add_audit_log(
+                            status="rejected",
+                            title=first_line,
+                            raw_content=raw_text,
+                            rejection_reason=f"محتوى غير أكاديمي أو خارج الشأن الطلابي ({rel_reason})",
+                            source_type="crawler",
+                            target_destination="مصفاة الشأن الطلابي",
+                            target_univ=target_univ_name or "عام"
+                        )
+                        post_queue.task_done()
+                        continue
 
                 # 3. فحص نظام منع التكرار الذكي (Deduplication System خلال 24 ساعة)
-                is_dup, past_story, score, reason = db.check_smart_duplicate(first_line, raw_text, target_univ=target_univ_name, hours=24)
-
-                if is_dup:
-                    logger.info(f"🛡️ [منع التكرار الذكي] تم تخطي المنشور ({reason} تطابق {score*100:.1f}%) لوجود خبر مماثل نُشر خلال الـ 24 ساعة الماضية: {first_line[:40]}")
-                    db.add_audit_log(
-                        status="rejected",
-                        title=first_line,
-                        raw_content=raw_text,
-                        rejection_reason=f"تكرار محتوى مماثل نُشر خلال 24 ساعة الماضية ({reason} - تطابق {score*100:.1f}%)",
-                        source_type="crawler",
-                        target_destination="مانع التكرار الذكي",
-                        target_univ=target_univ_name or "عام"
-                    )
-                    post_queue.task_done()
-                    continue
+                if not is_direct_or_forced:
+                    is_dup, past_story, score, reason = db.check_smart_duplicate(first_line, raw_text, target_univ=target_univ_name, hours=24)
+                    if is_dup:
+                        logger.info(f"🛡️ [منع التكرار الذكي] تم تخطي المنشور ({reason} تطابق {score*100:.1f}%) لوجود خبر مماثل نُشر خلال الـ 24 ساعة الماضية: {first_line[:40]}")
+                        db.add_audit_log(
+                            status="rejected",
+                            title=first_line,
+                            raw_content=raw_text,
+                            rejection_reason=f"تكرار محتوى مماثل نُشر خلال 24 ساعة الماضية ({reason} - تطابق {score*100:.1f}%)",
+                            source_type="crawler",
+                            target_destination="مانع التكرار الذكي",
+                            target_univ=target_univ_name or "عام"
+                        )
+                        post_queue.task_done()
+                        continue
 
                 # 4. تفعيل محرك السحب الذكي (Smart Scraper) للروابط المكتشفة لاستخراج الصور الحقيقية فقط
                 ext_links = self.extract_external_links(raw_text, target_univ_name)
@@ -2914,7 +2919,15 @@ class StandaloneTelegramEducationalBot:
                 curr_tok = self.get_current_token()
                 if not curr_tok or curr_tok in _revoked:
                     logger.info("ℹ️ محرك النشر بانتظار إدخال توكن جديد ومصرح به من @BotFather لمتابعة النشر.")
-                    time.sleep(10)
+                    db.log_diagnostic_error(
+                        error_code="TELEGRAM_BOT_TOKEN_MISSING",
+                        severity="warning",
+                        component="telegram",
+                        title="توكن بوت التيليجرام غير مضبوط",
+                        message="توقف نشر الرسالة لعدم وجود توكن فعال من @BotFather.",
+                        fix_action="ادخل التوكن من لوحة التحكم أو استخدم زر النشر التجريبي مع إدخال التوكن."
+                    )
+                    time.sleep(3)
                     post_queue.task_done()
                     continue
 
@@ -2946,6 +2959,18 @@ class StandaloneTelegramEducationalBot:
                     ok = res.get("ok", False)
                     desc = res.get("description", "")
                     db.record_channel_publish_result(ch, ok, desc)
+                    if not ok and desc:
+                        db.log_diagnostic_error(
+                            error_code="CHANNEL_PUBLISH_FAILED",
+                            severity="warning",
+                            component="telegram",
+                            title=f"تعذر النشر في القناة {ch}",
+                            message=desc,
+                            fix_action="تأكد من إضافة البوت كمشرف (Admin) في القناة ومنحه صلاحية إرسال الرسائل والوسائط.",
+                            context_data={"channel": ch, "error": desc}
+                        )
+                    elif ok:
+                        db.resolve_diagnostics_by_code("CHANNEL_PUBLISH_FAILED", "telegram")
                     if ok:
                         success_targets.append(ch)
                     else:
