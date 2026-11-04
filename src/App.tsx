@@ -21,6 +21,10 @@ import { LicenseRightsModal } from './components/LicenseRightsModal.tsx';
 import { BotTesterModal } from './components/BotTesterModal.tsx';
 import { UserBotPanel } from './components/UserBotPanel.tsx';
 import { ChatPanel } from './components/ChatPanel.tsx';
+import { PostAuditLogPanel } from './components/PostAuditLogPanel.tsx';
+import { InteractiveIdeaBoard } from './components/InteractiveIdeaBoard.tsx';
+import { TwitterIntegrationPanel } from './components/TwitterIntegrationPanel.tsx';
+import { KnowledgeIntelPanel } from './components/KnowledgeIntelPanel.tsx';
 import {
   Shield,
   Sparkles,
@@ -40,6 +44,9 @@ import {
   Save,
   RefreshCw,
   Database,
+  FileText,
+  Lightbulb,
+  Twitter,
 } from 'lucide-react';
 
 const STORAGE_KEY_CONFIG = 'tg_educational_config_v2';
@@ -239,7 +246,7 @@ export default function App() {
   });
 
   const [logs, setLogs] = useState<ActivityLogItem[]>(INITIAL_LOGS);
-  const [activeTab, setActiveTab] = useState<'all' | 'credentials' | 'userbot' | 'chat' | 'github' | 'sources' | 'ai' | 'ad' | 'sim' | 'code' | 'guide' | 'logs'>('credentials');
+  const [activeTab, setActiveTab] = useState<'all' | 'credentials' | 'userbot' | 'chat' | 'github' | 'sources' | 'ai' | 'ad' | 'sim' | 'code' | 'guide' | 'logs' | 'audit' | 'ideas' | 'twitter' | 'knowledge'>('credentials');
   const [isLicenseOpen, setIsLicenseOpen] = useState(false);
   const [isTesterModalOpen, setIsTesterModalOpen] = useState(false);
   const [isTestingBot, setIsTestingBot] = useState(false);
@@ -873,6 +880,50 @@ export default function App() {
               <span>السكريبتات وملفات الإعدادات</span>
             </button>
             <button
+              onClick={() => setActiveTab('audit')}
+              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-t-xl font-bold transition-all shrink-0 ${
+                activeTab === 'audit'
+                  ? 'bg-slate-800 text-white border-b-2 border-emerald-500'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <FileText className="w-3.5 h-3.5 text-emerald-400" />
+              <span>سجل الرقابة والمنشورات (Audit Log)</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('ideas')}
+              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-t-xl font-bold transition-all shrink-0 ${
+                activeTab === 'ideas'
+                  ? 'bg-slate-800 text-white border-b-2 border-amber-500'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Lightbulb className="w-3.5 h-3.5 text-amber-400" />
+              <span>بنك الأفكار والتغذية (Ideas)</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('twitter')}
+              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-t-xl font-bold transition-all shrink-0 ${
+                activeTab === 'twitter'
+                  ? 'bg-slate-800 text-white border-b-2 border-sky-400'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Twitter className="w-3.5 h-3.5 text-sky-400" />
+              <span>نشر تويتر (X Publishing)</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('knowledge')}
+              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-t-xl font-bold transition-all shrink-0 ${
+                activeTab === 'knowledge'
+                  ? 'bg-slate-800 text-white border-b-2 border-purple-400'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Brain className="w-3.5 h-3.5 text-purple-400" />
+              <span>الربط المعرفي والمنافسة (Intel)</span>
+            </button>
+            <button
               onClick={() => setActiveTab('logs')}
               className={`flex items-center gap-1.5 px-3.5 py-2 rounded-t-xl font-bold transition-all shrink-0 ${
                 activeTab === 'logs'
@@ -1001,7 +1052,35 @@ export default function App() {
           </section>
         )}
 
-        {/* 7. Activity Logs */}
+        {/* 7. Post Audit & Status Log (Published vs Rejected) */}
+        {(activeTab === 'all' || activeTab === 'audit') && (
+          <section id="audit-section">
+            <PostAuditLogPanel />
+          </section>
+        )}
+
+        {/* 8. Interactive Future Ideas & Cognitive Memory Board */}
+        {(activeTab === 'all' || activeTab === 'ideas') && (
+          <section id="ideas-section">
+            <InteractiveIdeaBoard />
+          </section>
+        )}
+
+        {/* 9. Independent Dual Twitter (X) Publishing */}
+        {(activeTab === 'all' || activeTab === 'twitter') && (
+          <section id="twitter-section">
+            <TwitterIntegrationPanel />
+          </section>
+        )}
+
+        {/* 10. Information Linking, Competitive Intel & Student Centric Learning */}
+        {(activeTab === 'all' || activeTab === 'knowledge') && (
+          <section id="knowledge-section">
+            <KnowledgeIntelPanel />
+          </section>
+        )}
+
+        {/* 11. Activity Logs */}
         {(activeTab === 'all' || activeTab === 'logs') && (
           <section id="logs-section">
             <ActivityLogs logs={logs} onClearLogs={() => setLogs([])} />

@@ -355,7 +355,341 @@ print(json.dumps({"success": True, **res}))
     res.status(500).json({ success: false, error: message });
   }
 });
+// ==========================================
+// 3.2 Comprehensive Post Audit Log API
+// ==========================================
+app.get('/api/audit-logs', (req: Request, res: Response) => {
+  try {
+    const limit = Number(req.query.limit) || 100;
+    const offset = Number(req.query.offset) || 0;
+    const status = (req.query.status as string) || 'all';
+    const search = (req.query.search as string) || '';
+    const univ = (req.query.univ as string) || 'all';
 
+    const pyScript = `
+import database as db, json, sys
+limit = int(sys.argv[1])
+offset = int(sys.argv[2])
+status = sys.argv[3]
+search = sys.argv[4]
+univ = sys.argv[5]
+
+logs = db.get_audit_logs(
+    limit=limit,
+    offset=offset,
+    status=status if status != 'all' else None,
+    search=search if search else None,
+    univ=univ if univ != 'all' else None
+)
+counts = db.get_audit_log_counts()
+print(json.dumps({"success": True, "logs": logs, "counts": counts}, ensure_ascii=False))
+`;
+    const out = execFileSync('python3', ['-c', pyScript, String(limit), String(offset), status, search, univ], { timeout: 7000 }).toString().trim();
+    res.json(JSON.parse(out || '{"success":true,"logs":[],"counts":{"total":0,"published":0,"rejected":0}}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+app.post('/api/audit-logs/delete', (req: Request, res: Response) => {
+  try {
+    const { id } = req.body;
+    if (!id) {
+      res.status(400).json({ success: false, error: "معرف السجل مطلوب" });
+      return;
+    }
+    const pyScript = `
+import database as db, sys, json
+ok = db.delete_audit_log(int(sys.argv[1]))
+print(json.dumps({"success": ok}))
+`;
+    const out = execFileSync('python3', ['-c', pyScript, String(id)], { timeout: 5000 }).toString().trim();
+    res.json(JSON.parse(out || '{"success":true}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+app.post('/api/audit-logs/clear', (req: Request, res: Response) => {
+  try {
+    const { status = 'all' } = req.body;
+    const pyScript = `
+import database as db, sys, json
+ok = db.clear_audit_logs(sys.argv[1] if sys.argv[1] != 'all' else None)
+print(json.dumps({"success": ok}))
+`;
+    const out = execFileSync('python3', ['-c', pyScript, status], { timeout: 5000 }).toString().trim();
+    res.json(JSON.parse(out || '{"success":true}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+app.post('/api/audit-logs/convert-to-idea', (req: Request, res: Response) => {
+  try {
+    const { id, notes = '' } = req.body;
+    if (!id) {
+      res.status(400).json({ success: false, error: "معرف المنشور مطلوب للتحويل" });
+      return;
+    }
+    const pyScript = `
+import database as db, sys, json
+idea_id = db.convert_audit_to_idea(int(sys.argv[1]), sys.argv[2])
+print(json.dumps({"success": bool(idea_id), "idea_id": idea_id}))
+`;
+    const out = execFileSync('python3', ['-c', pyScript, String(id), notes], { timeout: 5000 }).toString().trim();
+    res.json(JSON.parse(out || '{"success":true}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+// ==========================================
+// 3.3 Interactive Future Ideas & Feedback API
+// ==========================================
+app.get('/api/ideas', (req: Request, res: Response) => {
+  try {
+    const status = (req.query.status as string) || 'all';
+    const search = (req.query.search as string) || '';
+    const univId = (req.query.univId as string) || 'all';
+
+    const pyScript = `
+import database as db, json, sys
+status = sys.argv[1]
+search = sys.argv[2]
+univ_id = sys.argv[3]
+ideas = db.get_future_ideas(
+    status=status if status != 'all' else None,
+    search=search if search else None,
+    univ_id=univ_id if univ_id != 'all' else None
+)
+print(json.dumps({"success": True, "ideas": ideas}, ensure_ascii=False))
+`;
+    const out = execFileSync('python3', ['-c', pyScript, status, search, univId], { timeout: 6000 }).toString().trim();
+    res.json(JSON.parse(out || '{"success":true,"ideas":[]}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+app.post('/api/ideas', (req: Request, res: Response) => {
+  try {
+    const {
+      title,
+      description = '',
+      operationalNotes = '',
+      status = 'new',
+      priority = 'medium',
+      tags = [],
+      universityId = '',
+      universityName = '',
+      sourcePostId = null
+    } = req.body;
+
+    if (!title || !title.trim()) {
+      res.status(400).json({ success: false, error: "عنوان الفكرة مطلوب" });
+      return;
+    }
+
+    const pyScript = `
+import database as db, json, sys
+data = json.loads(sys.argv[1])
+idea_id = db.add_future_idea(
+    title=data.get("title", ""),
+    description=data.get("description", ""),
+    operational_notes=data.get("operationalNotes", ""),
+    status=data.get("status", "new"),
+    priority=data.get("priority", "medium"),
+    tags=data.get("tags", []),
+    university_id=data.get("universityId") or None,
+    university_name=data.get("universityName") or None,
+    source_post_id=data.get("sourcePostId") or None
+)
+print(json.dumps({"success": idea_id > 0, "id": idea_id}))
+`;
+    const payload = JSON.stringify({ title, description, operationalNotes, status, priority, tags, universityId, universityName, sourcePostId });
+    const out = execFileSync('python3', ['-c', pyScript, payload], { timeout: 6000 }).toString().trim();
+    res.json(JSON.parse(out || '{"success":true}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+app.put('/api/ideas/:id', (req: Request, res: Response) => {
+  try {
+    const ideaId = Number(req.params.id);
+    const updates = req.body;
+    const pyScript = `
+import database as db, json, sys
+idea_id = int(sys.argv[1])
+data = json.loads(sys.argv[2])
+kwargs = {}
+for k in ["title", "description", "operational_notes", "status", "priority", "tags", "university_id", "university_name", "twitter_ready", "telegram_ready"]:
+    if k == "operational_notes" and "operationalNotes" in data:
+        kwargs[k] = data["operationalNotes"]
+    elif k == "university_id" and "universityId" in data:
+        kwargs[k] = data["universityId"]
+    elif k == "university_name" and "universityName" in data:
+        kwargs[k] = data["universityName"]
+    elif k in data:
+        kwargs[k] = data[k]
+ok = db.update_future_idea(idea_id, **kwargs)
+print(json.dumps({"success": ok}))
+`;
+    const out = execFileSync('python3', ['-c', pyScript, String(ideaId), JSON.stringify(updates)], { timeout: 6000 }).toString().trim();
+    res.json(JSON.parse(out || '{"success":true}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+app.delete('/api/ideas/:id', (req: Request, res: Response) => {
+  try {
+    const ideaId = Number(req.params.id);
+    const pyScript = `
+import database as db, sys, json
+ok = db.delete_future_idea(int(sys.argv[1]))
+print(json.dumps({"success": ok}))
+`;
+    const out = execFileSync('python3', ['-c', pyScript, String(ideaId)], { timeout: 5000 }).toString().trim();
+    res.json(JSON.parse(out || '{"success":true}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+app.post('/api/ideas/:id/status', (req: Request, res: Response) => {
+  try {
+    const ideaId = Number(req.params.id);
+    const { status } = req.body;
+    if (!status) {
+      res.status(400).json({ success: false, error: "الحالة الجديدة مطلوبة" });
+      return;
+    }
+    const pyScript = `
+import database as db, sys, json
+ok = db.move_idea_status(int(sys.argv[1]), sys.argv[2])
+print(json.dumps({"success": ok}))
+`;
+    const out = execFileSync('python3', ['-c', pyScript, String(ideaId), status], { timeout: 5000 }).toString().trim();
+    res.json(JSON.parse(out || '{"success":true}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+app.post('/api/ideas/:id/publish', (req: Request, res: Response) => {
+  try {
+    const ideaId = Number(req.params.id);
+    const { platform = 'both', targetChannels = [] } = req.body;
+
+    const pyScript = `
+import database as db, json, sys, main
+idea_id = int(sys.argv[1])
+platform = sys.argv[2]
+targets = json.loads(sys.argv[3])
+
+ideas = db.get_future_ideas()
+target_idea = next((i for i in ideas if i["id"] == idea_id), None)
+if not target_idea:
+    print(json.dumps({"success": False, "error": "الفكرة غير موجودة"}))
+    sys.exit(0)
+
+text_content = f"{target_idea['title']}\\n\\n{target_idea.get('description', '')}".strip()
+u_name = target_idea.get("university_name") or target_idea.get("university_id")
+
+if not targets:
+    targets = db.get_target_channels() or ["@jhdhhdcj"]
+
+main.post_queue.put({
+    "type": "direct_post",
+    "text": text_content,
+    "photo": None,
+    "targets": targets,
+    "target_univ": u_name,
+    "user_id": None
+})
+
+db.move_idea_status(idea_id, "published")
+print(json.dumps({"success": True, "message": "تم تحويل الفكرة بنجاح إلى طابور النشر وتحديث حالتها إلى منشورة!"}))
+`;
+    const out = execFileSync('python3', ['-c', pyScript, String(ideaId), platform, JSON.stringify(targetChannels)], { timeout: 8000 }).toString().trim();
+    res.json(JSON.parse(out || '{"success":true}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+// ==========================================
+// 3.4 Twitter (X) Publishing Integration API
+// ==========================================
+app.get('/api/twitter/settings', (_req: Request, res: Response) => {
+  try {
+    const pyScript = `
+import database as db, json
+sett = db.get_twitter_settings()
+print(json.dumps({"success": True, "settings": sett}, ensure_ascii=False))
+`;
+    const out = execFileSync('python3', ['-c', pyScript], { timeout: 5000 }).toString().trim();
+    res.json(JSON.parse(out || '{"success":true,"settings":{}}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+app.post('/api/twitter/settings', (req: Request, res: Response) => {
+  try {
+    const settings = req.body;
+    const pyScript = `
+import database as db, json, sys
+sett = json.loads(sys.argv[1])
+ok = db.save_twitter_settings(sett)
+print(json.dumps({"success": ok}))
+`;
+    const out = execFileSync('python3', ['-c', pyScript, JSON.stringify(settings)], { timeout: 5000 }).toString().trim();
+    res.json(JSON.parse(out || '{"success":true}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+app.post('/api/twitter/test-tweet', (req: Request, res: Response) => {
+  try {
+    const { text, targetUniv = '' } = req.body;
+    if (!text || !text.trim()) {
+      res.status(400).json({ success: false, error: "نص التغريدة مطلوب للاختبار" });
+      return;
+    }
+
+    const pyScript = `
+import database as db, json, sys, main
+text = sys.argv[1]
+u_name = sys.argv[2]
+
+bot = main.bot_instance or main.PublisherBot()
+formatted = bot.format_post_for_twitter(text, u_name if u_name else None)
+res = bot.publish_to_twitter(formatted)
+print(json.dumps({"success": True, "formattedTweet": formatted, "result": res}, ensure_ascii=False))
+`;
+    const out = execFileSync('python3', ['-c', pyScript, text, targetUniv], { timeout: 8000 }).toString().trim();
+    res.json(JSON.parse(out || '{"success":true}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
 
 // 4.1 Get Unified Full Config
 app.get('/api/config', (_req: Request, res: Response) => {
@@ -856,7 +1190,49 @@ print(f"CRAWL_TRIGGERED:{u['name'] if u else 'NONE'}")
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
-    res.status(500).json({ error: message });
+    res.status(500).json({ success: false, error: message });
+  }
+});
+// 5.3.1 University Knowledge Base & Competitive Intel
+app.get('/api/university/knowledge', (_req: Request, res: Response) => {
+  try {
+    const pyScript = `
+import database as db, json
+k = db.get_all_university_knowledge()
+print(json.dumps({"success": True, "knowledge": k}, ensure_ascii=False))
+`;
+    const out = execFileSync('python3', ['-c', pyScript], { timeout: 6000 }).toString().trim();
+    res.json(JSON.parse(out || '{"success":true,"knowledge":[]}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+app.post('/api/university/learn', (req: Request, res: Response) => {
+  try {
+    const { id } = req.body;
+    const pyScript = `
+import database as db, main, json, sys
+univ_id = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] != 'all' else None
+bot = main.bot_instance or main.PublisherBot()
+if univ_id:
+    res = bot.learn_university_identity_from_sources(univ_id)
+else:
+    bot.learn_all_universities_identity_job()
+    res = "تم فحص كافة مصادر الجامعات واستخلاص هويتها الأكاديمية بنجاح"
+print(json.dumps({"success": True, "result": res}))
+`;
+    execFile('python3', ['-c', pyScript, id || 'all'], { timeout: 35000 }, (_err, stdout) => {
+      try {
+        res.json(JSON.parse(stdout?.trim() || '{"success":true}'));
+      } catch {
+        res.json({ success: true, message: "تم إطلاق فحص المصادر وتعلّم الهوية بنجاح" });
+      }
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
   }
 });
 

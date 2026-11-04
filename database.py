@@ -194,24 +194,220 @@ def init_db():
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_event_logs_time ON event_logs (timestamp DESC)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_event_logs_type ON event_logs (type)")
 
-            # بذر سجلات أولية إذا كان الجدول فارغاً
-            cursor.execute("SELECT COUNT(*) as c FROM event_logs")
+            # 11. جدول سجل التدقيق الشامل للمنشورات المقبولة والمرفوضة (Comprehensive Post Audit Log)
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS post_audit_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                post_id TEXT,
+                status TEXT DEFAULT 'published',
+                title TEXT,
+                raw_content TEXT,
+                final_content TEXT,
+                rejection_reason TEXT,
+                source_type TEXT DEFAULT 'telegram',
+                source_origin TEXT,
+                target_destination TEXT,
+                target_univ TEXT,
+                media_type TEXT DEFAULT 'text',
+                media_url TEXT,
+                created_at TEXT,
+                published_at TEXT
+            )
+            """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_status ON post_audit_log (status)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_time ON post_audit_log (created_at DESC)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_univ ON post_audit_log (target_univ)")
+
+            # 12. جدول ذاكرة الأفكار والتغذية الراجعة الذكية (Feedback & Future Ideas Board)
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS future_ideas (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                description TEXT,
+                operational_notes TEXT,
+                status TEXT DEFAULT 'new',
+                priority TEXT DEFAULT 'medium',
+                tags TEXT DEFAULT '[]',
+                university_id TEXT,
+                university_name TEXT,
+                source_post_id INTEGER,
+                twitter_ready INTEGER DEFAULT 0,
+                telegram_ready INTEGER DEFAULT 0,
+                created_at TEXT,
+                updated_at TEXT
+            )
+            """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_ideas_status ON future_ideas (status)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_ideas_time ON future_ideas (created_at DESC)")
+
+            # 13. جدول إعدادات النشر على منصة تويتر (X Publishing Settings)
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS twitter_publishing_settings (
+                key TEXT PRIMARY KEY,
+                enabled INTEGER DEFAULT 0,
+                api_key TEXT DEFAULT '',
+                api_secret TEXT DEFAULT '',
+                access_token TEXT DEFAULT '',
+                access_secret TEXT DEFAULT '',
+                bearer_token TEXT DEFAULT '',
+                auto_publish INTEGER DEFAULT 0,
+                auto_thread INTEGER DEFAULT 0,
+                max_chars INTEGER DEFAULT 280,
+                custom_hashtags TEXT DEFAULT '#جامعة #طلاب',
+                last_tweet_id TEXT DEFAULT '',
+                updated_at TEXT
+            )
+            """)
+
+            # تهيئة الإعدادات الافتراضية لتويتر
+            cursor.execute("SELECT COUNT(*) as c FROM twitter_publishing_settings WHERE key = 'main_config'")
             if cursor.fetchone()["c"] == 0:
                 now_str = datetime.utcnow().isoformat()
-                initial_seed = [
-                    ("success", "تم الاتصال بالبوت وتوثيق الآدمن @M_S_F_G (7607633343)", "Telegram API", "Bot Worker", "تم تعيين المشرف الرئيسي وتنشيط الاستماع للأوامر والأخبار.", "التحقق من توكن البوت والآدمن"),
-                    ("success", "تم تهيئة مصادر قنوات تيليجرام للجامعات وربطها بقنوات النشر", "@Next_Plus_BOT0", "@jhdhhdcj", "تم بدء المراقبة والزحف الذكي للمنشورات الجامعية.", "ربط المصادر المعتمدة"),
-                    ("filtered", "استبعاد إعلان تجاري غير طلابي من النشر لحماية القناة", "قناة خارجية", "محرك الفلترة", "تم استبعاد الخبر لأنه إعلان تجاري أو خدمات مدفوعة.", "مصفاة الشأن الطلابي"),
-                    ("info", "تشغيل المحرك الأكاديمي الداخلي للردود الذكية وصياغة الأخبار", "Academic Core", "Telegram Bot", "المحرك نشط لتوفير ردود فورية على استفسارات الطلاب ونسب الغياب.", "المحرك الأكاديمي الذكي")
+                cursor.execute("""
+                INSERT INTO twitter_publishing_settings (key, enabled, auto_publish, auto_thread, max_chars, custom_hashtags, updated_at)
+                VALUES ('main_config', 0, 0, 0, 280, '#أخبار_الجامعات #القبول_والتسجيل', ?)
+                """, (now_str,))
+
+            # بذر سجلات تدقيق أولية إذا كان الجدول فارغاً
+            cursor.execute("SELECT COUNT(*) as c FROM post_audit_log")
+            if cursor.fetchone()["c"] == 0:
+                now_str = datetime.utcnow().isoformat()
+                yesterday_str = (datetime.utcnow() - timedelta(hours=6)).isoformat()
+                two_days_str = (datetime.utcnow() - timedelta(days=1)).isoformat()
+
+                seed_audit = [
+                    (
+                        "published",
+                        "إعلان مواعيد تسجيل المقررات والحذف والإضافة للفصل الدراسي الثاني",
+                        "تعلن عمادة القبول والتسجيل عن فتح بوابات النظام الأكاديمي للطلاب والطالبات لتسجيل المقررات وإجراء الحذف والإضافة وفق الخطة المعتمدة.",
+                        "📌 <b>إعلان أكاديمي رسمي - جامعة الملك سعود</b>\n\n• تعلن عمادة شؤون القبول والتسجيل عن بدء فترة الحذف والإضافة للمقررات الدراسية.\n• المواعيد محددة حسب المستويات والوحدات المعتمدة عبر البوابة الإلكترونية.\n\n🔗 رابط البوابة المعتمدة:\nhttps://edugate.ksu.edu.sa\n\nدعواتنا لكم بفصل دراسي موفق 🤲",
+                        "",
+                        "telegram",
+                        "@KSU_News",
+                        "@jhdhhdcj",
+                        "جامعة الملك سعود",
+                        "text",
+                        None,
+                        now_str,
+                        now_str
+                    ),
+                    (
+                        "published",
+                        "دليل استحقاق المكافأة الجامعية وشروط الصرف الأكاديمي للطلبة",
+                        "تفاصيل الشروط والضوابط المعتمدة لصرف المكافأة الشهرية ومواعيد الإيداع للطلبة المنتظمين.",
+                        "📌 <b>تنويه أكاديمي هام | جامعة نجران</b>\n\n▫️ يسر عمادة شؤون الطلاب توضيح جدول إيداع المكافآت الجامعية وشروط الصرف المقررة.\n▫️ يشترط للصرف انتظام الطالب وعدم تجاوز المدة النظامية للكلية.\n\n#جامعة_نجران #المكافأة #شؤون_الطلاب",
+                        "",
+                        "twitter",
+                        "@Najran_Univ",
+                        "@jhdhhdcj",
+                        "جامعة نجران",
+                        "text",
+                        None,
+                        yesterday_str,
+                        yesterday_str
+                    ),
+                    (
+                        "rejected",
+                        "خصم 50% على حل الواجبات وإعداد مشاريع التخرج لطلاب الجامعات",
+                        "تواصل معنا عبر واتساب لحل الواجبات وإعداد الأبحاث الجامعية بأسعار خاصة وضمان الامتياز.",
+                        "",
+                        "إعلان تجاري وخدمات مدفوعة مخالفة للوائح الأكاديمية (استبعاد تلقائي)",
+                        "telegram",
+                        "قناة خارجية",
+                        "محرك الفلترة",
+                        "جامعة الملك سعود",
+                        "text",
+                        None,
+                        two_days_str,
+                        None
+                    ),
+                    (
+                        "rejected",
+                        "تغطية مباراة القمة في دوري أبطال أوروبا والتشكيلة المتوقعة",
+                        "متابعة حصرية لأبرز مباريات الجولة الرياضية والأهداف وتحليلات الأداء الفني.",
+                        "",
+                        "محتوى غير أكاديمي وخارج الشأن والاهتمام الطلابي",
+                        "twitter",
+                        "@sports_feed",
+                        "مصفاة المحتوى",
+                        "عام",
+                        "text",
+                        None,
+                        two_days_str,
+                        None
+                    )
                 ]
-                for stype, msg, src, dst, det, rule in initial_seed:
+
+                for st, tit, raw, fin, rej, src_t, src_o, tgt_d, tgt_u, med_t, med_u, cr_at, pub_at in seed_audit:
                     cursor.execute("""
-                    INSERT INTO event_logs (timestamp, type, message_text, source, destination, details, applied_rule_name, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (now_str, stype, msg, src, dst, det, rule, now_str))
+                    INSERT INTO post_audit_log (
+                        post_id, status, title, raw_content, final_content, rejection_reason,
+                        source_type, source_origin, target_destination, target_univ,
+                        media_type, media_url, created_at, published_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        f"seed_log_{int(datetime.utcnow().timestamp()*1000)}",
+                        st, tit, raw, fin, rej, src_t, src_o, tgt_d, tgt_u, med_t, med_u, cr_at, pub_at
+                    ))
+
+            # بذر أفكار أولية في لوحة الأفكار إذا كان الجدول فارغاً
+            cursor.execute("SELECT COUNT(*) as c FROM future_ideas")
+            if cursor.fetchone()["c"] == 0:
+                now_str = datetime.utcnow().isoformat()
+                seed_ideas = [
+                    (
+                        "شرح تفصيلي لكيفية احتساب المعدل الفصلي والتراكمي لطلبة السنة الأولى",
+                        "إعداد إنفوجرافيك مبسط يوضح آلية حساب النقاط الأكاديمية وتأثير الإنذارات ونسب الحرمان على السجل الأكاديمي.",
+                        "التوجيه: الطلاب الجدد يواجهون ارتباكاً كبيراً في أول فصل؛ التركيز على الأمثلة العملية وتقديم خطوات النجاة من الإنذار الأول بأسلوب أخوي ناصح.",
+                        "new",
+                        "high",
+                        json.dumps(["المعدل_التراكمي", "إرشاد_أكاديمي", "السنة_الأولى"]),
+                        "ksu",
+                        "جامعة الملك سعود",
+                        None,
+                        now_str,
+                        now_str
+                    ),
+                    (
+                        "دليل إجراءات وضوابط الاعتراض على رصد درجات الاختبارات الفصلية",
+                        "خطوات رفع تظلم رسمي عبر البوابة الإلكترونية والمدد النظامية المحددة للبت في الطلب.",
+                        "المنافسون يكتفون برابط البوابة؛ نحن سنشرح النموذج خطوة بخطوة بالصور التوضيحية لضمان حق الطالب.",
+                        "in_progress",
+                        "medium",
+                        json.dumps(["اختبارات", "تظلمات", "حقوق_الطلبة"]),
+                        "aum",
+                        "جامعة AUM",
+                        None,
+                        now_str,
+                        now_str
+                    ),
+                    (
+                        "ملف إرشادي لشروط ومواعيد التحويل الداخلي بين الكليات والأقسام",
+                        "تجميع المعدلات المطلوبة لكل تخصص والطاقة الاستيعابية ومفاضلة الكليات العلمية والإنسانية.",
+                        "تم اعتماد البيانات مع عمادة القبول؛ جاهز للنشر كمنشور تيليجرام تفصيلي وسلسلة تغريدات على تويتر.",
+                        "ready",
+                        "high",
+                        json.dumps(["التحويل_الداخلي", "مواعيد", "شروط_القبول"]),
+                        "ksu",
+                        "جامعة الملك سعود",
+                        None,
+                        now_str,
+                        now_str
+                    )
+                ]
+
+                for tit, desc, op_n, st, pr, tgs, u_id, u_n, s_id, cr_at, up_at in seed_ideas:
+                    cursor.execute("""
+                    INSERT INTO future_ideas (
+                        title, description, operational_notes, status, priority, tags,
+                        university_id, university_name, source_post_id, created_at, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (tit, desc, op_n, st, pr, tgs, u_id, u_n, s_id, cr_at, up_at))
 
             conn.commit()
-            logger.info("✅ تم تهيئة جداول قاعدة البيانات SQLite بنجاح بما فيها جدول المعرفة وسجلات الأحداث الدائمة.")
+            logger.info("✅ تم تهيئة جداول قاعدة البيانات SQLite بنجاح بما فيها سجل التدقيق، لوحة الأفكار، وإعدادات تويتر.")
 
             # هجرة البيانات من ملفات JSON إن وجدت وقاعدة البيانات جديدة
             migrate_from_json(conn)
@@ -2120,6 +2316,445 @@ def check_ai_health() -> Dict[str, Any]:
     return result
 
 
+# ----------------- دوال سجل التدقيق الشامل (Comprehensive Post Audit Log) -----------------
+
+def add_audit_log(
+    status: str,
+    title: str,
+    raw_content: str,
+    final_content: str = "",
+    rejection_reason: str = "",
+    source_type: str = "telegram",
+    source_origin: str = "",
+    target_destination: str = "",
+    target_univ: str = "",
+    media_type: str = "text",
+    media_url: str = "",
+    post_id: Optional[str] = None
+) -> int:
+    """إضافة سجل منشور جديد (مقبول أو مرفوض) إلى جدول التدقيق الدائم"""
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            now_str = datetime.utcnow().isoformat()
+            cursor.execute("""
+            INSERT INTO post_audit_log (
+                post_id, status, title, raw_content, final_content, rejection_reason,
+                source_type, source_origin, target_destination, target_univ,
+                media_type, media_url, created_at, published_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                post_id or f"log_{int(datetime.utcnow().timestamp()*1000)}",
+                status,
+                title,
+                raw_content,
+                final_content,
+                rejection_reason,
+                source_type,
+                source_origin,
+                target_destination,
+                target_univ,
+                media_type,
+                media_url,
+                now_str,
+                now_str if status == "published" else None
+            ))
+            log_id = cursor.lastrowid
+            conn.commit()
+            return log_id
+        except Exception as e:
+            logger.error(f"❌ خطأ في add_audit_log: {e}")
+            return -1
+        finally:
+            conn.close()
+
+
+def get_audit_logs(
+    limit: int = 100,
+    offset: int = 0,
+    status: Optional[str] = None,
+    search: Optional[str] = None,
+    univ: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    """جلب سجلات التدقيق مع إمكانية الفلترة والبحث"""
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            query = "SELECT * FROM post_audit_log WHERE 1=1"
+            params: List[Any] = []
+
+            if status and status != "all":
+                query += " AND status = ?"
+                params.append(status)
+
+            if univ and univ != "all":
+                query += " AND (target_univ = ? OR source_origin LIKE ?)"
+                params.extend([univ, f"%{univ}%"])
+
+            if search:
+                query += " AND (title LIKE ? OR raw_content LIKE ? OR final_content LIKE ? OR rejection_reason LIKE ?)"
+                kw = f"%{search}%"
+                params.extend([kw, kw, kw, kw])
+
+            query += " ORDER BY id DESC LIMIT ? OFFSET ?"
+            params.extend([limit, offset])
+
+            cursor.execute(query, params)
+            return [dict(r) for r in cursor.fetchall()]
+        except Exception as e:
+            logger.error(f"❌ خطأ في get_audit_logs: {e}")
+            return []
+        finally:
+            conn.close()
+
+
+def get_audit_log_counts() -> Dict[str, int]:
+    """إحصائيات إجمالية للمنشورات المقبولة والمرفوضة"""
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT status, COUNT(*) as cnt FROM post_audit_log GROUP BY status")
+            counts = {"total": 0, "published": 0, "rejected": 0, "pending": 0}
+            for r in cursor.fetchall():
+                st = r["status"]
+                cnt = r["cnt"]
+                counts[st] = cnt
+                counts["total"] += cnt
+            return counts
+        except Exception as e:
+            logger.error(f"❌ خطأ في get_audit_log_counts: {e}")
+            return {"total": 0, "published": 0, "rejected": 0, "pending": 0}
+        finally:
+            conn.close()
+
+
+def delete_audit_log(audit_id: int) -> bool:
+    """حذف سجل تدقيق محدد"""
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM post_audit_log WHERE id = ?", (audit_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+        except Exception as e:
+            logger.error(f"❌ خطأ في delete_audit_log: {e}")
+            return False
+        finally:
+            conn.close()
+
+
+def clear_audit_logs(status: Optional[str] = None) -> bool:
+    """مسح السجلات بالكامل أو بحسب الحالة"""
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            if status and status != "all":
+                cursor.execute("DELETE FROM post_audit_log WHERE status = ?", (status,))
+            else:
+                cursor.execute("DELETE FROM post_audit_log")
+            conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"❌ خطأ في clear_audit_logs: {e}")
+            return False
+        finally:
+            conn.close()
+
+
+def convert_audit_to_idea(audit_id: int, user_notes: str = "") -> Optional[int]:
+    """تحويل منشور (سواء مرفوض أو مقبول) إلى فكرة مستقبلية في لوحة الأفكار"""
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM post_audit_log WHERE id = ?", (audit_id,))
+            row = cursor.fetchone()
+            if not row:
+                return None
+
+            audit_item = dict(row)
+            title = audit_item.get("title") or "فكرة مستخلصة من منشور"
+            desc = audit_item.get("raw_content") or audit_item.get("final_content") or ""
+            op_notes = user_notes or (f"تم الاستخلاص من سجل المنشورات (الحالة السابقة: {audit_item.get('status')}). سبب الرفض إن وجد: {audit_item.get('rejection_reason', 'لا يوجد')}")
+
+            now_str = datetime.utcnow().isoformat()
+            cursor.execute("""
+            INSERT INTO future_ideas (
+                title, description, operational_notes, status, priority, tags,
+                university_id, university_name, source_post_id, created_at, updated_at
+            )
+            VALUES (?, ?, ?, 'new', 'medium', ?, ?, ?, ?, ?, ?)
+            """, (
+                title,
+                desc,
+                op_notes,
+                json.dumps(["مستخلص_من_السجل", audit_item.get("target_univ") or "شأن_طلابي"]),
+                audit_item.get("target_univ"),
+                audit_item.get("target_univ"),
+                audit_id,
+                now_str,
+                now_str
+            ))
+            idea_id = cursor.lastrowid
+            conn.commit()
+            return idea_id
+        except Exception as e:
+            logger.error(f"❌ خطأ في convert_audit_to_idea: {e}")
+            return None
+        finally:
+            conn.close()
+
+
+# ----------------- دوال لوحة الأفكار والتغذية الراجعة الذكية (Future Ideas Board) -----------------
+
+def add_future_idea(
+    title: str,
+    description: str = "",
+    operational_notes: str = "",
+    status: str = "new",
+    priority: str = "medium",
+    tags: Optional[List[str]] = None,
+    university_id: Optional[str] = None,
+    university_name: Optional[str] = None,
+    source_post_id: Optional[int] = None
+) -> int:
+    """إضافة فكرة مستقبلية جديدة إلى لوحة الأفكار"""
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            now_str = datetime.utcnow().isoformat()
+            cursor.execute("""
+            INSERT INTO future_ideas (
+                title, description, operational_notes, status, priority, tags,
+                university_id, university_name, source_post_id, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                title.strip(),
+                description.strip(),
+                operational_notes.strip(),
+                status,
+                priority,
+                json.dumps(tags or []),
+                university_id,
+                university_name,
+                source_post_id,
+                now_str,
+                now_str
+            ))
+            idea_id = cursor.lastrowid
+            conn.commit()
+            return idea_id
+        except Exception as e:
+            logger.error(f"❌ خطأ في add_future_idea: {e}")
+            return -1
+        finally:
+            conn.close()
+
+
+def get_future_ideas(
+    status: Optional[str] = None,
+    search: Optional[str] = None,
+    univ_id: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    """جلب كافة الأفكار المستقبلية مع وسومها وملاحظاتها"""
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            query = "SELECT * FROM future_ideas WHERE 1=1"
+            params: List[Any] = []
+
+            if status and status != "all":
+                query += " AND status = ?"
+                params.append(status)
+
+            if univ_id and univ_id != "all":
+                query += " AND (university_id = ? OR university_name = ?)"
+                params.extend([univ_id, univ_id])
+
+            if search:
+                query += " AND (title LIKE ? OR description LIKE ? OR operational_notes LIKE ?)"
+                kw = f"%{search}%"
+                params.extend([kw, kw, kw])
+
+            query += " ORDER BY id DESC"
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            results = []
+            for r in rows:
+                item = dict(r)
+                try:
+                    item["tags"] = json.loads(item.get("tags") or "[]")
+                except Exception:
+                    item["tags"] = []
+                results.append(item)
+            return results
+        except Exception as e:
+            logger.error(f"❌ خطأ في get_future_ideas: {e}")
+            return []
+        finally:
+            conn.close()
+
+
+def update_future_idea(idea_id: int, **kwargs) -> bool:
+    """تحديث بيانات فكرة محددة (الملاحظات، الحالة، الأولوية، العنوان)"""
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            allowed_fields = [
+                "title", "description", "operational_notes", "status",
+                "priority", "tags", "university_id", "university_name",
+                "twitter_ready", "telegram_ready"
+            ]
+            updates = []
+            params = []
+            for k, v in kwargs.items():
+                if k in allowed_fields:
+                    updates.append(f"{k} = ?")
+                    if k == "tags" and isinstance(v, list):
+                        params.append(json.dumps(v))
+                    else:
+                        params.append(v)
+
+            if not updates:
+                return False
+
+            updates.append("updated_at = ?")
+            params.append(datetime.utcnow().isoformat())
+            params.append(idea_id)
+
+            sql = f"UPDATE future_ideas SET {', '.join(updates)} WHERE id = ?"
+            cursor.execute(sql, params)
+            conn.commit()
+            return cursor.rowcount > 0
+        except Exception as e:
+            logger.error(f"❌ خطأ في update_future_idea: {e}")
+            return False
+        finally:
+            conn.close()
+
+
+def move_idea_status(idea_id: int, new_status: str) -> bool:
+    """تحديث حالة الفكرة بين الأعمدة (new, in_progress, ready, published, archived)"""
+    return update_future_idea(idea_id, status=new_status)
+
+
+def delete_future_idea(idea_id: int) -> bool:
+    """حذف فكرة من اللوحة"""
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM future_ideas WHERE id = ?", (idea_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+        except Exception as e:
+            logger.error(f"❌ خطأ في delete_future_idea: {e}")
+            return False
+        finally:
+            conn.close()
+
+
+# ----------------- دوال إعدادات النشر على تويتر (Twitter Publishing Settings) -----------------
+
+def get_twitter_settings() -> Dict[str, Any]:
+    """استرجاع إعدادات النشر على تويتر"""
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM twitter_publishing_settings WHERE key = 'main_config'")
+            row = cursor.fetchone()
+            if row:
+                return dict(row)
+            return {
+                "key": "main_config",
+                "enabled": 0,
+                "api_key": "",
+                "api_secret": "",
+                "access_token": "",
+                "access_secret": "",
+                "bearer_token": "",
+                "auto_publish": 0,
+                "auto_thread": 0,
+                "max_chars": 280,
+                "custom_hashtags": "#أخبار_الجامعات #القبول_والتسجيل",
+                "last_tweet_id": "",
+                "updated_at": datetime.utcnow().isoformat()
+            }
+        except Exception as e:
+            logger.error(f"❌ خطأ في get_twitter_settings: {e}")
+            return {}
+        finally:
+            conn.close()
+
+
+def save_twitter_settings(settings: Dict[str, Any]) -> bool:
+    """حفظ وتحديث إعدادات تويتر"""
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            now_str = datetime.utcnow().isoformat()
+            cursor.execute("""
+            INSERT INTO twitter_publishing_settings (
+                key, enabled, api_key, api_secret, access_token, access_secret,
+                bearer_token, auto_publish, auto_thread, max_chars, custom_hashtags,
+                last_tweet_id, updated_at
+            )
+            VALUES ('main_config', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(key) DO UPDATE SET
+                enabled = excluded.enabled,
+                api_key = excluded.api_key,
+                api_secret = excluded.api_secret,
+                access_token = excluded.access_token,
+                access_secret = excluded.access_secret,
+                bearer_token = excluded.bearer_token,
+                auto_publish = excluded.auto_publish,
+                auto_thread = excluded.auto_thread,
+                max_chars = excluded.max_chars,
+                custom_hashtags = excluded.custom_hashtags,
+                last_tweet_id = excluded.last_tweet_id,
+                updated_at = excluded.updated_at
+            """, (
+                int(settings.get("enabled", 0)),
+                str(settings.get("api_key", "")),
+                str(settings.get("api_secret", "")),
+                str(settings.get("access_token", "")),
+                str(settings.get("access_secret", "")),
+                str(settings.get("bearer_token", "")),
+                int(settings.get("auto_publish", 0)),
+                int(settings.get("auto_thread", 0)),
+                int(settings.get("max_chars", 280)),
+                str(settings.get("custom_hashtags", "#أخبار_الجامعات #القبول_والتسجيل")),
+                str(settings.get("last_tweet_id", "")),
+                now_str
+            ))
+            conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"❌ خطأ في save_twitter_settings: {e}")
+            return False
+        finally:
+            conn.close()
+
+
+def is_twitter_publishing_enabled() -> bool:
+    """التحقق من تفعيل النشر التلقائي على تويتر"""
+    sett = get_twitter_settings()
+    return bool(sett.get("enabled", 0) == 1 and sett.get("auto_publish", 0) == 1)
+
+
 # تشغيل التهيئة تلقائياً عند استيراد الملف
 init_db()
+
 

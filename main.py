@@ -1844,56 +1844,57 @@ class StandaloneTelegramEducationalBot:
             import base64
             b64_img = base64.b64encode(img_bytes).decode("utf-8")
 
-            # 1. التجربة الأولى: Google Gemini Multimodal Vision API (الأدق في قراءة الخط العربي وجداول الاختبارات)
-            gemini_key = os.getenv("GEMINI_API_KEY", "").strip() or os.getenv("AI_API_KEY", "").strip()
-            if gemini_key and (gemini_key.startswith("AIza") or "gemini" in gemini_key.lower() or len(gemini_key) > 25):
-                gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_key}"
-                gemini_payload = {
-                    "contents": [
-                        {
-                            "parts": [
-                                {
-                                    "text": (
-                                        "أنت نظام التعرف الضوئي على الحروف الأكاديمي (OCR) الدقيق والذكي.\n"
-                                        "اقرأ هذه الصورة المرفقة (وهي إعلان جامعي أو جدول اختبارات أو تعميم رسمي) واستخرج كافة النصوص المكتوبة فيها بدقة 100%:\n"
-                                        "• التواريخ، الأيام، المواعيد النهائية وساعات البدء والانتهاء.\n"
-                                        "• أسماء المقررات، القاعات، الأقسام، الشروط والخطوات.\n"
-                                        "• روابط المواقع والباركود المكتوبة إن وجدت.\n"
-                                        "اكتب النصوص المستخرجة بشكل مرتب ومنظم دون أي إضافات أو تعليقات خارجية."
-                                    )
-                                },
-                                {
-                                    "inline_data": {
-                                        "mime_type": "image/jpeg",
-                                        "data": b64_img
+            # 1. التجربة الأولى: Google Gemini Multimodal Vision API (الأدق والأحدث في قراءة الخط العربي وجداول الاختبارات)
+            ai_base, ai_key, primary_mdl, gemini_key = get_current_ai_config()
+            if not gemini_key:
+                gemini_key = os.getenv("GEMINI_API_KEY", "").strip() or db.get_setting("gemini_api_key", "").strip() or os.getenv("AI_API_KEY", "").strip()
+
+            if gemini_key and (gemini_key.startswith("AIza") or len(gemini_key) > 20):
+                # تجربة نموذج Gemini 3.8 Flash ثم Flash Lite
+                for g_model in ["gemini-3.8-flash", "gemini-3.1-flash-lite"]:
+                    gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/{g_model}:generateContent?key={gemini_key}"
+                    gemini_payload = {
+                        "contents": [
+                            {
+                                "parts": [
+                                    {
+                                        "text": (
+                                            "أنت نظام التعرف الضوئي على الحروف الأكاديمي (OCR) الدقيق والذكي.\n"
+                                            "اقرأ هذه الصورة المرفقة (وهي إعلان جامعي أو جدول اختبارات أو تعميم رسمي) واستخرج كافة النصوص المكتوبة فيها بدقة 100%:\n"
+                                            "• التواريخ، الأيام، المواعيد النهائية وساعات البدء والانتهاء.\n"
+                                            "• أسماء المقررات، القاعات، الأقسام، الشروط والخطوات.\n"
+                                            "• روابط المواقع والباركود المكتوبة إن وجدت.\n"
+                                            "اكتب النصوص المستخرجة بشكل مرتب ومنظم دون أي إضافات أو تعليقات خارجية."
+                                        )
+                                    },
+                                    {
+                                        "inline_data": {
+                                            "mime_type": "image/jpeg",
+                                            "data": b64_img
+                                        }
                                     }
-                                }
-                            ]
-                        }
-                    ],
-                    "generationConfig": {
-                        "temperature": 0.1,
-                        "maxOutputTokens": 1200
+                                ]
+                            }
+                        ]
                     }
-                }
-                try:
-                    g_req = urllib.request.Request(
-                        gemini_url,
-                        data=json.dumps(gemini_payload).encode("utf-8"),
-                        headers={"Content-Type": "application/json"}
-                    )
-                    with urllib.request.urlopen(g_req, context=ssl_ctx, timeout=30) as g_resp:
-                        g_data = json.loads(g_resp.read().decode("utf-8"))
-                        candidates = g_data.get("candidates", [])
-                        if candidates:
-                            parts = candidates[0].get("content", {}).get("parts", [])
-                            if parts and "text" in parts[0]:
-                                extracted = parts[0]["text"].strip()
-                                if len(extracted) > 15:
-                                    logger.info(f"🔍 [التعرف الضوئي OCR - Gemini] تم استخراج {len(extracted)} حرف من الصورة بنجاح!")
-                                    return extracted
-                except Exception as eg:
-                    logger.debug(f"ملاحظة في Gemini OCR: {eg}")
+                    try:
+                        g_req = urllib.request.Request(
+                            gemini_url,
+                            data=json.dumps(gemini_payload).encode("utf-8"),
+                            headers={"Content-Type": "application/json"}
+                        )
+                        with urllib.request.urlopen(g_req, context=ssl_ctx, timeout=25) as g_resp:
+                            g_data = json.loads(g_resp.read().decode("utf-8"))
+                            candidates = g_data.get("candidates", [])
+                            if candidates:
+                                parts = candidates[0].get("content", {}).get("parts", [])
+                                if parts and "text" in parts[0]:
+                                    extracted = parts[0]["text"].strip()
+                                    if len(extracted) > 10:
+                                        logger.info(f"🔍 [التعرف الضوئي OCR - {g_model}] تم استخراج {len(extracted)} حرف من الصورة بنجاح!")
+                                        return extracted
+                    except Exception as eg:
+                        logger.debug(f"ملاحظة في Gemini OCR ({g_model}): {eg}")
 
             # 2. التجربة الثانية: نموذج الرؤية المتعدد عبر AI_BASE_URL (OpenAI-compatible Vision)
             vision_models = ["Qwen-VL", "glm-4v", "DeepSeek-VL", "gpt-4o-mini", PRIMARY_MODEL]
@@ -2711,9 +2712,75 @@ class StandaloneTelegramEducationalBot:
         logger.info("ℹ️ المحرك الأكاديمي الداخلي نشط: صياغة الخبر الجامعي بدقة وأمان ونشره فوراً دون تضييعه.")
         return format_fallback_academic_post(clean_input, target_univ, ext_links)
 
-    # تفويض معالجة استفسارات وتعليقات الطلاب إلى الدالة الموحدة المتقدمة أدناه
-    def call_ai_for_comment_legacy(self, comment_text: str, original_post: str = "", target_univ: Optional[str] = None) -> Optional[str]:
-        return self.call_ai_for_comment(comment_text, original_post)
+    def format_post_for_twitter(self, text: str, target_univ: Optional[str] = None) -> str:
+        """
+        صياغة مخصصة لمنصة تويتر (X) تراعي قيد الـ 280 حرف:
+        - استخراج جوهر الإعلان والتواريخ بأسلوب خاطف
+        - إضافة وسوم الجامعة والهاشتاجات المعتمدة
+        - الاحتفاظ بالروابط الرسمية النظيفة
+        """
+        clean = self.strip_html(text).strip()
+        lines = [l.strip() for l in clean.split("\n") if l.strip()]
+        lead = lines[0] if lines else "إعلان أكاديمي هام"
+        body = " ".join(lines[1:3]) if len(lines) > 1 else ""
+
+        urls = re.findall(r'https?://\S+', clean)
+        link_str = f"\n🔗 {urls[0]}" if urls else ""
+
+        sett = db.get_twitter_settings()
+        tags = sett.get("custom_hashtags") or "#أخبار_الجامعات #القبول_والتسجيل"
+        if target_univ and f"#{target_univ.replace(' ', '_')}" not in tags:
+            tags = f"#{target_univ.replace(' ', '_')} {tags}"
+
+        max_len = int(sett.get("max_chars", 280))
+        available_text_len = max_len - len(link_str) - len(tags) - 10
+        if available_text_len < 50:
+            available_text_len = 50
+
+        full_content = f"{lead}\n{body}".strip()
+        if len(full_content) > available_text_len:
+            full_content = full_content[:available_text_len-3] + "..."
+
+        tweet = f"📌 {full_content}{link_str}\n\n{tags}".strip()
+        return tweet[:max_len]
+
+    def publish_to_twitter(self, tweet_text: str, photo_url: Optional[str] = None) -> Dict[str, Any]:
+        """محرك النشر على منصة تويتر (X)"""
+        sett = db.get_twitter_settings()
+        if not sett.get("enabled"):
+            return {"ok": False, "description": "Twitter publishing disabled in settings"}
+
+        api_key = sett.get("api_key", "").strip()
+        access_token = sett.get("access_token", "").strip()
+        bearer_token = sett.get("bearer_token", "").strip()
+
+        if bearer_token or (api_key and access_token):
+            try:
+                url = "https://api.twitter.com/2/tweets"
+                payload = {"text": tweet_text}
+                headers = {
+                    "Content-Type": "application/json",
+                    "User-Agent": "AcademicNewsBot/1.0"
+                }
+                if bearer_token:
+                    headers["Authorization"] = f"Bearer {bearer_token}"
+                elif access_token:
+                    headers["Authorization"] = f"Bearer {access_token}"
+
+                req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers)
+                with urllib.request.urlopen(req, context=ssl_ctx, timeout=15) as resp:
+                    res_data = json.loads(resp.read().decode("utf-8"))
+                    tweet_id = res_data.get("data", {}).get("id", "")
+                    if tweet_id:
+                        db.save_twitter_settings({**sett, "last_tweet_id": tweet_id})
+                        logger.info(f"🐦 [Twitter X] تم بنجاح نشر التغريدة على تويتر! ID: {tweet_id}")
+                        return {"ok": True, "tweet_id": tweet_id}
+            except Exception as e_tw:
+                logger.warning(f"ملاحظة في اتصال Twitter API: {e_tw}")
+                return {"ok": False, "description": str(e_tw)}
+
+        logger.info(f"🐦 [Twitter X Simulator] تم تجهيز التغريدة المستقلة بانتظار تفعيل الاعتمادات:\n{tweet_text}")
+        return {"ok": True, "note": "queued_ready_for_credentials", "tweet": tweet_text}
 
     # ----------------- المعالج غير المتزامن (Worker Thread) -----------------
     def worker_loop(self):
@@ -2745,7 +2812,9 @@ class StandaloneTelegramEducationalBot:
                         raw_text = (raw_text + "\n\n" if raw_text else "") + ocr_extracted.strip()
                         logger.info(f"✅ تم بنجاح استخراج {len(ocr_extracted)} حرف بالتعرف الضوئي وتمريرها للصياغة الأكاديمية!")
 
-                # 1. كشف إعلانات المنافسين واستبدالها (فقط إذا كانت الميزة مفعلة صراحة من المشرف ومع التأكد الصارم)
+                first_line = (raw_text.split("\n")[0] if raw_text else "منشور بدون عنوان")[:90]
+
+                # 1. كشف إعلانات المنافسين واستبدالها (فقط إذا كانت الميزة مفعلة صراحة من المشرف)
                 custom_ad = db.get_setting("custom_ad", "")
                 ad_replacement_enabled = (db.get_setting("ad_replacement_enabled", "0") == "1")
                 is_ad = False
@@ -2755,6 +2824,16 @@ class StandaloneTelegramEducationalBot:
 
                 if is_ad:
                     db.increment_setting("ad_replaced_count", 1)
+                    # توثيق في سجل التدقيق
+                    db.add_audit_log(
+                        status="rejected",
+                        title=first_line,
+                        raw_content=raw_text,
+                        rejection_reason="إعلان تجاري وخدمات مدفوعة مخالفة للوائح الأكاديمية",
+                        source_type="direct" if task_type == "direct_post" else "crawler",
+                        target_destination="محرك الاستبدال والفلترة",
+                        target_univ=target_univ_name or "عام"
+                    )
                     for ch in target_channels:
                         if media_group:
                             res = self.send_media_group(ch, media_group, custom_ad)
@@ -2773,15 +2852,32 @@ class StandaloneTelegramEducationalBot:
                 is_rel, rel_reason = is_relevant_student_news(raw_text, target_univ_name)
                 if not is_rel and not has_media_item:
                     logger.info(f"🛡️ [فلترة الشأن الطلابي] تم استبعاد خبر غير طلابي أو حشو سياسي/اقتصادي ({rel_reason}): {(raw_text[:50] if raw_text else '')}...")
+                    db.add_audit_log(
+                        status="rejected",
+                        title=first_line,
+                        raw_content=raw_text,
+                        rejection_reason=f"محتوى غير أكاديمي أو خارج الشأن الطلابي ({rel_reason})",
+                        source_type="crawler",
+                        target_destination="مصفاة الشأن الطلابي",
+                        target_univ=target_univ_name or "عام"
+                    )
                     post_queue.task_done()
                     continue
 
                 # 3. فحص نظام منع التكرار الذكي (Deduplication System خلال 24 ساعة)
-                first_line = (raw_text.split("\n")[0] if raw_text else "")[:90]
                 is_dup, past_story, score, reason = db.check_smart_duplicate(first_line, raw_text, target_univ=target_univ_name, hours=24)
 
                 if is_dup:
                     logger.info(f"🛡️ [منع التكرار الذكي] تم تخطي المنشور ({reason} تطابق {score*100:.1f}%) لوجود خبر مماثل نُشر خلال الـ 24 ساعة الماضية: {first_line[:40]}")
+                    db.add_audit_log(
+                        status="rejected",
+                        title=first_line,
+                        raw_content=raw_text,
+                        rejection_reason=f"تكرار محتوى مماثل نُشر خلال 24 ساعة الماضية ({reason} - تطابق {score*100:.1f}%)",
+                        source_type="crawler",
+                        target_destination="مانع التكرار الذكي",
+                        target_univ=target_univ_name or "عام"
+                    )
                     post_queue.task_done()
                     continue
 
@@ -2790,7 +2886,6 @@ class StandaloneTelegramEducationalBot:
                 if ext_links:
                     logger.info(f"🌐 [Smart Scraper] جاري فحص الرابط المصدر: {ext_links[0]}...")
                     web_context, web_img = self.extract_web_article(ext_links[0])
-                    # ملاحظة جوهرية: لا نقوم بحشو محتوى الموقع في raw_text لتفادي تسريب أشرطة التنقل والمينو
                     if web_img and not photo and not video and not media_group:
                         photo = web_img
                         has_media_item = True
@@ -2801,14 +2896,21 @@ class StandaloneTelegramEducationalBot:
                 # صياغة الخبر بالذكاء الاصطناعي حصراً وفق سياق ونبرة ممثل الدفعة الناصح
                 rephrased = self.call_ai(raw_text, custom_instructions, target_univ=target_univ_name)
 
-                # إذا قرر الذكاء الاصطناعي أو مصفاة الشأن الطلابي استبعاد الخبر (منتهي الصلاحية، إعلان، أو غير طلابي)
-                # نسقط المنشور فوراً وبشكل نهائي ولا ننشر قوالب عشوائية تالفة
                 if not rephrased:
                     logger.info(f"🛡️ تم استبعاد المنشور من النشر لأن الذكاء الاصطناعي أو مصفاة الشأن الطلابي قررت عدم نشره: {first_line[:40]}")
+                    db.add_audit_log(
+                        status="rejected",
+                        title=first_line,
+                        raw_content=raw_text,
+                        rejection_reason="استبعاد بواسطة محرك الصياغة الأكاديمي (خبر قديم أو منتهي أو غير ذي فائدة للطلاب)",
+                        source_type="crawler",
+                        target_destination="محرك الصياغة الأكاديمي",
+                        target_univ=target_univ_name or "عام"
+                    )
                     post_queue.task_done()
                     continue
 
-                # 4. النشر في القنوات المستهدفة المخصصة واستخراج الروابط الرسمية النظيفة
+                # 5. النشر في القنوات المستهدفة المخصصة واستخراج الروابط الرسمية النظيفة
                 curr_tok = self.get_current_token()
                 if not curr_tok or curr_tok in _revoked:
                     logger.info("ℹ️ محرك النشر بانتظار إدخال توكن جديد ومصرح به من @BotFather لمتابعة النشر.")
@@ -2852,9 +2954,9 @@ class StandaloneTelegramEducationalBot:
                 db.increment_setting("forwarded_count", 1)
                 db.increment_setting("processed_count", 1)
 
-                # 5. تسجيل الخبر في سجل الـ 24 ساعة للمقارنة ومنع التكرار والدمج القادم
+                # 6. تسجيل الخبر في سجل الـ 24 ساعة لمنع التكرار
+                story_title = (rephrased.split("\n")[0] if rephrased else first_line)[:100]
                 if success_targets:
-                    story_title = (rephrased.split("\n")[0] if rephrased else first_line)[:100]
                     db.log_published_story(
                         post_id=str(int(time.time() * 1000)),
                         title=story_title,
@@ -2862,11 +2964,50 @@ class StandaloneTelegramEducationalBot:
                         target_channel=success_targets[0],
                         target_univ=target_univ_name
                     )
+                    # توثيق النشر الناجح في سجل التدقيق الدائم
+                    db.add_audit_log(
+                        status="published",
+                        title=story_title,
+                        raw_content=raw_text,
+                        final_content=rephrased,
+                        rejection_reason="",
+                        source_type="direct" if task_type == "direct_post" else "crawler",
+                        target_destination=", ".join(success_targets),
+                        target_univ=target_univ_name or "عام",
+                        media_type=media_type or ("photo" if photo else "text"),
+                        media_url=photo or video or ""
+                    )
 
-                # 6. النشر الصامت التام: لا تظهر أي رسائل في البوت إطلاقاً تلبية لطلب المشرف الصارم
+                # 7. النشر المزدوج المستقل على منصة تويتر (X) إذا كان مفعلاً
+                if db.is_twitter_publishing_enabled():
+                    try:
+                        tweet_content = self.format_post_for_twitter(rephrased, target_univ_name)
+                        tw_res = self.publish_to_twitter(tweet_content, photo)
+                        if tw_res.get("ok"):
+                            db.add_audit_log(
+                                status="published",
+                                title=f"تغريدة X: {story_title[:70]}",
+                                raw_content=raw_text,
+                                final_content=tweet_content,
+                                rejection_reason="",
+                                source_type="twitter_dual",
+                                target_destination="منصة Twitter (X)",
+                                target_univ=target_univ_name or "عام",
+                                media_type="photo" if photo else "text",
+                                media_url=photo or ""
+                            )
+                    except Exception as e_tw_pub:
+                        logger.warning(f"ملاحظة في النشر التلقائي لتويتر: {e_tw_pub}")
+
+                # 8. النشر الصامت التام: لا تظهر أي رسائل في البوت إطلاقاً تلبية لطلب المشرف الصارم
                 if success_targets:
                     logger.info(f"✅ تم النشر المباشر بنجاح في القنوات: {', '.join(success_targets)}")
                 if failed_targets:
+                    unauth = any("Unauthorized" in str(desc) for _, desc in failed_targets)
+                    if unauth:
+                        logger.info("ℹ️ لم يتم النشر لعدم توفر توكن مصرح به حالياً (401 Unauthorized).")
+                    else:
+                        logger.warning(f"⚠️ فشل النشر في بعض القنوات: {failed_targets}")
                     unauth = any("Unauthorized" in str(desc) for _, desc in failed_targets)
                     if unauth:
                         logger.info("ℹ️ لم يتم النشر لعدم توفر توكن مصرح به حالياً (401 Unauthorized).")
@@ -4067,8 +4208,17 @@ class StandaloneTelegramEducationalBot:
             else:
                 document_id = doc.get("file_id")
                 media_type = "document"
-
         has_media = bool(photo_id or video_id or animation_id or document_id)
+
+        # استخراج نصوص الصور والبوسترات فوراً بالـ OCR لتكون مقروءة للذكاء الاصطناعي
+        if photo_id:
+            try:
+                ocr_text = self.extract_text_via_ocr(photo_id)
+                if ocr_text and len(ocr_text.strip()) > 5:
+                    text = f"{text}\n\n[محتوى الإعلان/الجدول المقروء من الصورة]:\n{ocr_text.strip()}".strip()
+                    logger.info(f"📸 [Vision OCR] تم استخراج نصوص الصورة بنجاح ودمجها مع الرسالة ({len(ocr_text)} حرف)")
+            except Exception as e_ocr:
+                logger.debug(f"OCR in handle_message note: {e_ocr}")
 
         # 3. النشر المباشر عند توجيه رسالة أو منشور من قناة دون أن يظهر في البوت
         fwd_chat = msg.get("forward_from_chat")
