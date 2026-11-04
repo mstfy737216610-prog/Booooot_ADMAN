@@ -44,10 +44,38 @@ FONTS_DIR = BASE_DIR / "assets" / "fonts"
 ASSETS_DIR = BASE_DIR / "assets"
 OUTPUT_DIR = BASE_DIR / "public" / "storage_downloads" / "cards"
 SESSIONS_DIR = BASE_DIR / "data" / "twitter_sessions"
-TWSCRAPE_DB_PATH = SESSIONS_DIR / "twscrape_pool.db"
+STUDIO_DIR = BASE_DIR / "data" / "studio"
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
+STUDIO_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def get_twscrape_db_path() -> Path:
+    """
+    تحديد المسار الفعلي لقاعدة بيانات twscrape مع التحقق الذكي من كافة المسارات المحتملة:
+    1. data/twitter_sessions/twscrape_pool.db
+    2. twscrape_pool.db في مجلد المشروع الرئيسي
+    3. twscrape.db (المسار الافتراضي التلقائي لمكتبة twscrape)
+    4. مسار المجلد الحالي (Current Working Directory)
+    """
+    candidates = [
+        SESSIONS_DIR / "twscrape_pool.db",
+        BASE_DIR / "twscrape_pool.db",
+        BASE_DIR / "twscrape.db",
+        Path.cwd() / "twscrape_pool.db",
+        Path.cwd() / "twscrape.db",
+    ]
+    for p in candidates:
+        try:
+            if p.exists() and p.is_file() and p.stat().st_size > 0:
+                return p.resolve()
+        except Exception:
+            pass
+    return (SESSIONS_DIR / "twscrape_pool.db").resolve()
+
+
+TWSCRAPE_DB_PATH = get_twscrape_db_path()
 
 FONT_BOLD = FONTS_DIR / "Tajawal-Bold.ttf"
 FONT_REGULAR = FONTS_DIR / "Tajawal-Regular.ttf"
@@ -388,25 +416,41 @@ def validate_twitter_session(auth_token: str, ct0: str, proxy: Optional[str] = N
 
 async def sync_user_accounts_to_pool(api: Any) -> int:
     """
-    مزامنة الحسابات والكوكيز الحقيقية التي أدخلها المستخدم فقط من واجهة التطبيق إلى مجمع twscrape
-    بدون أي حسابات وهمية أو افتراضية
+    مزامنة الحسابات والكوكيز الحقيقية بين قاعدة بيانات التطبيق ومجمع twscrape.
+    - لا تحذف أي حساب مضاف يدوياً من قِبل المستخدم في twscrape_pool.db (مثل latkhf2547).
+    - تقرأ الحسابات الموجودة بأمان عبر accounts_info() لتجنب خطأ ValueError: Account not found.
+    - تدعم الاستيراد التلقائي للحسابات المسجلة في twscrape إلى قاعدة بيانات التطبيق.
     """
-    accounts = db.get_twitter_accounts()
     synced_count = 0
-    for acc in accounts:
-        auth_token = acc.get("auth_token", "").strip()
-        ct0 = acc.get("ct0", "").strip()
+    pool_user_map: Dict[str, Any] = {}
+
+    try:
+        # قراءة الحسابات المسجلة حالياً في مجمع twscrape بأمان تام
+        pool_accounts = await api.pool.accounts_info()
+        for a in pool_accounts:
+            if isinstance(a, dict) and a.get("username"):
+                pool_user_map[a["username"].lower()] = a
+    except Exception as e:
+        logger.warning(f"ملاحظة أثناء استعلام مجمع twscrape: {e}")
+
+    # 1. مزامنة حسابات قاعدة بيانات التطبيق إلى twscrape pool
+    db_accounts = db.get_twitter_accounts()
+    for acc in db_accounts:
+        auth_token = (acc.get("auth_token") or "").strip()
+        ct0 = (acc.get("ct0") or "").strip()
         if not auth_token or auth_token.startswith("demo_"):
             continue
-        clean_user = acc.get("username", "").lstrip("@").strip()
+
+        clean_user = (acc.get("username") or "").lstrip("@").strip()
         if not clean_user:
             clean_user = f"user_{acc.get('id', 'acc')}"
 
         cookies_str = f"auth_token={auth_token}; ct0={ct0}"
         proxy = acc.get("proxy") or None
+        clean_user_lower = clean_user.lower()
+
         try:
-            pool_acc = await api.pool.get(clean_user)
-            if not pool_acc:
+            if clean_user_lower not in pool_user_map:
                 await api.pool.add_account(
                     username=clean_user,
                     password="user_cookie_session",
@@ -415,11 +459,25 @@ async def sync_user_accounts_to_pool(api: Any) -> int:
                     cookies=cookies_str,
                     proxy=proxy
                 )
+                logger.info(f"✅ تم إضافة الحساب {clean_user} إلى مجمع twscrape بنجاح.")
             else:
+                # الحساب موجود بالفعل: تحديث الكوكيز فقط وتنشيطه
                 await api.pool.add_account_cookies(clean_user, cookies_str)
+                await api.pool.set_active(clean_user, True)
             synced_count += 1
         except Exception as e:
             logger.warning(f"ملاحظة أثناء مزامنة حساب {clean_user} في twscrape: {e}")
+
+    # 2. الحسابات المضافة يدوياً في twscrape_pool.db (مثل latkhf2547):
+    # لا نقوم بحذفها إطلاقاً بل نتأكد من تفعيلها وتسجيلها في الإحصاء
+    for pool_u, p_info in pool_user_map.items():
+        if p_info.get("active") is False:
+            try:
+                await api.pool.set_active(p_info.get("username", pool_u), True)
+            except Exception:
+                pass
+        synced_count += 1
+
     return synced_count
 
 
@@ -431,7 +489,7 @@ async def fetch_tweets_async(
 ) -> Dict[str, Any]:
     """
     جلب التغريدات الحقيقية لحساب معين باستخدام مكتبة twscrape والكوكيز المدخلة من المستخدم
-    بدون واجهات API رسمية أو مفاتيح مدفوعة
+    بدون واجهات API رسمية أو مفاتيح مدفوعة مع تسجيل (Logging) تشخيصي دقيق
     """
     if not TWSCRAPE_AVAILABLE:
         return {
@@ -444,7 +502,9 @@ async def fetch_tweets_async(
     if not clean_target:
         return {"ok": False, "error": "اسم المستخدم المطلوب مراقبته فارغ.", "tweets": []}
 
-    api = API(str(TWSCRAPE_DB_PATH))
+    db_path = get_twscrape_db_path()
+    logger.info(f"📡 [TwScrape] استخدام مجمع الحسابات: {db_path}")
+    api = API(str(db_path))
 
     # إذا تم تمرير كوكيز مخصصة مباشرة في الطلب
     if custom_cookies:
@@ -462,29 +522,41 @@ async def fetch_tweets_async(
                     cookies=c_str
                 )
             except Exception:
-                pass
+                try:
+                    await api.pool.add_account_cookies("session_user", c_str)
+                    await api.pool.set_active("session_user", True)
+                except Exception:
+                    pass
 
-    # مزامنة حسابات المستخدم المحفوظة في قاعدة البيانات
+    # مزامنة حسابات المستخدم المحفوظة في قاعدة البيانات دون المساس بالحسابات المضافة يدوياً
     await sync_user_accounts_to_pool(api)
 
-    # التحقق هل يوجد أي حساب نشط في المجمع
+    # التحقق من وجود حسابات نشطة في المجمع
     try:
+        pool_accs = await api.pool.accounts_info()
         pool_stats = await api.pool.stats()
-        total_pool_accs = pool_stats.get("total", 0) if isinstance(pool_stats, dict) else 0
-    except Exception:
+        total_pool_accs = len(pool_accs)
+        active_accs = pool_stats.get("active", 0) if isinstance(pool_stats, dict) else len(pool_accs)
+        logger.info(f"📊 [TwScrape Pool] إجمالي الحسابات: {total_pool_accs} | الحسابات النشطة: {active_accs}")
+    except Exception as e:
+        logger.warning(f"ملاحظة أثناء استعلام إحصائيات مجمع twscrape: {e}")
         total_pool_accs = 0
+        active_accs = 0
 
     if total_pool_accs == 0:
+        logger.warning("⚠️ [TwScrape] مجمع الحسابات فارغ - لا توجد أي كوكيز مسجلة.")
         return {
             "ok": False,
-            "error": "لا يوجد أي حساب تويتر مربوط بكوكيز حقيقية حالياً. للوصول إلى تويتر بدون API رسمي، يجب إضافة حسابك الفعلي واستيراد الكوكيز الخاصة به (auth_token و ct0) من تبويب تويتر.",
+            "error": "لا يوجد أي حساب تويتر مربوط بكوكيز حقيقية حالياً. للوصول إلى تويتر بدون API رسمي، يرجى إضافة حسابك واستيراد الكوكيز الخاصة به (auth_token و ct0) من تبويب تويتر، أو استخدام أمر: twscrape add_account.",
             "tweets": []
         }
 
     try:
         # جلب معرف المستخدم
+        logger.info(f"🔍 [TwScrape] جلب معرف الحساب @{clean_target}...")
         user = await api.user_by_login(clean_target)
         if not user:
+            logger.warning(f"⚠️ [TwScrape] الحساب @{clean_target} غير موجود أو مقيد.")
             return {
                 "ok": False,
                 "error": f"تعذر العثور على حساب تويتر @{clean_target}. تأكد من صحة المعرف أو أن الحساب عام وغير مقيد.",
@@ -492,6 +564,7 @@ async def fetch_tweets_async(
             }
 
         # جلب التغريدات الحقيقية
+        logger.info(f"📥 [TwScrape] جلب أحدث {limit} تغريدات لحساب @{clean_target} (ID: {user.id})...")
         raw_tweets = await gather(api.user_tweets(user.id, limit=limit))
         tweets = []
         for t in raw_tweets:
@@ -513,6 +586,7 @@ async def fetch_tweets_async(
                 }
             })
 
+        logger.info(f"✅ [TwScrape] تم جلب {len(tweets)} تغريدة بنجاح لـ @{clean_target}")
         return {
             "ok": True,
             "count": len(tweets),
@@ -520,10 +594,23 @@ async def fetch_tweets_async(
             "tweets": tweets
         }
     except Exception as e:
-        logger.error(f"خطأ أثناء جلب تغريدات @{clean_target} عبر twscrape: {e}")
+        err_msg = str(e)
+        logger.error(f"❌ [TwScrape] خطأ أثناء جلب تغريدات @{clean_target}: {err_msg}", exc_info=True)
+        err_lower = err_msg.lower()
+        if "401" in err_msg or "unauthorized" in err_lower or "login" in err_lower or "cookie" in err_lower:
+            friendly_err = f"انتهت صلاحية كوكيز حساب تويتر (auth_token و ct0). يرجى استخراج كوكيز جديدة وتحديثها في تبويب تويتر."
+        elif "rate limit" in err_lower or "429" in err_msg or "too many requests" in err_lower:
+            friendly_err = f"تم بلوغ الحد المؤقت للطلبات من منصة تويتر (Rate Limit). انتظر دقيقتين أو أضف حساباً إضافياً في المجمع."
+        elif "connection" in err_lower or "timeout" in err_lower or "network" in err_lower:
+            friendly_err = f"تعذر الاتصال بخوادم تويتر بسبب مشكلة في الشبكة أو البروكسي أو انقطاع الإنترنت. ({err_msg})"
+        elif "not found" in err_lower and "user" in err_lower:
+            friendly_err = f"الحساب المستهدف @{clean_target} غير موجود أو تم إيقافه على منصة تويتر."
+        else:
+            friendly_err = f"تعذر جلب التغريدات: {err_msg}. تأكد من صحة كوكيز الحساب المسجل."
+
         return {
             "ok": False,
-            "error": f"خطأ أثناء جلب تغريدات تويتر بالكوكيز: {str(e)}. يرجى التأكد من تجديد الكوكيز.",
+            "error": friendly_err,
             "tweets": []
         }
 
@@ -659,3 +746,90 @@ def generate_smart_reply_for_comment(
         "account": account.get("username"),
         "confidence": 0.98
     }
+
+
+# ==============================================================================
+# معالج ومصحح مسارات استوديو الصور والفيديو المدمج (FFmpeg & Studio Fixer)
+# يمنع تكرار مسارات data/studio/.../data/studio/.../segment-0.mp4 نهائياً
+# ==============================================================================
+
+def normalize_studio_path(path_str: Union[str, Path]) -> Path:
+    """
+    تصحيح مسارات استوديو الفيديو والصور وإزالة التكرار الخاطئ مثل:
+    data/studio/.../data/studio/.../segment-0.mp4
+    تحويلها إلى مسار مطلق ونظيف صالح لـ FFmpeg
+    """
+    raw = str(path_str).strip().replace("\\", "/")
+    # إزالة التكرار الشائع في المسارات المتداخلة
+    while "/data/studio/" in raw:
+        idx = raw.find("/data/studio/")
+        raw = raw[idx + 1:]
+    if raw.startswith("data/studio/data/studio/"):
+        raw = raw.replace("data/studio/data/studio/", "data/studio/")
+
+    p = Path(raw)
+    if not p.is_absolute():
+        p = BASE_DIR / p
+    return p.resolve()
+
+
+def concat_studio_segments(
+    segment_paths: List[Union[str, Path]],
+    output_path: Union[str, Path]
+) -> Dict[str, Any]:
+    """
+    دمج أجزاء الفيديو segment-0.mp4, segment-1.mp4 عبر FFmpeg بطريقة آمنة
+    مع تصحيح كافة المسارات ومنع أي تكرار أو تعذر فتح للملفات (Impossible to open).
+    """
+    import subprocess
+    clean_segments = []
+    for s in segment_paths:
+        clean_p = normalize_studio_path(s)
+        if clean_p.exists():
+            clean_segments.append(clean_p)
+        else:
+            logger.warning(f"⚠️ [Studio FFmpeg] الجزء غير موجود وتخطيه: {clean_p}")
+
+    if not clean_segments:
+        return {"ok": False, "error": "لا توجد أي أجزاء فيديو صالحة وموجودة للدمج."}
+
+    out_file = normalize_studio_path(output_path)
+    out_file.parent.mkdir(parents=True, exist_ok=True)
+
+    concat_list_file = out_file.parent / f"concat_{uuid.uuid4().hex[:8]}.txt"
+    try:
+        # كتابة ملف الدمج بمسارات مطلقة نظيفة محمية
+        with open(concat_list_file, "w", encoding="utf-8") as f:
+            for seg in clean_segments:
+                escaped = str(seg).replace("'", "'\\''")
+                f.write(f"file '{escaped}'\n")
+
+        cmd = [
+            "ffmpeg", "-y",
+            "-f", "concat",
+            "-safe", "0",
+            "-i", str(concat_list_file),
+            "-c", "copy",
+            str(out_file)
+        ]
+
+        logger.info(f"🎬 [Studio FFmpeg] دمج {len(clean_segments)} جزء في {out_file}...")
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
+
+        if res.returncode == 0 and out_file.exists():
+            logger.info(f"✅ [Studio FFmpeg] تم دمج الفيديو بنجاح: {out_file}")
+            return {"ok": True, "output_path": str(out_file), "size": out_file.stat().st_size}
+        else:
+            stderr_msg = res.stderr.decode("utf-8", errors="ignore")
+            logger.error(f"❌ [Studio FFmpeg] فشل أمر FFmpeg: {stderr_msg}")
+            return {"ok": False, "error": f"فشل FFmpeg: {stderr_msg[-250:]}"}
+    except Exception as e:
+        logger.error(f"❌ [Studio FFmpeg] استثناء أثناء الدمج: {e}")
+        return {"ok": False, "error": str(e)}
+    finally:
+        try:
+            if concat_list_file.exists():
+                concat_list_file.unlink()
+        except Exception:
+            pass
+

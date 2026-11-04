@@ -2023,21 +2023,37 @@ app.post('/api/settings/toggle-source', (req: Request, res: Response) => {
 
 let pythonProcess: any = null;
 let isRestartingWorker = false;
+let workerStartTime = 0;
+let crashCount = 0;
+let restartDebounceTimer: NodeJS.Timeout | null = null;
+let lastRestartTime = 0;
 
 function restartPythonWorker() {
-  console.log('🔄 جاري إعادة تشغيل محرك بايثون (main.py) لتطبيق التوكن الجديد فورياً...');
-  if (pythonProcess) {
-    isRestartingWorker = true;
-    try {
-      pythonProcess.kill('SIGTERM');
-    } catch (e) {}
-    setTimeout(() => {
-      isRestartingWorker = false;
-      startPythonWorker();
-    }, 1000);
-  } else {
-    startPythonWorker();
+  if (restartDebounceTimer) {
+    clearTimeout(restartDebounceTimer);
   }
+  restartDebounceTimer = setTimeout(() => {
+    const now = Date.now();
+    if (now - lastRestartTime < 8000) {
+      console.log('⏳ تأجيل إعادة تشغيل محرك بايثون لتفادي التكرار المفرط (Cooldown)...');
+      return;
+    }
+    lastRestartTime = now;
+    console.log('🔄 جاري إعادة تشغيل محرك بايثون (main.py) لتطبيق التوكن والإعدادات الجديدة...');
+    crashCount = 0;
+    if (pythonProcess) {
+      isRestartingWorker = true;
+      try {
+        pythonProcess.kill('SIGTERM');
+      } catch (e) {}
+      setTimeout(() => {
+        isRestartingWorker = false;
+        startPythonWorker();
+      }, 1500);
+    } else {
+      startPythonWorker();
+    }
+  }, 2000);
 }
 
 function startPythonWorker() {
@@ -2065,6 +2081,8 @@ function startPythonWorker() {
 
     const activeBotToken = getActiveBotToken();
     console.log(`🔑 توكن البوت الفعال للعملية: ${activeBotToken.substring(0, 15)}...`);
+    workerStartTime = Date.now();
+
     pythonProcess = spawn('python3', ['main.py'], {
       cwd: __dirname,
       env: {
@@ -2097,8 +2115,17 @@ function startPythonWorker() {
 
     pythonProcess.on('close', (code: number | null) => {
       if (isRestartingWorker) return;
-      console.warn(`[PythonBot] انتهت العملية برمز ${code}. إعادة التشغيل التلقائي بعد 5 ثوانٍ...`);
-      setTimeout(startPythonWorker, 5000);
+      const uptime = Date.now() - workerStartTime;
+      if (uptime < 25000) {
+        crashCount++;
+      } else {
+        crashCount = 0;
+      }
+
+      // Exponential backoff mechanism (5s, 7.5s, 11.2s, 16.8s, ... max 60s)
+      const backoffSeconds = Math.min(60, 5 * Math.pow(1.5, Math.min(crashCount, 5)));
+      console.warn(`[PythonBot] انتهت العملية برمز ${code} (مرات السقوط السريع: ${crashCount}). إعادة التشغيل مع تأخير وقائي (Backoff) بعد ${backoffSeconds.toFixed(1)} ثانية...`);
+      setTimeout(startPythonWorker, backoffSeconds * 1000);
     });
   } catch (err) {
     console.warn('[PythonBot] خطأ أثناء تشغيل عملية بايثون:', err);

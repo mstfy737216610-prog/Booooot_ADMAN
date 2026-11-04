@@ -42,17 +42,31 @@ if command -v npm &>/dev/null; then
     echo -e "${GREEN}🚀 جاري تشغيل واجهة الويب (Port 3000) ومحرك تيليجرام وتويتر معاً...${NC}"
     exec npm run dev
 else
-    # في حال عدم توفر node/npm، تشغيل محرك بايثون وتيليجرام فقط بنمط الاستمرار
-    echo -e "${YELLOW}ℹ️ تشغيل محرك بايثون وتيليجرام بنمط الاستمرار 24/7...${NC}"
+    # في حال عدم توفر node/npm، تشغيل محرك بايثون وتيليجرام بنمط الاستمرار مع حماية Backoff
+    echo -e "${YELLOW}ℹ️ تشغيل محرك بايثون وتيليجرام بنمط الاستمرار 24/7 مع حماية Backoff...${NC}"
+    RETRY_DELAY=5
+    MAX_DELAY=60
     while true; do
+        START_TIME=$(date +%s)
         python3 main.py
         EXIT_CODE=$?
-        echo "⚠️ توقف البوت مع كود: $EXIT_CODE"
+        END_TIME=$(date +%s)
+        RUN_DURATION=$((END_TIME - START_TIME))
+        echo "⚠️ توقف البوت مع رمز خروج: $EXIT_CODE (استمر للتشغيل: ${RUN_DURATION} ثانية)"
         if [ $EXIT_CODE -eq 0 ]; then
+            echo "✅ انتهت عملية البوت بنجاح وطبيعياً."
             break
         fi
-        echo "🔄 إعادة التشغيل التلقائي خلال 5 ثوانٍ..."
-        sleep 5
+        if [ $RUN_DURATION -gt 30 ]; then
+            RETRY_DELAY=5
+        else
+            RETRY_DELAY=$((RETRY_DELAY * 2))
+            if [ $RETRY_DELAY -gt $MAX_DELAY ]; then
+                RETRY_DELAY=$MAX_DELAY
+            fi
+        fi
+        echo -e "${YELLOW}🔄 إعادة التشغيل التلقائي مع تأخير وقائي (Backoff) بعد ${RETRY_DELAY} ثوانٍ...${NC}"
+        sleep $RETRY_DELAY
     done
 fi
 
