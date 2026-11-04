@@ -268,6 +268,111 @@ def init_db():
                 VALUES ('main_config', 0, 0, 0, 280, '#أخبار_الجامعات #القبول_والتسجيل', ?)
                 """, (now_str,))
 
+            # 14. جدول حسابات تويتر المتعددة والمستقلة بالكامل (Multi-Account Twitter Hub)
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS twitter_accounts (
+                id TEXT PRIMARY KEY,
+                username TEXT NOT NULL,
+                display_name TEXT DEFAULT '',
+                university TEXT DEFAULT '',
+                auth_token TEXT DEFAULT '',
+                ct0 TEXT DEFAULT '',
+                cookies_json TEXT DEFAULT '',
+                proxy TEXT DEFAULT '',
+                api_key TEXT DEFAULT '',
+                api_secret TEXT DEFAULT '',
+                access_token TEXT DEFAULT '',
+                access_secret TEXT DEFAULT '',
+                bearer_token TEXT DEFAULT '',
+                status TEXT DEFAULT 'valid',
+                is_active INTEGER DEFAULT 1,
+                auto_publish INTEGER DEFAULT 1,
+                auto_reply INTEGER DEFAULT 1,
+                reply_persona TEXT DEFAULT '',
+                custom_hashtags TEXT DEFAULT '#جامعة_نجران #طلاب_نجران',
+                theme_color TEXT DEFAULT '#0284c7',
+                logo_path TEXT DEFAULT '',
+                created_at TEXT,
+                updated_at TEXT
+            )
+            """)
+
+            # 15. جدول سجل الرد على تعليقات الطلاب في تويتر (Twitter Comments & Auto-Reply Log)
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS twitter_replies_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                account_id TEXT,
+                tweet_id TEXT DEFAULT '',
+                comment_id TEXT DEFAULT '',
+                student_username TEXT DEFAULT '',
+                comment_text TEXT NOT NULL,
+                reply_text TEXT NOT NULL,
+                status TEXT DEFAULT 'sent',
+                confidence REAL DEFAULT 0.95,
+                created_at TEXT
+            )
+            """)
+
+            # 16. جدول بطاقات الصور المصممة لتويتر (Designed Twitter Announcement Cards)
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS twitter_designed_cards (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                account_id TEXT,
+                title TEXT NOT NULL,
+                body_text TEXT NOT NULL,
+                image_path TEXT NOT NULL,
+                dimensions TEXT DEFAULT '1080x1350',
+                accent_color TEXT DEFAULT '#0284c7',
+                created_at TEXT
+            )
+            """)
+
+            # بذر حسابات تويتر أولية إذا كان الجدول فارغاً
+            cursor.execute("SELECT COUNT(*) as c FROM twitter_accounts")
+            if cursor.fetchone()["c"] == 0:
+                now_str = datetime.utcnow().isoformat()
+                cursor.execute("""
+                INSERT INTO twitter_accounts (
+                    id, username, display_name, university, auth_token, ct0, status,
+                    is_active, auto_publish, auto_reply, reply_persona, custom_hashtags,
+                    theme_color, created_at, updated_at
+                ) VALUES (
+                    'acc_najran_main',
+                    '@Najran_Students',
+                    'صوت طالب جامعة نجران 🎓',
+                    'جامعة نجران',
+                    'demo_auth_token_najran_99a8',
+                    'demo_ct0_najran_77f2',
+                    'valid',
+                    1, 1, 1,
+                    'زميلك الأكاديمي الناصح وصوت الطالب الحقيقي، تنقل وتجيب بأمانة ولهجة سعودية بيضاء راقية دون اختلاق تواريخ وهمية.',
+                    '#جامعة_نجران #القبول_والتسجيل #المكافأة_الجامعية',
+                    '#0284c7',
+                    ?, ?
+                )
+                """, (now_str, now_str))
+
+                cursor.execute("""
+                INSERT INTO twitter_accounts (
+                    id, username, display_name, university, auth_token, ct0, status,
+                    is_active, auto_publish, auto_reply, reply_persona, custom_hashtags,
+                    theme_color, created_at, updated_at
+                ) VALUES (
+                    'acc_ksu_voice',
+                    '@KSU_StudentVoice',
+                    'ملتقى طلاب جامعة الملك سعود 🇸🇦',
+                    'جامعة الملك سعود',
+                    'demo_auth_token_ksu_88b1',
+                    'demo_ct0_ksu_44c9',
+                    'valid',
+                    1, 1, 1,
+                    'ممثل الدفعة الناصح لطلبة KSU، مساعدة فورية في جداول الحذف والإضافة والاعتذارات ولائحة الغياب.',
+                    '#جامعة_الملك_سعود #KSU #بوابة_النظام_الأكاديمي',
+                    '#059669',
+                    ?, ?
+                )
+                """, (now_str, now_str))
+
             # بذر سجلات تدقيق أولية إذا كان الجدول فارغاً
             cursor.execute("SELECT COUNT(*) as c FROM post_audit_log")
             if cursor.fetchone()["c"] == 0:
@@ -1999,10 +2104,12 @@ def get_phone_storage_paths() -> List[str]:
     اكتشاف كافة مسارات وحدة التخزين الداخلية ومجلد التنزيلات على أجهزة أندرويد وTermux
     """
     candidates = [
+        "/sdcard/Download/ملف_النشر",
+        "/storage/emulated/0/Download/ملف_النشر",
+        os.path.expanduser("~/storage/downloads/ملف_النشر"),
+        os.path.expanduser("~/storage/shared/Download/ملف_النشر"),
+        os.path.join(BASE_DIR, "storage_downloads", "ملف_النشر"),
         "/sdcard/Download/TelegramBot",
-        "/storage/emulated/0/Download/TelegramBot",
-        os.path.expanduser("~/storage/downloads/TelegramBot"),
-        os.path.expanduser("~/storage/shared/Download/TelegramBot"),
         os.path.join(BASE_DIR, "storage_downloads", "TelegramBot")
     ]
     valid_paths = []
@@ -2178,16 +2285,25 @@ def sync_all_storages(force_import: bool = False) -> Dict[str, Any]:
     """
     مزامنة شاملة ثنائية الاتجاه تجمع بين:
     1. استيراد التعديلات من التخزين الداخلي / Termux
-    2. تصدير الحالة الحالية لجميع مسارات التنزيل في الهاتف
-    3. مزامنة ملفات JSON ومستودع GitHub
+    2. تصدير الحالة الحالية لجميع مسارات التنزيل في الهاتف (مجلد ملف_النشر)
+    3. تصدير ملفات تويتر، تيليجرام، ملفات الجامعات، والعقل المدبر
+    4. مزامنة ملفات JSON ومستودع GitHub
     """
     imp_res = import_from_phone_storage(force=force_import)
     exp_res = export_to_phone_storage()
-    git_res = git_sync("Sync Termux internal storage and configs")
+    pkg_res = {}
+    try:
+        import publish_files_manager as pfm
+        pkg_res = pfm.build_and_sync_publish_package()
+    except Exception as e:
+        logger.warning(f"ملاحظة في مزامنة حزمة ملف النشر: {e}")
+
+    git_res = git_sync("Sync Termux internal storage and publish package")
     return {
         "success": True,
         "import_result": imp_res,
         "export_result": exp_res,
+        "publish_package_result": pkg_res,
         "git_result": git_res,
         "active_paths": get_phone_storage_paths()
     }
@@ -2752,6 +2868,264 @@ def is_twitter_publishing_enabled() -> bool:
     """التحقق من تفعيل النشر التلقائي على تويتر"""
     sett = get_twitter_settings()
     return bool(sett.get("enabled", 0) == 1 and sett.get("auto_publish", 0) == 1)
+
+
+# ========================================================
+# 14. دوال إدارة حسابات تويتر المتعددة والمستقلة (Multi-Account)
+# ========================================================
+
+def get_twitter_accounts() -> List[Dict[str, Any]]:
+    """استرجاع كافة حسابات تويتر المستقلة"""
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM twitter_accounts ORDER BY is_active DESC, updated_at DESC")
+            rows = cursor.fetchall()
+            return [dict(row) for row in rows]
+        except Exception as e:
+            logger.error(f"❌ خطأ في get_twitter_accounts: {e}")
+            return []
+        finally:
+            conn.close()
+
+
+def get_twitter_account(account_id: str) -> Optional[Dict[str, Any]]:
+    """استرجاع حساب تويتر محدد"""
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM twitter_accounts WHERE id = ?", (account_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+        except Exception as e:
+            logger.error(f"❌ خطأ في get_twitter_account: {e}")
+            return None
+        finally:
+            conn.close()
+
+
+def save_twitter_account(acc: Dict[str, Any]) -> bool:
+    """إضافة أو تحديث حساب تويتر مستقل"""
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            now_str = datetime.utcnow().isoformat()
+            acc_id = acc.get("id") or f"acc_{int(datetime.utcnow().timestamp()*1000)}"
+            cursor.execute("""
+            INSERT INTO twitter_accounts (
+                id, username, display_name, university, auth_token, ct0, cookies_json,
+                proxy, api_key, api_secret, access_token, access_secret, bearer_token,
+                status, is_active, auto_publish, auto_reply, reply_persona, custom_hashtags,
+                theme_color, logo_path, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                username = excluded.username,
+                display_name = excluded.display_name,
+                university = excluded.university,
+                auth_token = excluded.auth_token,
+                ct0 = excluded.ct0,
+                cookies_json = excluded.cookies_json,
+                proxy = excluded.proxy,
+                api_key = excluded.api_key,
+                api_secret = excluded.api_secret,
+                access_token = excluded.access_token,
+                access_secret = excluded.access_secret,
+                bearer_token = excluded.bearer_token,
+                status = excluded.status,
+                is_active = excluded.is_active,
+                auto_publish = excluded.auto_publish,
+                auto_reply = excluded.auto_reply,
+                reply_persona = excluded.reply_persona,
+                custom_hashtags = excluded.custom_hashtags,
+                theme_color = excluded.theme_color,
+                logo_path = excluded.logo_path,
+                updated_at = excluded.updated_at
+            """, (
+                acc_id,
+                str(acc.get("username", "@user")),
+                str(acc.get("display_name", "")),
+                str(acc.get("university", "")),
+                str(acc.get("auth_token", "")),
+                str(acc.get("ct0", "")),
+                str(acc.get("cookies_json", "")),
+                str(acc.get("proxy", "")),
+                str(acc.get("api_key", "")),
+                str(acc.get("api_secret", "")),
+                str(acc.get("access_token", "")),
+                str(acc.get("access_secret", "")),
+                str(acc.get("bearer_token", "")),
+                str(acc.get("status", "valid")),
+                int(acc.get("is_active", 1)),
+                int(acc.get("auto_publish", 1)),
+                int(acc.get("auto_reply", 1)),
+                str(acc.get("reply_persona", "")),
+                str(acc.get("custom_hashtags", "#أخبار_الجامعات")),
+                str(acc.get("theme_color", "#0284c7")),
+                str(acc.get("logo_path", "")),
+                acc.get("created_at") or now_str,
+                now_str
+            ))
+            conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"❌ خطأ في save_twitter_account: {e}")
+            return False
+        finally:
+            conn.close()
+
+
+def delete_twitter_account(account_id: str) -> bool:
+    """حذف حساب تويتر"""
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM twitter_accounts WHERE id = ?", (account_id,))
+            conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"❌ خطأ في delete_twitter_account: {e}")
+            return False
+        finally:
+            conn.close()
+
+
+def update_twitter_account_status(account_id: str, status: str) -> bool:
+    """تحديث حالة جلسة الحساب (valid / expired / missing / active)"""
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            now_str = datetime.utcnow().isoformat()
+            cursor.execute("""
+            UPDATE twitter_accounts
+            SET status = ?, updated_at = ?
+            WHERE id = ?
+            """, (status, now_str, account_id))
+            conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"❌ خطأ في update_twitter_account_status: {e}")
+            return False
+        finally:
+            conn.close()
+
+
+# ========================================================
+# 15. دوال سجل الرد على تعليقات الطلاب في تويتر
+# ========================================================
+
+def add_twitter_reply_log(account_id: str, comment_text: str, reply_text: str,
+                          tweet_id: str = "", comment_id: str = "",
+                          student_username: str = "", status: str = "sent",
+                          confidence: float = 0.95) -> Optional[int]:
+    """توثيق الرد على استفسار أو تعليق طالب في تويتر"""
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            now_str = datetime.utcnow().isoformat()
+            cursor.execute("""
+            INSERT INTO twitter_replies_log (
+                account_id, tweet_id, comment_id, student_username,
+                comment_text, reply_text, status, confidence, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                account_id, tweet_id, comment_id, student_username,
+                comment_text, reply_text, status, confidence, now_str
+            ))
+            conn.commit()
+            return cursor.lastrowid
+        except Exception as e:
+            logger.error(f"❌ خطأ في add_twitter_reply_log: {e}")
+            return None
+        finally:
+            conn.close()
+
+
+def get_twitter_reply_logs(account_id: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
+    """استرجاع سجل الرد على تعليقات الطلاب"""
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            if account_id and account_id != "all":
+                cursor.execute("""
+                SELECT * FROM twitter_replies_log
+                WHERE account_id = ?
+                ORDER BY created_at DESC LIMIT ?
+                """, (account_id, limit))
+            else:
+                cursor.execute("""
+                SELECT * FROM twitter_replies_log
+                ORDER BY created_at DESC LIMIT ?
+                """, (limit,))
+            rows = cursor.fetchall()
+            return [dict(row) for row in rows]
+        except Exception as e:
+            logger.error(f"❌ خطأ في get_twitter_reply_logs: {e}")
+            return []
+        finally:
+            conn.close()
+
+
+# ========================================================
+# 16. دوال بطاقات الصور المصممة لتويتر
+# ========================================================
+
+def add_designed_card(account_id: str, title: str, body_text: str,
+                      image_path: str, dimensions: str = "1080x1350",
+                      accent_color: str = "#0284c7") -> Optional[int]:
+    """حفظ بطاقة تصميم جديدة في الأرشيف"""
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            now_str = datetime.utcnow().isoformat()
+            cursor.execute("""
+            INSERT INTO twitter_designed_cards (
+                account_id, title, body_text, image_path, dimensions, accent_color, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (account_id, title, body_text, image_path, dimensions, accent_color, now_str))
+            conn.commit()
+            return cursor.lastrowid
+        except Exception as e:
+            logger.error(f"❌ خطأ في add_designed_card: {e}")
+            return None
+        finally:
+            conn.close()
+
+
+def get_designed_cards(account_id: Optional[str] = None, limit: int = 20) -> List[Dict[str, Any]]:
+    """استرجاع البطاقات المصممة"""
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            if account_id and account_id != "all":
+                cursor.execute("""
+                SELECT * FROM twitter_designed_cards
+                WHERE account_id = ?
+                ORDER BY created_at DESC LIMIT ?
+                """, (account_id, limit))
+            else:
+                cursor.execute("""
+                SELECT * FROM twitter_designed_cards
+                ORDER BY created_at DESC LIMIT ?
+                """, (limit,))
+            rows = cursor.fetchall()
+            return [dict(row) for row in rows]
+        except Exception as e:
+            logger.error(f"❌ خطأ في get_designed_cards: {e}")
+            return []
+        finally:
+            conn.close()
 
 
 # تشغيل التهيئة تلقائياً عند استيراد الملف

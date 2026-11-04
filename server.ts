@@ -691,6 +691,304 @@ print(json.dumps({"success": True, "formattedTweet": formatted, "result": res}, 
   }
 });
 
+// 3.4.1 Twitter Multi-Account Management
+app.get('/api/twitter/accounts', (_req: Request, res: Response) => {
+  try {
+    const pyScript = `
+import database as db, json
+accs = db.get_twitter_accounts()
+print(json.dumps({"success": True, "accounts": accs}, ensure_ascii=False))
+`;
+    const out = execFileSync('python3', ['-c', pyScript], { timeout: 5000 }).toString().trim();
+    res.json(JSON.parse(out || '{"success":true,"accounts":[]}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+app.post('/api/twitter/accounts', (req: Request, res: Response) => {
+  try {
+    const accountData = req.body;
+    const pyScript = `
+import database as db, json, sys
+acc = json.loads(sys.argv[1])
+ok = db.save_twitter_account(acc)
+print(json.dumps({"success": ok}))
+`;
+    const out = execFileSync('python3', ['-c', pyScript, JSON.stringify(accountData)], { timeout: 5000 }).toString().trim();
+    res.json(JSON.parse(out || '{"success":true}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+app.delete('/api/twitter/accounts/:id', (req: Request, res: Response) => {
+  try {
+    const accountId = req.params.id;
+    const pyScript = `
+import database as db, sys, json
+ok = db.delete_twitter_account(sys.argv[1])
+print(json.dumps({"success": ok}))
+`;
+    const out = execFileSync('python3', ['-c', pyScript, accountId], { timeout: 5000 }).toString().trim();
+    res.json(JSON.parse(out || '{"success":true}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+// 3.4.2 Session and Cookie Validation for Isolated Account
+app.post('/api/twitter/accounts/:id/test-session', (req: Request, res: Response) => {
+  try {
+    const accountId = req.params.id;
+    const pyScript = `
+import database as db, twitter_engine as te, json, sys
+acc_id = sys.argv[1]
+acc = db.get_twitter_account(acc_id)
+if not acc:
+    print(json.dumps({"success": False, "error": "الحساب غير موجود"}))
+else:
+    auth_tok = acc.get("auth_token", "")
+    ct0_tok = acc.get("ct0", "")
+    proxy_val = acc.get("proxy", "")
+    status_info = te.validate_twitter_session(auth_tok, ct0_tok, proxy_val if proxy_val else None)
+    db.update_twitter_account_status(acc_id, status_info.get("status", "unknown"))
+    print(json.dumps({"success": True, "result": status_info}, ensure_ascii=False))
+`;
+    const out = execFileSync('python3', ['-c', pyScript, accountId], { timeout: 12000 }).toString().trim();
+    res.json(JSON.parse(out || '{"success":true}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+// 3.4.3 Import Cookies (Raw string, Netscape, or JSON storage state)
+app.post('/api/twitter/accounts/:id/import-cookies', (req: Request, res: Response) => {
+  try {
+    const accountId = req.params.id;
+    const { cookiesInput = '' } = req.body;
+    if (!cookiesInput.trim()) {
+      res.status(400).json({ success: false, error: "نص أو ملف الكوكيز مطلوب" });
+      return;
+    }
+
+    const pyScript = `
+import database as db, twitter_engine as te, json, sys
+acc_id = sys.argv[1]
+raw_input = sys.argv[2]
+acc = db.get_twitter_account(acc_id)
+if not acc:
+    print(json.dumps({"success": False, "error": "الحساب غير موجود"}))
+else:
+    parsed_cookies = te.parse_twitter_cookies(raw_input)
+    auth_token = parsed_cookies.get("auth_token") or acc.get("auth_token", "")
+    ct0 = parsed_cookies.get("ct0") or acc.get("ct0", "")
+    
+    acc["auth_token"] = auth_token
+    acc["ct0"] = ct0
+    acc["cookies_json"] = json.dumps(parsed_cookies)
+    
+    # التحقق من الحالة
+    test_res = te.validate_twitter_session(auth_token, ct0, acc.get("proxy") or None)
+    acc["status"] = test_res.get("status", "valid")
+    
+    db.save_twitter_account(acc)
+    print(json.dumps({
+        "success": True,
+        "auth_token_set": bool(auth_token),
+        "ct0_set": bool(ct0),
+        "status": acc["status"],
+        "message": test_res.get("message", "تم استيراد وحفظ الكوكيز بنجاح ✅")
+    }, ensure_ascii=False))
+`;
+    const out = execFileSync('python3', ['-c', pyScript, accountId, cookiesInput], { timeout: 12000 }).toString().trim();
+    res.json(JSON.parse(out || '{"success":true}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+// 3.4.4 Render High-Res Student Card Image
+app.post('/api/twitter/render-card', (req: Request, res: Response) => {
+  try {
+    const {
+      title,
+      bodyText,
+      accountId = '',
+      width = 1080,
+      height = 1350,
+      accentColor = '#0284c7',
+      darkMode = true,
+      customBadge = 'تنبيه أكاديمي معتمد 🎓'
+    } = req.body;
+
+    if (!title || !bodyText) {
+      res.status(400).json({ success: false, error: "العنوان والنص مطلوبان لتصميم البطاقة" });
+      return;
+    }
+
+    const pyScript = `
+import database as db, twitter_engine as te, json, sys
+title = sys.argv[1]
+body_text = sys.argv[2]
+acc_id = sys.argv[3]
+width = int(sys.argv[4])
+height = int(sys.argv[5])
+accent = sys.argv[6]
+dark = sys.argv[7] == 'true'
+badge = sys.argv[8]
+
+acc = db.get_twitter_account(acc_id) if acc_id else None
+local_p, web_u = te.render_student_card(
+    title=title,
+    body_text=body_text,
+    account=acc,
+    width=width,
+    height=height,
+    accent_color=accent,
+    dark_mode=dark,
+    custom_badge=badge
+)
+print(json.dumps({"success": True, "localPath": local_p, "webUrl": web_u}, ensure_ascii=False))
+`;
+    const out = execFileSync('python3', [
+      '-c', pyScript,
+      title, bodyText, accountId, String(width), String(height),
+      accentColor, String(darkMode), customBadge
+    ], { timeout: 15000 }).toString().trim();
+
+    res.json(JSON.parse(out || '{"success":true}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+// 3.4.5 Get Designed Cards History
+app.get('/api/twitter/cards', (req: Request, res: Response) => {
+  try {
+    const accountId = (req.query.accountId as string) || 'all';
+    const limit = Number(req.query.limit) || 20;
+
+    const pyScript = `
+import database as db, json, sys
+acc_id = sys.argv[1]
+limit = int(sys.argv[2])
+cards = db.get_designed_cards(account_id=acc_id if acc_id != 'all' else None, limit=limit)
+print(json.dumps({"success": True, "cards": cards}, ensure_ascii=False))
+`;
+    const out = execFileSync('python3', ['-c', pyScript, accountId, String(limit)], { timeout: 5000 }).toString().trim();
+    res.json(JSON.parse(out || '{"success":true,"cards":[]}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+// 3.4.6 Student Comment Smart AI Reply Engine
+app.post('/api/twitter/reply-comment', (req: Request, res: Response) => {
+  try {
+    const {
+      commentText,
+      accountId = '',
+      tweetTopic = '',
+      studentUsername = ''
+    } = req.body;
+
+    if (!commentText || !commentText.trim()) {
+      res.status(400).json({ success: false, error: "نص تعليق الطالب مطلوب" });
+      return;
+    }
+
+    const pyScript = `
+import database as db, twitter_engine as te, json, sys
+comment = sys.argv[1]
+acc_id = sys.argv[2]
+topic = sys.argv[3]
+user = sys.argv[4]
+
+acc = db.get_twitter_account(acc_id) if acc_id else None
+if not acc:
+    accs = db.get_twitter_accounts()
+    acc = accs[0] if accs else {"university": "جامعة نجران", "username": "@Najran_Students"}
+
+res = te.generate_smart_reply_for_comment(
+    student_comment=comment,
+    account=acc,
+    tweet_topic=topic,
+    student_user=user
+)
+print(json.dumps(res, ensure_ascii=False))
+`;
+    const out = execFileSync('python3', [
+      '-c', pyScript,
+      commentText, accountId, tweetTopic, studentUsername
+    ], { timeout: 15000 }).toString().trim();
+
+    res.json(JSON.parse(out || '{"success":true}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+// 3.4.7 Get Twitter Student Replies History
+app.get('/api/twitter/replies-log', (req: Request, res: Response) => {
+  try {
+    const accountId = (req.query.accountId as string) || 'all';
+    const limit = Number(req.query.limit) || 50;
+
+    const pyScript = `
+import database as db, json, sys
+acc_id = sys.argv[1]
+limit = int(sys.argv[2])
+logs = db.get_twitter_reply_logs(account_id=acc_id if acc_id != 'all' else None, limit=limit)
+print(json.dumps({"success": True, "replies": logs}, ensure_ascii=False))
+`;
+    const out = execFileSync('python3', ['-c', pyScript, accountId, String(limit)], { timeout: 5000 }).toString().trim();
+    res.json(JSON.parse(out || '{"success":true,"replies":[]}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+// 3.4.8 Publish Package & Internal Storage Sync (ملف_النشر)
+app.post('/api/storage/sync-publish-package', (_req: Request, res: Response) => {
+  try {
+    const pyScript = `
+import publish_files_manager as pfm, json
+res = pfm.build_and_sync_publish_package()
+print(json.dumps(res, ensure_ascii=False))
+`;
+    const out = execFileSync('python3', ['-c', pyScript], { timeout: 15000 }).toString().trim();
+    res.json(JSON.parse(out || '{"success":true}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+app.get('/api/storage/publish-package-status', (_req: Request, res: Response) => {
+  try {
+    const pyScript = `
+import publish_files_manager as pfm, json
+paths = [str(p) for p in pfm.get_active_publish_folder_paths()]
+print(json.dumps({"success": True, "package": "ملف_النشر", "paths": paths}, ensure_ascii=False))
+`;
+    const out = execFileSync('python3', ['-c', pyScript], { timeout: 5000 }).toString().trim();
+    res.json(JSON.parse(out || '{"success":true,"paths":[]}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
 // 4.1 Get Unified Full Config
 app.get('/api/config', (_req: Request, res: Response) => {
   try {
@@ -2433,35 +2731,47 @@ app.get('/api/git/status', (_req: Request, res: Response) => {
   }
 });
 
-app.post('/api/git/sync', (_req: Request, res: Response) => {
+app.post('/api/git/sync', (req: Request, res: Response) => {
   try {
+    const { token: inputToken, commitMessage = '[AutoSync] Update university channels, sources, and twitter multi-accounts' } = req.body;
+    execSync('git config --global user.name "Mstfy" 2>/dev/null || true');
+    execSync('git config --global user.email "aum.ku.s1@gmail.com" 2>/dev/null || true');
+    execSync('git config --global --add safe.directory "*" 2>/dev/null || true');
+    execSync('git branch -M main 2>/dev/null || true');
     execSync('git add -A', { timeout: 10000 });
+
     let committed = false;
     try {
-      execSync('git commit -m "[AutoSync] Update university channels, sources and configuration"', { timeout: 10000 });
+      execSync(`git commit -m ${JSON.stringify(commitMessage)}`, { timeout: 10000 });
       committed = true;
     } catch {
       // nothing new to commit
     }
 
-    // Only attempt remote push if GitHub authentication token is configured
-    const ghToken = process.env.GITHUB_TOKEN || process.env.GH_TOKEN || '';
+    const ghToken = inputToken || process.env.GITHUB_TOKEN || process.env.GH_TOKEN || '';
+    let pushed = false;
+    let pushMsg = '';
+
     if (ghToken) {
-      const authedRemote = `https://${ghToken}@github.com/mstfy737216610-prog/Booooot_ADMAN.git`;
-      execFile('git', ['push', authedRemote, 'master'], { timeout: 25000 }, (pushErr) => {
-        if (!pushErr) {
-          console.log('✅ Successfully pushed updates to GitHub repository');
-        }
-      });
+      try {
+        const authedRemote = `https://${ghToken}@github.com/mstfy737216610-prog/Booooot_ADMAN.git`;
+        execSync(`git push ${authedRemote} main`, { timeout: 25000 });
+        pushed = true;
+        pushMsg = 'تم رفع التحديثات إلى مستودع GitHub (فرع main) بنجاح 🚀';
+      } catch (pushErr: any) {
+        pushMsg = `تعذر الرفع إلى GitHub: ${pushErr?.message || String(pushErr)}. تأكد من صلاحية التوكن واختيار صلاحية [repo].`;
+      }
+    } else {
+      pushMsg = 'تم توثيق التعديلات محلياً. للرفع إلى GitHub، يرجى تزويد Personal Access Token (يبدأ بـ ghp_).';
     }
 
     res.json({
       success: true,
       committed,
+      pushed,
       remote: 'https://github.com/mstfy737216610-prog/Booooot_ADMAN.git',
-      message: committed
-        ? 'تم حفظ وتوثيق التعديلات بنجاح في المستودع المحلي وربطها مع Bots.Business!'
-        : 'المستودع محدث مسبقاً بكافة الملفات والتعديلات.'
+      branch: 'main',
+      message: pushMsg
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);

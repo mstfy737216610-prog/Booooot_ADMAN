@@ -24,12 +24,22 @@ cd "$(dirname "$0")"
 echo -e "\n${YELLOW}📡 سحب أحدث التحديثات من مستودع GitHub...${NC}"
 git pull origin master 2>/dev/null || true
 
-# 2. مزامنة التخزين الداخلي للهاتف
-python3 -c "import database as db; db.sync_all_storages()" 2>/dev/null || true
+# 2. مزامنة التخزين الداخلي للهاتف وحزمة ملف_النشر
+python3 -c "
+import database as db
+import publish_files_manager as pfm
+db.sync_all_storages()
+pfm.build_and_sync_publish_package()
+print('✅ تمت مزامنة ملف_النشر في مجلد التنزيلات بالهاتف.')
+" 2>/dev/null || true
+
+echo -e "\n${SKY}  🌐 رابط واجهة التحكم الموحدة على هاتفك:${NC}"
+echo -e "${YELLOW}     👉 http://localhost:3000${NC}"
+echo -e "${SKY}  📁 مسار ملفات النشر على هاتفك: /sdcard/Download/ملف_النشر${NC}\n"
 
 # 3. تشغيل الواجهتين معاً (واجهة الويب + محرك تيليجرام في الخلفية)
 if command -v npm &>/dev/null; then
-    echo -e "${GREEN}🚀 جاري تشغيل واجهة الويب (Port 3000) ومحرك تيليجرام معاً...${NC}"
+    echo -e "${GREEN}🚀 جاري تشغيل واجهة الويب (Port 3000) ومحرك تيليجرام وتويتر معاً...${NC}"
     exec npm run dev
 else
     # في حال عدم توفر node/npm، تشغيل محرك بايثون وتيليجرام فقط بنمط الاستمرار
