@@ -20,12 +20,14 @@ export default defineConfig(() => {
       watch: {
         ignored: [
           /bot_database\.db.*/,
+          /bot_memory\.db.*/,
           /.*\.db-journal/,
           /.*\.db-wal/,
           /.*\.db-shm/,
           /.*\.sqlite.*/,
           /.*\.log/,
           '**/bot_database.db*',
+          '**/bot_memory.db*',
           '**/*-journal',
           '**/*.db-journal',
           '**/*.db-wal',

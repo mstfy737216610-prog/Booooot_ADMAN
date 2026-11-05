@@ -164,58 +164,25 @@ def build_and_sync_publish_package() -> Dict[str, Any]:
             univs_dir = root_dir / "ملفات_الجامعات"
             univs_dir.mkdir(parents=True, exist_ok=True)
 
-            # تجميع ملفات كل جامعة على حدة
-            default_univs = [
-                {
-                    "folder": "جامعة_نجران",
-                    "name": "جامعة نجران",
-                    "country": "المملكة العربية السعودية",
-                    "target_channel": "@jhdhhdcj",
-                    "twitter_account": "@Najran_Students",
-                    "theme_color": "#0284c7",
-                    "portal_url": "https://edugate.nu.edu.sa",
-                    "sources": ["@Najran_Univ", "@NU_StudentAffairs", "https://news.nu.edu.sa/rss"]
-                },
-                {
-                    "folder": "جامعة_الملك_سعود",
-                    "name": "جامعة الملك سعود",
-                    "country": "المملكة العربية السعودية",
-                    "target_channel": "@jhdhhdcj",
-                    "twitter_account": "@KSU_StudentVoice",
-                    "theme_color": "#059669",
-                    "portal_url": "https://edugate.ksu.edu.sa",
-                    "sources": ["@KSU_News", "@ksu_news", "https://news.ksu.edu.sa/ar/rss"]
-                },
-                {
-                    "folder": "جامعة_AUM",
-                    "name": "جامعة الشرق الأوسط الأمريكية (AUM)",
-                    "country": "دولة الكويت",
-                    "target_channel": "@jhdhhdcj",
-                    "twitter_account": "@AUM_StudentHub",
-                    "theme_color": "#d97706",
-                    "portal_url": "https://www.aum.edu.kw",
-                    "sources": ["https://www.aum.edu.kw/news"]
-                }
-            ]
-
-            # دمج الجامعات المضافة من قاعدة البيانات
+            # تجميع ملفات الجامعات المضافة فعلياً فقط من قاعدة البيانات
+            active_univs = []
             for u_db in univs:
-                u_name = u_db.get("name", "جامعة")
-                safe_folder = u_name.replace(" ", "_").replace("«", "").replace("»", "")
-                existing = next((x for x in default_univs if x["name"] == u_name), None)
-                if not existing:
-                    default_univs.append({
-                        "folder": safe_folder,
-                        "name": u_name,
-                        "country": "العالم العربي",
-                        "target_channel": u_db.get("target_channel", "@jhdhhdcj"),
-                        "twitter_account": "@StudentVoice",
-                        "theme_color": "#0284c7",
-                        "portal_url": "",
-                        "sources": u_db.get("telegram_sources", []) + u_db.get("twitter_sources", [])
-                    })
+                u_name = (u_db.get("name") or "").strip()
+                if not u_name:
+                    continue
+                safe_folder = u_name.replace(" ", "_").replace("«", "").replace("»", "").replace("/", "_")
+                active_univs.append({
+                    "folder": safe_folder,
+                    "name": u_name,
+                    "country": u_db.get("country", "عام"),
+                    "target_channel": u_db.get("target_channel", ""),
+                    "twitter_account": u_db.get("twitter_account", ""),
+                    "theme_color": u_db.get("theme_color", "#0284c7"),
+                    "portal_url": u_db.get("portal_url", ""),
+                    "sources": (u_db.get("telegram_sources") or []) + (u_db.get("twitter_sources") or [])
+                })
 
-            for u_item in default_univs:
+            for u_item in active_univs:
                 u_sub = univs_dir / u_item["folder"]
                 u_sub.mkdir(parents=True, exist_ok=True)
 
@@ -281,9 +248,7 @@ def build_and_sync_publish_package() -> Dict[str, Any]:
 │   └── الوسائط_المحملة/ (الصور والملصقات والمستندات المسحوبة)
 │
 ├── ملفات_الجامعات/
-│   ├── جامعة_نجران/ (بيانات الجامعة، القنوات، وحساب تويتر والشعار)
-│   ├── جامعة_الملك_سعود/ (بيانات الجامعة والهوية والقنوات والمصادر)
-│   └── جامعة_AUM/ (بيانات الجامعة، التقويم الأكاديمي، ومصادر الأخبار)
+│   └── (مجلدات الجامعات ومصادرها المضافة فعلياً من لوحة التحكم)
 │
 ├── العقل_المدبر/
 │   ├── العقل_المدبر.py (النواة الإدراكية للذكاء الاصطناعي الأكاديمي)

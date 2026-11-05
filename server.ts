@@ -20,53 +20,16 @@ const SOURCES_FILE = path.join(__dirname, 'sources.json');
 const STATE_FILE = path.join(__dirname, 'state.json');
 const CONFIG_FILE = path.join(__dirname, 'config.json');
 
-// Ensure default sources.json exists
+// Ensure default sources.json exists with clean state (no dummy sources)
 if (!fs.existsSync(SOURCES_FILE)) {
   const initialSources = {
-    _info: "Telegram University Educational AutoForwarder Watchlist",
-    version: "2.0.0",
+    _info: "Telegram University Educational AutoForwarder Watchlist (Clean Mode)",
+    version: "3.2.0",
     lastUpdated: new Date().toISOString(),
-    sources: [
-      {
-        id: "src_tg_univ_news",
-        type: "telegram",
-        target: "@KSU_News",
-        title: "أخبار الجامعة والقبول الرسمي",
-        priority: "high",
-        rule: "official",
-        keywords: ["قبول", "تسجيل", "نتائج", "مواعيد", "منح", "امتحان", "بي دي اف", "pdf"],
-        blacklist: ["إعلان ممول", "خدمات طلابية مدفوعة", "حل واجبات", "بحوث تخرج"],
-        enabled: true,
-        lastPostId: "0",
-        lastChecked: new Date().toISOString()
-      },
-      {
-        id: "src_x_moe",
-        type: "twitter",
-        target: "@moe_gov_sa",
-        title: "الحساب الرسمي لوزارة التعليم",
-        priority: "high",
-        rule: "official",
-        keywords: ["تقويم دراسي", "إجازة", "جامعات", "منح", "تسجيل"],
-        blacklist: ["إعلان تجاري"],
-        enabled: true,
-        lastPostId: "0",
-        lastChecked: new Date().toISOString()
-      },
-      {
-        id: "src_rss_dept",
-        type: "rss",
-        target: "https://news.ksu.edu.sa/ar/rss",
-        title: "بوابة الأخبار والفعاليات الجامعية",
-        priority: "medium",
-        rule: "semi-official",
-        keywords: ["مؤتمر", "كتب", "بحث علمي", "وظائف معيدين"],
-        blacklist: ["رعاية إعلانية"],
-        enabled: true,
-        lastPostId: "0",
-        lastChecked: new Date().toISOString()
-      }
-    ]
+    target_channels: [],
+    university_projects: [],
+    channel_mappings: [],
+    sources: []
   };
   fs.writeFileSync(SOURCES_FILE, JSON.stringify(initialSources, null, 2), 'utf-8');
 }
@@ -74,13 +37,13 @@ if (!fs.existsSync(SOURCES_FILE)) {
 // Ensure default state.json exists
 if (!fs.existsSync(STATE_FILE)) {
   const initialState = {
-    bot_status: "active",
+    bot_status: "idle",
     admin_id: "7607633343",
     admin_user: "@M_S_F_G",
-    bot_username: "admiuin_bot",
-    processed_count: 14,
-    forwarded_count: 12,
-    ad_replaced_count: 2,
+    bot_username: "",
+    processed_count: 0,
+    forwarded_count: 0,
+    ad_replaced_count: 0,
     last_run_timestamp: new Date().toISOString(),
     last_processed_ids: {
       "@KSU_News": "184920",
@@ -2060,6 +2023,22 @@ function startPythonWorker() {
   const pyPath = path.join(__dirname, 'main.py');
   if (!fs.existsSync(pyPath)) return;
 
+  if (process.env.RUN_PYTHON_WORKER === 'false') {
+    console.log('ℹ️ [فصل الأنظمة] تشغيل محرك بايثون المدمج معطل (RUN_PYTHON_WORKER=false). البوت يعمل بشكل مستقل عبر: python3 main.py');
+    return;
+  }
+
+  // فحص عدم وجود عملية main.py أخرى تعمل بالفعل لمنع التداخل وخطأ 409 Conflict
+  try {
+    const existing = execSync("pgrep -f 'python3.*main.py' || true").toString().trim().split(/\s+/).filter(Boolean);
+    const myPid = pythonProcess ? String(pythonProcess.pid) : '';
+    const otherPids = existing.filter(p => p !== myPid && p !== String(process.pid));
+    if (otherPids.length > 0) {
+      console.log(`ℹ️ [فصل تام ومنع تداخل] محرك بايثون يعمل بالفعل في عملية خارجية مستقلة (PID: ${otherPids.join(', ')}). لن يتم تشغيل نسخة مكررة لتفادي تصادم تيليجرام.`);
+      return;
+    }
+  } catch {}
+
   try {
     console.log('🐍 تشغيل خادم ومحرك التيليجرام المستقل المزدوج (python3 main.py)...');
 
@@ -2131,6 +2110,59 @@ function startPythonWorker() {
     console.warn('[PythonBot] خطأ أثناء تشغيل عملية بايثون:', err);
   }
 }
+
+// نقاط تحكم مستقلة لمحرك بايثون وتيليجرام (فصل تام بين الواجهة والمحرك)
+app.get('/api/bot/worker/status', async (_req: Request, res: Response) => {
+  let isRunning = false;
+  let pid: number | null = null;
+  let mode = 'stopped';
+
+  if (pythonProcess && !pythonProcess.killed && pythonProcess.exitCode === null) {
+    isRunning = true;
+    pid = pythonProcess.pid;
+    mode = 'embedded';
+  } else {
+    try {
+      const pids = execSync("pgrep -f 'python3.*main.py' || true").toString().trim().split(/\s+/).filter(Boolean);
+      if (pids.length > 0) {
+        isRunning = true;
+        pid = parseInt(pids[0], 10);
+        mode = 'standalone';
+      }
+    } catch {}
+  }
+
+  res.json({
+    success: true,
+    running: isRunning,
+    pid,
+    mode,
+    uptimeSeconds: isRunning && workerStartTime ? Math.round((Date.now() - workerStartTime) / 1000) : 0,
+    runWorkerConfig: process.env.RUN_PYTHON_WORKER !== 'false'
+  });
+});
+
+app.post('/api/bot/worker/stop', async (_req: Request, res: Response) => {
+  if (pythonProcess) {
+    try {
+      pythonProcess.kill('SIGTERM');
+    } catch {}
+    pythonProcess = null;
+  }
+  process.env.RUN_PYTHON_WORKER = 'false';
+  res.json({ success: true, message: 'تم إيقاف محرك بايثون المدمج بنجاح. الواجهة تعمل الآن بشكل مستقل تماماً.' });
+});
+
+app.post('/api/bot/worker/start', async (_req: Request, res: Response) => {
+  process.env.RUN_PYTHON_WORKER = 'true';
+  restartPythonWorker();
+  res.json({ success: true, message: 'جاري تشغيل محرك بايثون المستقل...' });
+});
+
+app.post('/api/bot/worker/restart', async (_req: Request, res: Response) => {
+  restartPythonWorker();
+  res.json({ success: true, message: 'تم طلب إعادة تشغيل محرك بايثون.' });
+});
 
 const execFileAsync = promisify(execFile);
 
@@ -3080,6 +3112,159 @@ ${bullets}${linksSection}
 ${hashtags}`;
 }
 
+// ----------------- AI MEMORY & FEEDBACK LOOP ENDPOINTS -----------------
+app.get('/api/ai/memory/rules', (_req: Request, res: Response) => {
+  try {
+    const pyScript = `
+import sqlite3, json
+from ai_engine.ai_memory import MEMORY_DB_PATH
+conn = sqlite3.connect(str(MEMORY_DB_PATH))
+conn.row_factory = sqlite3.Row
+cur = conn.cursor()
+cur.execute("SELECT id, rule_type, keyword_or_topic, reason_text, user_comment, source_post_snippet, hit_count, created_at, updated_at FROM learned_rules ORDER BY hit_count DESC, id DESC")
+rows = [dict(r) for r in cur.fetchall()]
+conn.close()
+print(json.dumps({"success": True, "rules": rows}, ensure_ascii=False))
+`;
+    const out = execFileSync('python3', ['-c', pyScript], { timeout: 6000 }).toString().trim();
+    res.json(JSON.parse(out || '{"success":true,"rules":[]}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+app.post('/api/ai/memory/rules', (req: Request, res: Response) => {
+  try {
+    const { keyword, reason, userComment = '', snippet = '' } = req.body;
+    if (!keyword || !reason) {
+      res.status(400).json({ success: false, error: 'الكلمة المفتاحية وسبب الاستبعاد مطلوبان' });
+      return;
+    }
+    const pyScript = `
+import json, sys
+from ai_engine.ai_memory import add_user_feedback_rule
+k = sys.argv[1]
+r = sys.argv[2]
+c = sys.argv[3]
+s = sys.argv[4]
+add_user_feedback_rule(k, r, user_comment=c, snippet=s)
+print(json.dumps({"success": True}))
+`;
+    execFileSync('python3', ['-c', pyScript, keyword, reason, userComment, snippet], { timeout: 6000 });
+    res.json({ success: true, message: 'تم حفظ قاعدة التعلم الذاتي بنجاح وتطبيقها في الذاكرة 🧠' });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+app.post('/api/ai/memory/rules/delete', (req: Request, res: Response) => {
+  try {
+    const { id } = req.body;
+    const pyScript = `
+import sqlite3, json, sys
+from ai_engine.ai_memory import MEMORY_DB_PATH
+rule_id = int(sys.argv[1])
+conn = sqlite3.connect(str(MEMORY_DB_PATH))
+cur = conn.cursor()
+cur.execute("DELETE FROM learned_rules WHERE id = ?", (rule_id,))
+conn.commit()
+conn.close()
+print(json.dumps({"success": True}))
+`;
+    execFileSync('python3', ['-c', pyScript, String(id)], { timeout: 6000 });
+    res.json({ success: true, message: 'تم حذف القاعدة بنجاح' });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+app.post('/api/ai/memory/prune', (req: Request, res: Response) => {
+  try {
+    const days = Number(req.body?.days) || 90;
+    const pyScript = `
+import json, sys
+from ai_engine.ai_memory import prune_old_memory
+d = int(sys.argv[1])
+pruned = prune_old_memory(days=d)
+print(json.dumps({"success": True, "prunedCount": pruned}))
+`;
+    const out = execFileSync('python3', ['-c', pyScript, String(days)], { timeout: 10000 }).toString().trim();
+    res.json(JSON.parse(out || '{"success":true,"prunedCount":0}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+app.get('/api/ai/memory/stats', (_req: Request, res: Response) => {
+  try {
+    const pyScript = `
+import sqlite3, json, os
+from ai_engine.ai_memory import MEMORY_DB_PATH
+conn = sqlite3.connect(str(MEMORY_DB_PATH))
+cur = conn.cursor()
+cur.execute("SELECT count(*) FROM post_dedup_cache")
+dedup_count = cur.fetchone()[0]
+cur.execute("SELECT count(*) FROM learned_rules")
+rules_count = cur.fetchone()[0]
+cur.execute("SELECT count(*) FROM moderation_decisions")
+decisions_count = cur.fetchone()[0]
+conn.close()
+size_bytes = os.path.getsize(str(MEMORY_DB_PATH)) if MEMORY_DB_PATH.exists() else 0
+print(json.dumps({
+    "success": True,
+    "dedupCount": dedup_count,
+    "rulesCount": rules_count,
+    "decisionsCount": decisions_count,
+    "sizeKb": round(size_bytes / 1024, 1)
+}))
+`;
+    const out = execFileSync('python3', ['-c', pyScript], { timeout: 6000 }).toString().trim();
+    res.json(JSON.parse(out || '{"success":true}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+app.post('/api/moderation/feedback', (req: Request, res: Response) => {
+  try {
+    const { postId = '', keyword = '', reason = '', userComment = '', snippet = '', decision = 'rejected' } = req.body;
+    const pyScript = `
+import json, sys
+from ai_engine.ai_memory import add_user_feedback_rule, get_memory_db
+from datetime import datetime
+
+k = sys.argv[1]
+r = sys.argv[2]
+c = sys.argv[3]
+s = sys.argv[4]
+dec = sys.argv[5]
+pid = sys.argv[6]
+
+if k and r:
+    add_user_feedback_rule(k, r, user_comment=c, snippet=s)
+
+with get_memory_db() as conn:
+    conn.execute("""
+        INSERT INTO moderation_decisions (post_id, platform, snippet, decision, reason, reviewed_by, created_at)
+        VALUES (?, 'web_ui', ?, ?, ?, 'supervisor', ?)
+    """, (pid, s[:250], dec, f"{r} - {c}".strip(" -"), datetime.utcnow().isoformat()))
+    conn.commit()
+
+print(json.dumps({"success": True}))
+`;
+    execFileSync('python3', ['-c', pyScript, keyword, reason, userComment, snippet, decision, String(postId)], { timeout: 8000 });
+    res.json({ success: true, message: 'تم استلام التغذية الراجعة وحفظها في الذاكرة التراكمية للبوت' });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
 // ----------------- GIT SYNC ENDPOINTS -----------------
 app.get('/api/git/status', (_req: Request, res: Response) => {
   try {
@@ -3167,12 +3352,14 @@ async function startServer() {
         watch: {
           ignored: [
             /bot_database\.db.*/,
+            /bot_memory\.db.*/,
             /.*\.db-journal/,
             /.*\.db-wal/,
             /.*\.db-shm/,
             /.*\.sqlite.*/,
             /.*\.log/,
             '**/bot_database.db*',
+            '**/bot_memory.db*',
             '**/*-journal',
             '**/*.db-journal',
             '**/*.db-wal',

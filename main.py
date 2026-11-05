@@ -136,26 +136,24 @@ AI_MODELS_CASCADE = [
 def get_current_ai_config() -> Tuple[str, str, str, str]:
     """استدعاء أحدث إعدادات ومفاتيح الذكاء الاصطناعي من قاعدة البيانات والملفات مباشرة لحظة بلحظة"""
     base = db.get_setting("ai_base_url", os.getenv("AI_BASE_URL", "https://api.hcnsec.cn/v1")).rstrip("/")
-    key = db.get_setting("ai_api_key", os.getenv("AI_API_KEY", "")).strip()
+    key = db.get_setting("ai_api_key", os.getenv("AI_API_KEY", "sk-ZimPNQ7NBOAqouWIL9Wa15qczOorNkLY72ns3zUfxoUmU307")).strip()
     primary = db.get_setting("primary_model", os.getenv("PRIMARY_MODEL", "DeepSeek-V4-Flash")).strip()
     gemini_k = db.get_setting("gemini_api_key", os.getenv("GEMINI_API_KEY", "")).strip()
     return base, key, primary, gemini_k
 
 
 def format_fallback_academic_post(raw_text: str, target_univ: Optional[str] = None, ext_links: Optional[List[str]] = None) -> str:
-    """صياغة أكاديمية موثقة ودافئة تنشر فوراً عند تعذر مزودات الذكاء الاصطناعي لحماية النشر وعدم تضييع الأخبار"""
+    """صياغة أكاديمية موثقة ودافئة تنشر فوراً دون أي حذف أو اقتطاع للأخبار الأكاديمية"""
     lines = [l.strip() for l in raw_text.split('\n') if l.strip()]
     first_line = lines[0] if lines else "تحديث وإعلان أكاديمي هام"
     first_line = re.sub(r'^[•\-*#📌📢✨🎓]\s*', '', first_line).strip()
-    title = first_line[:75] if len(first_line) > 75 else first_line
+    title = first_line[:90] if len(first_line) > 90 else first_line
 
     bullets = []
     for l in lines[1:]:
         clean_l = re.sub(r'^[•\-*#📌📢✨🎓]\s*', '', l).strip()
-        if len(clean_l) > 4 and not clean_l.startswith("http") and not clean_l.startswith("@"):
+        if len(clean_l) > 3 and not clean_l.startswith("http") and not clean_l.startswith("@"):
             bullets.append(f"▫️ {clean_l}")
-            if len(bullets) >= 5:
-                break
 
     body = "\n".join(bullets) if bullets else f"▫️ {first_line}"
     u_label = f" ({target_univ})" if target_univ else ""
@@ -1853,7 +1851,17 @@ class StandaloneTelegramEducationalBot:
             import base64
             b64_img = base64.b64encode(img_bytes).decode("utf-8")
 
-            # 1. التجربة الأولى: Google Gemini Multimodal Vision API (الأدق والأحدث في قراءة الخط العربي وجداول الاختبارات)
+            # 0. التجربة الأساسية الفائقة: محرك Smart OCR المعتمد على MiniCPM-V-4.7-35B-A3B عبر HCNSEC
+            try:
+                from ai_engine.smart_ocr import extract_academic_text_from_image
+                ocr_out = extract_academic_text_from_image(img_bytes)
+                if ocr_out.get("ok") and len(ocr_out.get("text", "")) > 15:
+                    logger.info(f"🔍 [التعرف الضوئي OCR - MiniCPM-V] تم استخراج {len(ocr_out['text'])} حرف من الصورة الأكاديمية بنجاح فائق!")
+                    return ocr_out["text"]
+            except Exception as e_smart:
+                logger.debug(f"ملاحظة في Smart OCR Vision: {e_smart}")
+
+            # 1. التجربة الثانية: Google Gemini Multimodal Vision API (إن توفر مفتاح Gemini)
             ai_base, ai_key, primary_mdl, gemini_key = get_current_ai_config()
             if not gemini_key:
                 gemini_key = os.getenv("GEMINI_API_KEY", "").strip() or db.get_setting("gemini_api_key", "").strip() or os.getenv("AI_API_KEY", "").strip()

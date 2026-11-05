@@ -14,7 +14,12 @@ import {
   Eye,
   EyeOff,
   Copy,
-  Check,
+  Trash2,
+  Database,
+  Plus,
+  RefreshCw,
+  ShieldBan,
+  History,
 } from 'lucide-react';
 
 interface Props {
@@ -22,6 +27,24 @@ interface Props {
   onChange: (updated: AIModelConfig) => void;
   onSave?: (updated?: AIModelConfig) => Promise<void> | void;
   isSaving?: boolean;
+}
+
+interface LearnedRule {
+  id: number;
+  rule_type: string;
+  keyword_or_topic: string;
+  reason_text: string;
+  user_comment?: string;
+  hit_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+interface MemoryStats {
+  dedupCount: number;
+  rulesCount: number;
+  decisionsCount: number;
+  sizeKb: number;
 }
 
 export const AIEditorPanel: React.FC<Props> = ({ aiConfig, onChange, onSave, isSaving }) => {
@@ -37,6 +60,126 @@ export const AIEditorPanel: React.FC<Props> = ({ aiConfig, onChange, onSave, isS
     error?: string;
     model?: string;
   } | null>(null);
+
+  // AI Memory & Feedback Loop States
+  const [memoryRules, setMemoryRules] = useState<LearnedRule[]>([]);
+  const [memoryStats, setMemoryStats] = useState<MemoryStats>({
+    dedupCount: 0,
+    rulesCount: 0,
+    decisionsCount: 0,
+    sizeKb: 0,
+  });
+  const [isLoadingMemory, setIsLoadingMemory] = useState(false);
+  const [isPruning, setIsPruning] = useState(false);
+  const [showAddRuleModal, setShowAddRuleModal] = useState(false);
+  const [newRuleKeyword, setNewRuleKeyword] = useState('');
+  const [newRuleReason, setNewRuleReason] = useState('');
+  const [newRuleComment, setNewRuleComment] = useState('');
+  const [isAddingRule, setIsAddingRule] = useState(false);
+
+  const fetchMemoryData = React.useCallback(async () => {
+    setIsLoadingMemory(true);
+    try {
+      const [rulesRes, statsRes] = await Promise.all([
+        fetch('/api/ai/memory/rules'),
+        fetch('/api/ai/memory/stats'),
+      ]);
+      if (rulesRes.ok) {
+        const data = await rulesRes.json();
+        if (data.success && Array.isArray(data.rules)) {
+          setMemoryRules(data.rules);
+        }
+      }
+      if (statsRes.ok) {
+        const sData = await statsRes.json();
+        if (sData.success) {
+          setMemoryStats({
+            dedupCount: sData.dedupCount || 0,
+            rulesCount: sData.rulesCount || 0,
+            decisionsCount: sData.decisionsCount || 0,
+            sizeKb: sData.sizeKb || 0,
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to fetch AI memory data:', err);
+    } finally {
+      setIsLoadingMemory(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    fetchMemoryData();
+  }, [fetchMemoryData]);
+
+  const handleAddLearnedRule = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newRuleKeyword.trim() || !newRuleReason.trim()) return;
+    setIsAddingRule(true);
+    try {
+      const res = await fetch('/api/ai/memory/rules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          keyword: newRuleKeyword.trim(),
+          reason: newRuleReason.trim(),
+          userComment: newRuleComment.trim(),
+        }),
+      });
+      if (res.ok) {
+        setNewRuleKeyword('');
+        setNewRuleReason('');
+        setNewRuleComment('');
+        setShowAddRuleModal(false);
+        fetchMemoryData();
+        setSaveSuccessMsg('تم تثبيت قاعدة التعلم الذاتي في bot_memory.db بنجاح 🧠');
+        setTimeout(() => setSaveSuccessMsg(null), 4000);
+      }
+    } catch {
+      alert('تعذر إضافة قاعدة التعلم الذاتي');
+    } finally {
+      setIsAddingRule(false);
+    }
+  };
+
+  const handleDeleteRule = async (id: number) => {
+    if (!window.confirm('هل أنت متأكد من حذف هذه القاعدة من الذاكرة؟')) return;
+    try {
+      const res = await fetch('/api/ai/memory/rules/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      });
+      if (res.ok) {
+        setMemoryRules((prev) => prev.filter((r) => r.id !== id));
+        fetchMemoryData();
+      }
+    } catch {
+      alert('تعذر حذف القاعدة');
+    }
+  };
+
+  const handlePruneMemory = async () => {
+    if (!window.confirm('هل تريد تنظيف السجلات الأقدم من 90 يوماً وضغط قاعدة بيانات الذاكرة لتوفير المساحة؟')) return;
+    setIsPruning(true);
+    try {
+      const res = await fetch('/api/ai/memory/prune', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ days: 90 }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        fetchMemoryData();
+        setSaveSuccessMsg(`تم تنظيف ${data.prunedCount || 0} سجلاً وضغط قاعدة البيانات بنجاح 🧹`);
+        setTimeout(() => setSaveSuccessMsg(null), 4000);
+      }
+    } catch {
+      alert('تعذر تنظيف الذاكرة');
+    } finally {
+      setIsPruning(false);
+    }
+  };
 
   const handleSaveLocal = async () => {
     setIsSavingLocal(true);
@@ -398,6 +541,222 @@ export const AIEditorPanel: React.FC<Props> = ({ aiConfig, onChange, onSave, isS
           </div>
         )}
       </div>
+
+      {/* 🧠 AI Memory & Feedback Loop Section */}
+      <div className="pt-6 border-t border-slate-800 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+              <Database className="w-5 h-5 text-purple-400" />
+              <span>الذاكرة الإدراكية وحلقة التغذية الراجعة (bot_memory.db)</span>
+            </h3>
+            <p className="text-xs text-slate-400 mt-0.5">
+              آلية التعلم القائم على القواعد والتاريخ: تذكر أسباب الرفض واستبعاد الإعلانات التجارية تلقائياً، ومنع التكرار التام.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={fetchMemoryData}
+              disabled={isLoadingMemory}
+              className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs flex items-center gap-1 transition-colors cursor-pointer"
+              title="تحديث بيانات الذاكرة"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoadingMemory ? 'animate-spin' : ''}`} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowAddRuleModal(true)}
+              className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md shadow-purple-900/30 transition-all cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>قاعدة استبعاد جديدة</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Memory Stats Cards */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+          <div className="p-3 bg-slate-950/80 rounded-xl border border-slate-800">
+            <div className="flex items-center gap-1.5 text-slate-400 text-[11px] mb-1">
+              <ShieldBan className="w-3.5 h-3.5 text-rose-400" />
+              <span>منع التكرار (Deduplication)</span>
+            </div>
+            <div className="text-lg font-bold text-white font-mono">{memoryStats.dedupCount}</div>
+            <span className="text-[10px] text-slate-500">منشور مفحوص بالهاش</span>
+          </div>
+
+          <div className="p-3 bg-slate-950/80 rounded-xl border border-slate-800">
+            <div className="flex items-center gap-1.5 text-slate-400 text-[11px] mb-1">
+              <Brain className="w-3.5 h-3.5 text-purple-400" />
+              <span>قواعد التعلم النشطة</span>
+            </div>
+            <div className="text-lg font-bold text-white font-mono">{memoryStats.rulesCount}</div>
+            <span className="text-[10px] text-slate-500">قاعدة استبعاد محقونة</span>
+          </div>
+
+          <div className="p-3 bg-slate-950/80 rounded-xl border border-slate-800">
+            <div className="flex items-center gap-1.5 text-slate-400 text-[11px] mb-1">
+              <History className="w-3.5 h-3.5 text-sky-400" />
+              <span>سجل القرارات والرقابة</span>
+            </div>
+            <div className="text-lg font-bold text-white font-mono">{memoryStats.decisionsCount}</div>
+            <span className="text-[10px] text-slate-500">قرار رقابي مسجل</span>
+          </div>
+
+          <div className="p-3 bg-slate-950/80 rounded-xl border border-slate-800">
+            <div className="flex items-center gap-1.5 text-slate-400 text-[11px] mb-1">
+              <Database className="w-3.5 h-3.5 text-emerald-400" />
+              <span>حجم الذاكرة (SQLite)</span>
+            </div>
+            <div className="text-lg font-bold text-white font-mono">{memoryStats.sizeKb} <span className="text-xs text-slate-400 font-normal">KB</span></div>
+            <button
+              type="button"
+              onClick={handlePruneMemory}
+              disabled={isPruning}
+              className="text-[10px] text-amber-400 hover:text-amber-300 underline font-medium cursor-pointer"
+            >
+              {isPruning ? 'جارٍ التنظيف...' : 'تنظيف > 90 يوم (VACUUM)'}
+            </button>
+          </div>
+        </div>
+
+        {/* Learned Rules List */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-300">
+              قواعد الاستبعاد التلقائية المستفادة من تعليقاتك وقراراتك السابقة:
+            </span>
+            <span className="text-[11px] text-slate-500">
+              يتم حقنها تلقائياً في سياق الذكاء الاصطناعي لمنع الأخطاء
+            </span>
+          </div>
+
+          {memoryRules.length === 0 ? (
+            <div className="p-4 bg-slate-950/50 rounded-xl border border-dashed border-slate-800 text-center text-xs text-slate-500">
+              لا توجد قواعد استبعاد مخصصة مسجلة بعد. عند رفض منشور أو إضافة قاعدة، سيتعلم البوت تلقائياً استبعادها مستقبلاً.
+            </div>
+          ) : (
+            <div className="space-y-2 max-h-56 overflow-y-auto">
+              {memoryRules.map((rule) => (
+                <div
+                  key={rule.id}
+                  className="p-3 bg-slate-950 rounded-xl border border-slate-800 flex items-start justify-between gap-3 text-xs"
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 bg-rose-500/10 border border-rose-500/30 text-rose-300 font-bold rounded-lg text-[11px]">
+                        استبعاد: {rule.keyword_or_topic}
+                      </span>
+                      <span className="text-[10px] text-slate-400">
+                        مرات التطبيق: <b className="text-purple-300">{rule.hit_count}</b>
+                      </span>
+                    </div>
+                    <p className="text-slate-300 text-[11px]">
+                      <b>السبب:</b> {rule.reason_text}
+                      {rule.user_comment && (
+                        <span className="text-slate-400"> (ملاحظة: {rule.user_comment})</span>
+                      )}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteRule(rule.id)}
+                    className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
+                    title="حذف القاعدة من الذاكرة"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Modal: Add Learned Rule */}
+      {showAddRuleModal && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 max-w-md w-full shadow-2xl space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                <Brain className="w-4 h-4 text-purple-400" />
+                <span>إضافة قاعدة استبعاد للذاكرة الذكية</span>
+              </h4>
+              <button
+                type="button"
+                onClick={() => setShowAddRuleModal(false)}
+                className="text-slate-400 hover:text-white p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleAddLearnedRule} className="space-y-3 text-xs">
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">
+                  الكلمة المفتاحية أو الموضوع المستبعد:
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newRuleKeyword}
+                  onChange={(e) => setNewRuleKeyword(e.target.value)}
+                  placeholder="مثال: كافيهات، بحوث جامعية وتكاليف، عروض تسويقية..."
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-purple-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">
+                  سبب الاستبعاد (يفهمه الذكاء الاصطناعي بدقة):
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newRuleReason}
+                  onChange={(e) => setNewRuleReason(e.target.value)}
+                  placeholder="مثال: إعلانات تجارية مخالفة لسياسة القناة الأكاديمية"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-purple-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">
+                  ملاحظة إضافية أو توجيه خاص (اختياري):
+                </label>
+                <textarea
+                  rows={2}
+                  value={newRuleComment}
+                  onChange={(e) => setNewRuleComment(e.target.value)}
+                  placeholder="مثال: استبعد أي منشور يروج لخصومات كافيهات أو أرقام عمل مشاريع وبحوث مدفوعة"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-purple-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowAddRuleModal(false)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={isAddingRule}
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>{isAddingRule ? 'جارٍ الحفظ...' : 'تثبيت في الذاكرة'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
