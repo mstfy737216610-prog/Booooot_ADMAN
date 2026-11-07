@@ -53,7 +53,7 @@ export const SourcesManager: React.FC<Props> = ({
   const [showWizard, setShowWizard] = useState(false);
   const [wizardStep, setWizardStep] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [wizardData, setWizardData] = useState({
-    targetChannel: '@jhdhhdcj',
+    targetChannel: '',
     name: '',
     telegramSources: '',
     twitterSources: '',
@@ -438,7 +438,7 @@ export const SourcesManager: React.FC<Props> = ({
         setShowWizard(false);
         setWizardStep(1);
         setWizardData({
-          targetChannel: '@jhdhhdcj',
+          targetChannel: '',
           name: '',
           telegramSources: '',
           twitterSources: '',
@@ -572,16 +572,9 @@ export const SourcesManager: React.FC<Props> = ({
           <span className="text-slate-300 font-medium">القنوات الرسمية المعتمدة للربط والتحكم المباشر:</span>
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
-          <a
-            href="https://t.me/jhdhhdcj"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 px-2.5 py-1 bg-sky-900/60 hover:bg-sky-800/80 border border-sky-700 text-sky-200 rounded-lg font-mono font-bold transition-colors"
-          >
-            <Send className="w-3 h-3 text-sky-400 -rotate-45" />
-            <span>@jhdhhdcj (قناة النشر الافتراضية)</span>
-            <ExternalLink className="w-3 h-3 text-slate-400" />
-          </a>
+          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-slate-900 border border-slate-800 text-slate-300 rounded-lg text-xs font-mono">
+            <span>قنوات النشر مخصصة حسب كل جامعة</span>
+          </div>
           <a
             href="https://t.me/M_S_F_G"
             target="_blank"
@@ -1219,14 +1212,14 @@ export const SourcesManager: React.FC<Props> = ({
                     <span>تحديد قناة النشر الهدف (Destination Channel)</span>
                   </div>
                   <p className="text-xs text-slate-400">
-                    أدخل معرف القناة التي سينشر فيها البوت منشورات هذه الجامعة حصرياً (مثل @jhdhhdcj أو معرف القناة ID).
+                    أدخل معرف القناة التي سينشر فيها البوت منشورات هذه الجامعة حصرياً (مثل @my_university_channel أو معرف القناة ID).
                   </p>
                   <div>
                     <input
                       type="text"
                       value={wizardData.targetChannel}
                       onChange={(e) => setWizardData({ ...wizardData, targetChannel: e.target.value })}
-                      placeholder="@jhdhhdcj"
+                      placeholder="@my_university_channel"
                       dir="ltr"
                       className="w-full bg-slate-900 border border-slate-700 focus:border-sky-500 rounded-xl px-3.5 py-2.5 text-sm text-white font-mono"
                       autoFocus

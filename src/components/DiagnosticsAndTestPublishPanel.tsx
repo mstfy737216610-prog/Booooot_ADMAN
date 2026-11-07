@@ -81,7 +81,7 @@ interface DiagnosticsProps {
 export const DiagnosticsAndTestPublishPanel: React.FC<DiagnosticsProps> = ({
   currentBotToken = '',
   onBotTokenUpdated,
-  defaultChannel = '@jhdhhdcj'
+  defaultChannel = ''
 }) => {
   // State: Diagnostics & Health Check
   const [report, setReport] = useState<DiagnosticReport | null>(null);
@@ -505,7 +505,7 @@ export const DiagnosticsAndTestPublishPanel: React.FC<DiagnosticsProps> = ({
                       type="text"
                       value={testChannel}
                       onChange={e => setTestChannel(e.target.value)}
-                      placeholder="@jhdhhdcj"
+                      placeholder="@my_channel"
                       className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sky-300 font-mono"
                     />
                     <span className="text-[10px] text-slate-500 block mt-1">تأكد من إضافة البوت مشرفاً في القناة</span>

@@ -42,33 +42,35 @@ export const Header: React.FC<Props> = ({
   };
 
   return (
-    <header className="border-b border-slate-800 bg-slate-900/90 backdrop-blur-md sticky top-0 z-30">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex flex-col md:flex-row items-center justify-between gap-4">
-        {/* Brand & Title */}
+    <header className="border-b border-slate-800 bg-slate-900/95 backdrop-blur-md sticky top-0 z-30">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex flex-col md:flex-row items-center justify-between gap-4">
+        {/* Brand Zone */}
         <div className="flex items-center gap-3.5 w-full md:w-auto">
-          <div className="relative p-2.5 bg-gradient-to-tr from-sky-600 to-indigo-500 rounded-2xl shadow-lg shadow-sky-600/25 ring-1 ring-white/20">
-            <Send className="w-6 h-6 text-white transform -rotate-45" />
-            <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-400 rounded-full border-2 border-slate-900 animate-pulse"></span>
+          <div className="p-2 bg-gradient-to-tr from-sky-600 to-indigo-600 rounded-xl shadow-md shadow-sky-600/20">
+            <Send className="w-5 h-5 text-white transform -rotate-45" />
           </div>
 
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-base sm:text-xl font-extrabold text-white tracking-tight">
-                مُعيد توجيه وبوت النشر الذكي تيليجرام
-              </h1>
-              <span className="hidden sm:inline-flex px-2 py-0.5 text-[11px] font-semibold bg-sky-500/15 text-sky-400 border border-sky-500/30 rounded-md">
-                UserBot Pro v2.5
+              <span className="text-base sm:text-lg font-bold text-white tracking-tight">
+                Booooot_ADMAN
+              </span>
+              <span className="text-xs text-sky-400 font-medium">
+                · استوديو الأتمتة والنشر الذكي
               </span>
             </div>
-            <div className="flex flex-col sm:flex-row sm:items-center gap-1 text-[11px] sm:text-xs text-slate-400 mt-0.5">
-              <span>إدارة الآدمن والتوكن واليوزربوت</span>
-              <span className="text-slate-600 hidden sm:inline">•</span>
+            <div className="flex items-center gap-2 text-[11px] text-slate-400 mt-0.5">
+              <span>SQLite WAL Active</span>
+              <span aria-hidden="true">·</span>
+              <span>HCNSEC Vision Ready</span>
+              <span aria-hidden="true">·</span>
               <button
+                type="button"
                 onClick={onOpenLicense}
-                className="text-emerald-400 hover:text-emerald-300 inline-flex items-center gap-1 text-[11px] sm:text-xs text-right"
+                className="text-emerald-400 hover:text-emerald-300 inline-flex items-center gap-1 cursor-pointer"
               >
                 <Shield className="w-3 h-3 text-emerald-400 shrink-0" />
-                <span>حقوق المطور الأصلي (MIT)</span>
+                <span>وثيقة الحقوق (MIT)</span>
               </button>
             </div>
           </div>

@@ -179,7 +179,16 @@ export default function App() {
   });
 
   const [logs, setLogs] = useState<ActivityLogItem[]>(INITIAL_LOGS);
-  const [activeTab, setActiveTab] = useState<'all' | 'diagnostics' | 'credentials' | 'userbot' | 'chat' | 'github' | 'sources' | 'ai' | 'ad' | 'sim' | 'code' | 'guide' | 'logs' | 'audit' | 'ideas' | 'twitter' | 'knowledge'>('diagnostics');
+  
+  // Re-organized Professional Hubs & Sub-Navigation
+  type MainHub = 'control' | 'sources' | 'twitter' | 'ai' | 'telegram' | 'logs' | 'all';
+  const [activeHub, setActiveHub] = useState<MainHub>('control');
+  const [subControl, setSubControl] = useState<'diagnostics' | 'credentials' | 'github' | 'guide'>('diagnostics');
+  const [subSources, setSubSources] = useState<'manager' | 'intel'>('manager');
+  const [subAi, setSubAi] = useState<'editor' | 'sim' | 'chat'>('editor');
+  const [subTelegram, setSubTelegram] = useState<'userbot' | 'ad_replace'>('userbot');
+  const [subLogs, setSubLogs] = useState<'sqlite_logs' | 'audit' | 'ideas' | 'code'>('sqlite_logs');
+
   const [isLicenseOpen, setIsLicenseOpen] = useState(false);
   const [isTesterModalOpen, setIsTesterModalOpen] = useState(false);
   const [isTestingBot, setIsTestingBot] = useState(false);
@@ -200,15 +209,16 @@ export default function App() {
     lastError?: string;
   } | null>(null);
 
-  // Sync with sources.json on backend mount
+  // Sync with sources.json on backend mount - always respect server as source of truth
   useEffect(() => {
     const fetchSources = async () => {
       try {
         const res = await fetch('/api/sources');
         if (res.ok) {
           const data = await res.json();
-          if (data.sources && Array.isArray(data.sources) && data.sources.length > 0) {
+          if (data && Array.isArray(data.sources)) {
             setSources(data.sources);
+            localStorage.setItem(STORAGE_KEY_SOURCES, JSON.stringify(data.sources));
           }
         }
       } catch (e) {
@@ -345,12 +355,17 @@ export default function App() {
     setSources(newSources);
     setIsSavingSources(true);
     try {
-      await fetch('/api/sources', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sources: newSources }),
-      });
-      showToast('تمت مزامنة المصادر مع ملف sources.json بنجاح! 💾');
+      if (newSources.length === 0) {
+        await fetch('/api/sources/clear', { method: 'POST' });
+      } else {
+        await fetch('/api/sources', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sources: newSources }),
+        });
+      }
+      localStorage.setItem(STORAGE_KEY_SOURCES, JSON.stringify(newSources));
+      showToast('تم حفظ المصادر وتحديث قاعدة البيانات والملفات مباشرة! 💾');
     } catch {
       showToast('تم الحفظ محلياً.');
     } finally {
@@ -514,11 +529,21 @@ export default function App() {
     e.target.value = '';
   };
 
-  const handleResetDefaults = () => {
-    if (window.confirm('هل تريد إعادة تعيين كافة الإعدادات والمصادر إلى الحالة الافتراضية؟')) {
+  const handleResetDefaults = async () => {
+    if (window.confirm('هل تريد مسح كافة الإعدادات والمصادر والعودة للوضع الافتراضي النظيف في السيرفر؟')) {
       setConfig(DEFAULT_CONFIG);
-      setSources(DEFAULT_SOURCES);
-      showToast('تمت إعادة ضبط النظام.');
+      setSources([]);
+      try {
+        await fetch('/api/sources/clear', { method: 'POST' });
+        await fetch('/api/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(DEFAULT_CONFIG),
+        });
+      } catch {}
+      localStorage.removeItem(STORAGE_KEY_SOURCES);
+      localStorage.removeItem(STORAGE_KEY_CONFIG);
+      showToast('تمت إعادة ضبط النظام ومسح كافة المصادر من السيرفر بنجاح 🧹');
     }
   };
 
@@ -548,28 +573,21 @@ export default function App() {
         <div className="bg-gradient-to-r from-sky-950/50 via-indigo-950/40 to-slate-900/60 border border-sky-800/40 rounded-2xl p-5 sm:p-6 shadow-xl relative overflow-hidden">
           <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-5">
             <div className="space-y-2">
-              <div className="flex flex-wrap items-center gap-2.5">
-                <span className="px-2.5 py-0.5 text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded-lg">
-                  محرر محتوى جامعي ذكي
-                </span>
-                <span className="px-2.5 py-0.5 text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 rounded-lg">
-                  DeepSeek-V4.1-Flash
-                </span>
-                <span className="px-2.5 py-0.5 text-xs font-semibold bg-sky-500/20 text-sky-300 border border-sky-500/40 rounded-lg flex items-center gap-1">
-                  <span>البوت:</span>
-                  <span className="font-mono" dir="ltr">@admiuin_bot</span>
-                </span>
-                <span className="px-2.5 py-0.5 text-xs font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 rounded-lg flex items-center gap-1">
-                  <span>الآدمن:</span>
-                  <span className="font-mono" dir="ltr">{config.adminUsername} ({config.adminId})</span>
-                </span>
+              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400 font-medium">
+                <span className="font-semibold text-amber-300">محرر ومراقب جامعي ذكي</span>
+                <span aria-hidden="true">·</span>
+                <span className="text-emerald-300 font-mono">DeepSeek-V4-Flash + MiniCPM Vision</span>
+                <span aria-hidden="true">·</span>
+                <span className="text-sky-300">البوت: <b className="font-mono" dir="ltr">@admiuin_bot</b></span>
+                <span aria-hidden="true">·</span>
+                <span className="text-indigo-300">المشرف: <b className="font-mono" dir="ltr">{config.adminUsername} ({config.adminId})</b></span>
               </div>
 
-              <h2 className="text-lg sm:text-xl font-extrabold text-white">
-                نظام المراقبة وإعادة الصياغة الأكاديمية ونشر الكتب وإعلانات الخدمات الطلابية
+              <h2 className="text-lg sm:text-xl font-bold text-white tracking-tight">
+                منصة أتمتة النشر الأكاديمي الموحدة وتنسيق المحتوى الذكي
               </h2>
               <p className="text-xs sm:text-sm text-slate-300 max-w-3xl leading-relaxed">
-                يراقب القنوات الجامعية وحسابات X وموجزات RSS، ويعيد صياغة المنشورات بأسلوب مشرفي القروبات الأكفاء (عنوان 📌، نقاط واضحة، دعوة للتفاعل 💬، هاشتاجات)، ويستبدل إعلانات المنافسين بإعلانات خدماتك الطلابية تلقائياً.
+                مراقبة قنوات تيليجرام وحسابات تويتر (X)، وقراءة الإعلانات بالذكاء البصري (Vision OCR)، وصياغة المنشورات بدقة متناهية بدون هلوسة، واستبدال أرقام المساعدين بحساب المشرف المعتمد، مع حفظ متزامن فوري في SQLite والملفات.
               </p>
             </div>
 
@@ -698,238 +716,291 @@ export default function App() {
           </div>
         )}
 
-        {/* Section Tabs Bar for quick navigation */}
-        <div className="relative">
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-2 pt-1 text-xs border-b border-slate-800 scroll-smooth -mx-2 px-2 sm:mx-0 sm:px-0">
-            <button
-              onClick={() => setActiveTab('all')}
-              className={`px-3.5 py-2 rounded-t-xl font-bold transition-all shrink-0 ${
-                activeTab === 'all'
-                  ? 'bg-slate-800 text-white border-b-2 border-sky-500'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              عرض الكل
-            </button>
-            <button
-              onClick={() => setActiveTab('diagnostics')}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-t-xl font-bold transition-all shrink-0 ${
-                activeTab === 'diagnostics'
-                  ? 'bg-slate-800 text-white border-b-2 border-rose-500 shadow-sm'
-                  : 'text-rose-400 hover:text-white'
-              }`}
-            >
-              <AlertCircle className="w-3.5 h-3.5 text-rose-400" />
-              <span className="font-extrabold text-rose-300">مركز التشخيص والنشر التجريبي 🛠️</span>
-              <span className="px-1.5 py-0.2 text-[10px] bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-full font-mono">حي</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('credentials')}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-t-xl font-bold transition-all shrink-0 ${
-                activeTab === 'credentials'
-                  ? 'bg-slate-800 text-white border-b-2 border-emerald-500'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <KeyRound className="w-3.5 h-3.5 text-emerald-400" />
-              <span className="font-bold text-emerald-300">توكن البوت والاعتمادات (Bot Token)</span>
-              {botInfo && <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>}
-            </button>
-            <button
-              onClick={() => setActiveTab('userbot')}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-t-xl font-bold transition-all shrink-0 ${
-                activeTab === 'userbot'
-                  ? 'bg-slate-800 text-white border-b-2 border-purple-500'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <Smartphone className="w-3.5 h-3.5 text-purple-400" />
-              <span className="font-extrabold text-purple-300">اليوزربوت وسحب القنوات (UserBot)</span>
-              <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse"></span>
-            </button>
-            <button
-              onClick={() => setActiveTab('chat')}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-t-xl font-bold transition-all shrink-0 ${
-                activeTab === 'chat'
-                  ? 'bg-slate-800 text-white border-b-2 border-indigo-500'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <MessageSquare className="w-3.5 h-3.5 text-indigo-400" />
-              <span className="font-extrabold text-indigo-300">دردشة الذكاء (Web Chat)</span>
-              <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse"></span>
-            </button>
-            <button
-              onClick={() => setActiveTab('github')}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-t-xl font-bold transition-all shrink-0 ${
-                activeTab === 'github'
-                  ? 'bg-slate-800 text-white border-b-2 border-indigo-500'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <span className="shrink-0">الربط بـ GitHub وبوت بزنس</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('sources')}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-t-xl font-bold transition-all shrink-0 ${
-                activeTab === 'sources'
-                  ? 'bg-slate-800 text-white border-b-2 border-sky-500'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <Layers className="w-3.5 h-3.5 text-sky-400" />
-              <span>المصادر ({sources.length})</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('ai')}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-t-xl font-bold transition-all shrink-0 ${
-                activeTab === 'ai'
-                  ? 'bg-slate-800 text-white border-b-2 border-indigo-500'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <Brain className="w-3.5 h-3.5 text-indigo-400" />
-              <span>الذكاء الاصطناعي والتعليمات</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('ad')}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-t-xl font-bold transition-all shrink-0 ${
-                activeTab === 'ad'
-                  ? 'bg-slate-800 text-white border-b-2 border-emerald-500'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <ArrowRightLeft className="w-3.5 h-3.5 text-emerald-400" />
-              <span>استبدال إعلانات المنافسين</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('sim')}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-t-xl font-bold transition-all shrink-0 ${
-                activeTab === 'sim'
-                  ? 'bg-slate-800 text-white border-b-2 border-amber-500'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              <span>مختبر الصياغة الحية</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('code')}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-t-xl font-bold transition-all shrink-0 ${
-                activeTab === 'code'
-                  ? 'bg-slate-800 text-white border-b-2 border-purple-500'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <FileCode className="w-3.5 h-3.5 text-purple-400" />
-              <span>السكريبتات وملفات الإعدادات</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('audit')}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-t-xl font-bold transition-all shrink-0 ${
-                activeTab === 'audit'
-                  ? 'bg-slate-800 text-white border-b-2 border-emerald-500'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <FileText className="w-3.5 h-3.5 text-emerald-400" />
-              <span>سجل الرقابة والمنشورات (Audit Log)</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('ideas')}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-t-xl font-bold transition-all shrink-0 ${
-                activeTab === 'ideas'
-                  ? 'bg-slate-800 text-white border-b-2 border-amber-500'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <Lightbulb className="w-3.5 h-3.5 text-amber-400" />
-              <span>بنك الأفكار والتغذية (Ideas)</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('twitter')}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-t-xl font-bold transition-all shrink-0 ${
-                activeTab === 'twitter'
-                  ? 'bg-slate-800 text-white border-b-2 border-sky-400'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <Twitter className="w-3.5 h-3.5 text-sky-400" />
-              <span>نشر تويتر (X Publishing)</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('knowledge')}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-t-xl font-bold transition-all shrink-0 ${
-                activeTab === 'knowledge'
-                  ? 'bg-slate-800 text-white border-b-2 border-purple-400'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <Brain className="w-3.5 h-3.5 text-purple-400" />
-              <span>الربط المعرفي والمنافسة (Intel)</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('logs')}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-t-xl font-bold transition-all shrink-0 ${
-                activeTab === 'logs'
-                  ? 'bg-slate-800 text-white border-b-2 border-indigo-500'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <Database className="w-3.5 h-3.5 text-indigo-400" />
-              <span>سجلات الأحداث (SQLite Logs)</span>
-            </button>
+        {/* Primary Workspace Hubs Navigation Bar */}
+        <div className="space-y-3">
+          <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-1.5 shadow-xl">
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-1 text-xs font-bold">
+              <button
+                type="button"
+                onClick={() => setActiveHub('control')}
+                className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl transition-all cursor-pointer ${
+                  activeHub === 'control'
+                    ? 'bg-sky-600 text-white shadow-md shadow-sky-950/40'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                }`}
+              >
+                <AlertCircle className="w-4 h-4 text-sky-300 shrink-0" />
+                <span className="whitespace-nowrap">مركز التحكم</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveHub('sources')}
+                className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl transition-all cursor-pointer ${
+                  activeHub === 'sources'
+                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-950/40'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                }`}
+              >
+                <Layers className="w-4 h-4 text-indigo-300 shrink-0" />
+                <span className="whitespace-nowrap">المصادر والجامعات</span>
+                {sources.length > 0 && (
+                  <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-indigo-950 text-indigo-300 border border-indigo-700/50">
+                    {sources.length}
+                  </span>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveHub('twitter')}
+                className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl transition-all cursor-pointer ${
+                  activeHub === 'twitter'
+                    ? 'bg-sky-500 text-slate-950 font-extrabold shadow-md shadow-sky-950/40'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                }`}
+              >
+                <Twitter className="w-4 h-4 text-sky-400 shrink-0" />
+                <span className="whitespace-nowrap">مركز تويتر (X)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveHub('ai')}
+                className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl transition-all cursor-pointer ${
+                  activeHub === 'ai'
+                    ? 'bg-purple-600 text-white shadow-md shadow-purple-950/40'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                }`}
+              >
+                <Brain className="w-4 h-4 text-purple-300 shrink-0" />
+                <span className="whitespace-nowrap">الذكاء والذاكرة</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveHub('telegram')}
+                className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl transition-all cursor-pointer ${
+                  activeHub === 'telegram'
+                    ? 'bg-emerald-600 text-white shadow-md shadow-emerald-950/40'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                }`}
+              >
+                <Smartphone className="w-4 h-4 text-emerald-300 shrink-0" />
+                <span className="whitespace-nowrap">تيليجرام والتوجيه</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveHub('logs')}
+                className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl transition-all cursor-pointer ${
+                  activeHub === 'logs'
+                    ? 'bg-amber-500 text-slate-950 font-extrabold shadow-md shadow-amber-950/40'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                }`}
+              >
+                <Database className="w-4 h-4 text-amber-300 shrink-0" />
+                <span className="whitespace-nowrap">سجلات الأحداث</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveHub('all')}
+                className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl transition-all cursor-pointer col-span-2 sm:col-span-2 lg:col-span-1 ${
+                  activeHub === 'all'
+                    ? 'bg-slate-800 text-white border border-slate-700 shadow-md'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                }`}
+              >
+                <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
+                <span className="whitespace-nowrap">عرض الكل</span>
+              </button>
+            </div>
           </div>
-          {/* Subtle scroll edge fade on mobile */}
-          <div className="pointer-events-none absolute left-0 top-0 bottom-2 w-8 bg-gradient-to-r from-slate-950 to-transparent sm:hidden"></div>
-          <div className="pointer-events-none absolute right-0 top-0 bottom-2 w-8 bg-gradient-to-l from-slate-950 to-transparent sm:hidden"></div>
+
+          {/* Contextual Sub-Navigation Bars */}
+          {activeHub === 'control' && (
+            <div className="flex items-center gap-2 p-1.5 bg-slate-900/60 border border-slate-800/80 rounded-xl overflow-x-auto text-xs">
+              <span className="text-[11px] text-slate-400 px-2 font-medium shrink-0">أقسام التحكم:</span>
+              <button
+                type="button"
+                onClick={() => setSubControl('diagnostics')}
+                className={`px-3 py-1.5 rounded-lg font-semibold transition-all shrink-0 cursor-pointer ${
+                  subControl === 'diagnostics' ? 'bg-sky-600 text-white' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                🛠️ مركز الفحص والتشخيص والنشر التجريبي
+              </button>
+              <button
+                type="button"
+                onClick={() => setSubControl('credentials')}
+                className={`px-3 py-1.5 rounded-lg font-semibold transition-all shrink-0 cursor-pointer ${
+                  subControl === 'credentials' ? 'bg-sky-600 text-white' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                🔑 توكن البوت والاعتمادات الرسمية
+              </button>
+              <button
+                type="button"
+                onClick={() => setSubControl('github')}
+                className={`px-3 py-1.5 rounded-lg font-semibold transition-all shrink-0 cursor-pointer ${
+                  subControl === 'github' ? 'bg-sky-600 text-white' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                🐙 الربط بـ GitHub وبوت بزنس
+              </button>
+              <button
+                type="button"
+                onClick={() => setSubControl('guide')}
+                className={`px-3 py-1.5 rounded-lg font-semibold transition-all shrink-0 cursor-pointer ${
+                  subControl === 'guide' ? 'bg-sky-600 text-white' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                📖 دليل النشر والاستضافة
+              </button>
+            </div>
+          )}
+
+          {activeHub === 'sources' && (
+            <div className="flex items-center gap-2 p-1.5 bg-slate-900/60 border border-slate-800/80 rounded-xl overflow-x-auto text-xs">
+              <span className="text-[11px] text-slate-400 px-2 font-medium shrink-0">أقسام المصادر:</span>
+              <button
+                type="button"
+                onClick={() => setSubSources('manager')}
+                className={`px-3 py-1.5 rounded-lg font-semibold transition-all shrink-0 cursor-pointer ${
+                  subSources === 'manager' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                📚 إدارة مصادر الجامعات وقنوات النشر
+              </button>
+              <button
+                type="button"
+                onClick={() => setSubSources('intel')}
+                className={`px-3 py-1.5 rounded-lg font-semibold transition-all shrink-0 cursor-pointer ${
+                  subSources === 'intel' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                🧠 الربط المعرفي والمنافسة الأكاديمية
+              </button>
+            </div>
+          )}
+
+          {activeHub === 'ai' && (
+            <div className="flex items-center gap-2 p-1.5 bg-slate-900/60 border border-slate-800/80 rounded-xl overflow-x-auto text-xs">
+              <span className="text-[11px] text-slate-400 px-2 font-medium shrink-0">أقسام الذكاء:</span>
+              <button
+                type="button"
+                onClick={() => setSubAi('editor')}
+                className={`px-3 py-1.5 rounded-lg font-semibold transition-all shrink-0 cursor-pointer ${
+                  subAi === 'editor' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                🧠 النماذج والذاكرة الإدراكية (bot_memory.db)
+              </button>
+              <button
+                type="button"
+                onClick={() => setSubAi('sim')}
+                className={`px-3 py-1.5 rounded-lg font-semibold transition-all shrink-0 cursor-pointer ${
+                  subAi === 'sim' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                ✍️ مختبر الصياغة الأكاديمية الحية
+              </button>
+              <button
+                type="button"
+                onClick={() => setSubAi('chat')}
+                className={`px-3 py-1.5 rounded-lg font-semibold transition-all shrink-0 cursor-pointer ${
+                  subAi === 'chat' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                💬 دردشة الذكاء الفورية
+              </button>
+            </div>
+          )}
+
+          {activeHub === 'telegram' && (
+            <div className="flex items-center gap-2 p-1.5 bg-slate-900/60 border border-slate-800/80 rounded-xl overflow-x-auto text-xs">
+              <span className="text-[11px] text-slate-400 px-2 font-medium shrink-0">أقسام تيليجرام:</span>
+              <button
+                type="button"
+                onClick={() => setSubTelegram('userbot')}
+                className={`px-3 py-1.5 rounded-lg font-semibold transition-all shrink-0 cursor-pointer ${
+                  subTelegram === 'userbot' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                ⚡️ اليوزربوت وسحب القنوات (Telethon)
+              </button>
+              <button
+                type="button"
+                onClick={() => setSubTelegram('ad_replace')}
+                className={`px-3 py-1.5 rounded-lg font-semibold transition-all shrink-0 cursor-pointer ${
+                  subTelegram === 'ad_replace' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                🛡️ استبدال إعلانات المنافسين بالمشرف (@M_S_F_G)
+              </button>
+            </div>
+          )}
+
+          {activeHub === 'logs' && (
+            <div className="flex items-center gap-2 p-1.5 bg-slate-900/60 border border-slate-800/80 rounded-xl overflow-x-auto text-xs">
+              <span className="text-[11px] text-slate-400 px-2 font-medium shrink-0">سجلات المراقبة:</span>
+              <button
+                type="button"
+                onClick={() => setSubLogs('sqlite_logs')}
+                className={`px-3 py-1.5 rounded-lg font-semibold transition-all shrink-0 cursor-pointer ${
+                  subLogs === 'sqlite_logs' ? 'bg-amber-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                🗄️ سجلات الأحداث الحية (SQLite Logs)
+              </button>
+              <button
+                type="button"
+                onClick={() => setSubLogs('audit')}
+                className={`px-3 py-1.5 rounded-lg font-semibold transition-all shrink-0 cursor-pointer ${
+                  subLogs === 'audit' ? 'bg-amber-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                📋 سجل الرقابة وتدقيق المنشورات
+              </button>
+              <button
+                type="button"
+                onClick={() => setSubLogs('ideas')}
+                className={`px-3 py-1.5 rounded-lg font-semibold transition-all shrink-0 cursor-pointer ${
+                  subLogs === 'ideas' ? 'bg-amber-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                💡 لوحة الأفكار والتغذية
+              </button>
+              <button
+                type="button"
+                onClick={() => setSubLogs('code')}
+                className={`px-3 py-1.5 rounded-lg font-semibold transition-all shrink-0 cursor-pointer ${
+                  subLogs === 'code' ? 'bg-amber-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                💻 السكربتات وملفات الإعدادات
+              </button>
+            </div>
+          )}
         </div>
 
-        {/* 0. Live System Diagnostics & Instant Test Publishing Engine */}
-        {(activeTab === 'all' || activeTab === 'diagnostics') && (
-          <section id="diagnostics-section">
+        {/* ==================== HUB 1: CONTROL CENTER ==================== */}
+        {(activeHub === 'all' || (activeHub === 'control' && subControl === 'diagnostics')) && (
+          <section id="diagnostics-section" className="space-y-4">
             <DiagnosticsAndTestPublishPanel
               currentBotToken={config.botToken}
               onBotTokenUpdated={(tok) => {
                 setConfig((prev) => ({ ...prev, botToken: tok }));
                 handleSaveConfigDirectly({ ...config, botToken: tok });
               }}
-              defaultChannel={config.targetChannels?.[0] || '@jhdhhdcj'}
+              defaultChannel={config.targetChannels?.[0] || ''}
             />
           </section>
         )}
 
-        {/* UserBot & Channel Scraping (Telethon / Pyrogram Session) */}
-        {(activeTab === 'all' || activeTab === 'userbot') && (
-          <section id="userbot-section">
-            <UserBotPanel
-              config={config}
-              onChange={setConfig}
-              sources={sources}
-            />
-          </section>
-        )}
-        
-        {/* Web AI Chat Interface */}
-        {(activeTab === 'all' || activeTab === 'chat') && (
-          <section id="chat-section">
-            <ChatPanel aiConfig={config.ai} />
-          </section>
-        )}
-
-        {/* GitHub & Bots.Business Cloud Hosting Guide */}
-        {(activeTab === 'all' || activeTab === 'github') && (
-          <section id="github-section">
-            <GitHubHostingGuide
-              adminUsername={config.adminUsername}
-              botUsername="admiuin_bot"
-            />
-          </section>
-        )}
-
-        {/* 1. Credentials (Bot Token & Admin ID) */}
-        {(activeTab === 'all' || activeTab === 'credentials' || activeTab === 'sources') && (
-          <section id="credentials-section">
+        {(activeHub === 'all' || (activeHub === 'control' && subControl === 'credentials')) && (
+          <section id="credentials-section" className="space-y-4">
             <CredentialsPanel
               config={config}
               onChange={(updatedCfg) => {
@@ -944,9 +1015,24 @@ export default function App() {
           </section>
         )}
 
-        {/* 2. Sources Manager (sources.json) */}
-        {(activeTab === 'all' || activeTab === 'sources') && (
-          <section id="sources-section">
+        {(activeHub === 'all' || (activeHub === 'control' && subControl === 'github')) && (
+          <section id="github-section" className="space-y-4">
+            <GitHubHostingGuide
+              adminUsername={config.adminUsername}
+              botUsername="admiuin_bot"
+            />
+          </section>
+        )}
+
+        {(activeHub === 'all' || (activeHub === 'control' && subControl === 'guide')) && (
+          <section id="guide-section" className="space-y-4">
+            <DeploymentGuide />
+          </section>
+        )}
+
+        {/* ==================== HUB 2: SOURCES & UNIVERSITIES ==================== */}
+        {(activeHub === 'all' || (activeHub === 'sources' && subSources === 'manager')) && (
+          <section id="sources-section" className="space-y-4">
             <SourcesManager
               sources={sources}
               onSaveSources={handleSaveSources}
@@ -956,9 +1042,22 @@ export default function App() {
           </section>
         )}
 
-        {/* 3. AI Model & Custom User Instructions */}
-        {(activeTab === 'all' || activeTab === 'ai') && (
-          <section id="ai-section">
+        {(activeHub === 'all' || (activeHub === 'sources' && subSources === 'intel')) && (
+          <section id="knowledge-section" className="space-y-4">
+            <KnowledgeIntelPanel />
+          </section>
+        )}
+
+        {/* ==================== HUB 3: TWITTER X HUB ==================== */}
+        {(activeHub === 'all' || activeHub === 'twitter') && (
+          <section id="twitter-section" className="space-y-4">
+            <TwitterIntegrationPanel />
+          </section>
+        )}
+
+        {/* ==================== HUB 4: AI ENGINE & MEMORY ==================== */}
+        {(activeHub === 'all' || (activeHub === 'ai' && subAi === 'editor')) && (
+          <section id="ai-section" className="space-y-4">
             <AIEditorPanel
               aiConfig={config.ai}
               onChange={(updatedAI) => {
@@ -974,9 +1073,35 @@ export default function App() {
           </section>
         )}
 
-        {/* 4. Smart Competitor Ad Replacement Panel */}
-        {(activeTab === 'all' || activeTab === 'ad') && (
-          <section id="ad-section">
+        {(activeHub === 'all' || (activeHub === 'ai' && subAi === 'sim')) && (
+          <section id="sim-section" className="space-y-4">
+            <EducationalSimulator
+              aiConfig={config.ai}
+              adConfig={config.adReplacement}
+              adminUsername={config.adminUsername}
+            />
+          </section>
+        )}
+
+        {(activeHub === 'all' || (activeHub === 'ai' && subAi === 'chat')) && (
+          <section id="chat-section" className="space-y-4">
+            <ChatPanel aiConfig={config.ai} />
+          </section>
+        )}
+
+        {/* ==================== HUB 5: TELEGRAM & FORWARDING ==================== */}
+        {(activeHub === 'all' || (activeHub === 'telegram' && subTelegram === 'userbot')) && (
+          <section id="userbot-section" className="space-y-4">
+            <UserBotPanel
+              config={config}
+              onChange={setConfig}
+              sources={sources}
+            />
+          </section>
+        )}
+
+        {(activeHub === 'all' || (activeHub === 'telegram' && subTelegram === 'ad_replace')) && (
+          <section id="ad-section" className="space-y-4">
             <AdReplacementPanel
               adConfig={config.adReplacement}
               onChange={(updatedAd) => {
@@ -989,67 +1114,32 @@ export default function App() {
           </section>
         )}
 
-        {/* 5. Live Educational Rephrase Simulator */}
-        {(activeTab === 'all' || activeTab === 'sim') && (
-          <section id="sim-section">
-            <EducationalSimulator
-              aiConfig={config.ai}
-              adConfig={config.adReplacement}
-              adminUsername={config.adminUsername}
-            />
+        {/* ==================== HUB 6: AUDIT & EVENT LOGS ==================== */}
+        {(activeHub === 'all' || (activeHub === 'logs' && subLogs === 'sqlite_logs')) && (
+          <section id="logs-section" className="space-y-4">
+            <ActivityLogs logs={logs} onClearLogs={() => setLogs([])} />
           </section>
         )}
 
-        {/* 6. Python Engine & Config Viewer */}
-        {(activeTab === 'all' || activeTab === 'code') && (
-          <section id="code-section">
+        {(activeHub === 'all' || (activeHub === 'logs' && subLogs === 'audit')) && (
+          <section id="audit-section" className="space-y-4">
+            <PostAuditLogPanel />
+          </section>
+        )}
+
+        {(activeHub === 'all' || (activeHub === 'logs' && subLogs === 'ideas')) && (
+          <section id="ideas-section" className="space-y-4">
+            <InteractiveIdeaBoard />
+          </section>
+        )}
+
+        {(activeHub === 'all' || (activeHub === 'logs' && subLogs === 'code')) && (
+          <section id="code-section" className="space-y-4">
             <PythonScriptViewer
               config={config}
               rules={[]}
               sources={sources}
             />
-          </section>
-        )}
-
-        {/* 7. Post Audit & Status Log (Published vs Rejected) */}
-        {(activeTab === 'all' || activeTab === 'audit') && (
-          <section id="audit-section">
-            <PostAuditLogPanel />
-          </section>
-        )}
-
-        {/* 8. Interactive Future Ideas & Cognitive Memory Board */}
-        {(activeTab === 'all' || activeTab === 'ideas') && (
-          <section id="ideas-section">
-            <InteractiveIdeaBoard />
-          </section>
-        )}
-
-        {/* 9. Independent Dual Twitter (X) Publishing */}
-        {(activeTab === 'all' || activeTab === 'twitter') && (
-          <section id="twitter-section">
-            <TwitterIntegrationPanel />
-          </section>
-        )}
-
-        {/* 10. Information Linking, Competitive Intel & Student Centric Learning */}
-        {(activeTab === 'all' || activeTab === 'knowledge') && (
-          <section id="knowledge-section">
-            <KnowledgeIntelPanel />
-          </section>
-        )}
-
-        {/* 11. Activity Logs */}
-        {(activeTab === 'all' || activeTab === 'logs') && (
-          <section id="logs-section">
-            <ActivityLogs logs={logs} onClearLogs={() => setLogs([])} />
-          </section>
-        )}
-
-        {/* 8. Step-by-Step Deployment Guide */}
-        {activeTab === 'all' && (
-          <section id="guide-section">
-            <DeploymentGuide />
           </section>
         )}
       </main>

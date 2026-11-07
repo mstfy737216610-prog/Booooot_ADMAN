@@ -571,7 +571,10 @@ text_content = f"{target_idea['title']}\\n\\n{target_idea.get('description', '')
 u_name = target_idea.get("university_name") or target_idea.get("university_id")
 
 if not targets:
-    targets = db.get_target_channels() or ["@jhdhhdcj"]
+    targets = [c for c in db.get_target_channels() if c]
+if not targets:
+    print(json.dumps({"success": False, "error": "يرجى تحديد قناة نشر معتمدة أولاً في إعدادات البوت أو الجامعة"}))
+    sys.exit(0)
 
 main.post_queue.put({
     "type": "direct_post",
@@ -1177,8 +1180,17 @@ if include_card:
 
 # 2. فحص وتنفيذ النشر على التيليجرام
 if platform in ["telegram", "both"]:
-    dest_channel = custom_channel or (db.get_target_channels() or ["@jhdhhdcj"])[0]
-    if not token or len(token) < 20 or ":" not in token:
+    target_list = [c for c in db.get_target_channels() if c]
+    dest_channel = custom_channel or (target_list[0] if target_list else "")
+    if not dest_channel:
+        steps.append({
+            "step": "telegram_publish",
+            "status": "warning",
+            "msg": "يرجى تحديد قناة نشر مستهدفة (مثال: @my_channel) في حقل القناة لإجراء الاختبار.",
+            "target": ""
+        })
+        tg_result = {"ok": False, "description": "لم يتم تحديد أي قناة نشر."}
+    elif not token or len(token) < 20 or ":" not in token:
         steps.append({
             "step": "telegram_publish",
             "status": "warning",
@@ -1689,10 +1701,20 @@ db.delete_university_project(${JSON.stringify(deletedName)})
       console.warn("delete_university_project python error:", e);
     }
 
-    // 2. تحديث ملف sources.json وقراءة أحدث البيانات المحدثة
-    if (fs.existsSync(SOURCES_FILE)) {
+    // 2. تحديث ملف sources.json وكتابته فوراً إلى القرص
+    data.university_projects = (data.university_projects || []).filter((p: any) => p.id !== id && p.name !== id && p.name !== deletedName);
+    data.lastUpdated = new Date().toISOString();
+    fs.writeFileSync(SOURCES_FILE, JSON.stringify(data, null, 2), 'utf-8');
+
+    // 3. تحديث ملف universities.json إن وجد
+    const UNIV_FILE = path.join(__dirname, 'universities.json');
+    if (fs.existsSync(UNIV_FILE)) {
       try {
-        data = JSON.parse(fs.readFileSync(SOURCES_FILE, 'utf-8'));
+        let uList = JSON.parse(fs.readFileSync(UNIV_FILE, 'utf-8'));
+        if (Array.isArray(uList)) {
+          uList = uList.filter((u: any) => u.id !== id && u.name !== id && u.name !== deletedName);
+          fs.writeFileSync(UNIV_FILE, JSON.stringify(uList, null, 2), 'utf-8');
+        }
       } catch {}
     }
 
@@ -2588,7 +2610,7 @@ ${scrapedInfo.url}`;
 بخصوص الجامعات وقنوات النشر:
 • النظام يعمل حالياً بنظام العزل الصارم (Strict Relational Isolation)؛ حيث يتم تخصيص مصادر محددة لكل جامعة دون أي خلط.
 • عدد المشاريع الجامعية المسجلة: ${univCount} جامعة.
-• قنوات النشر المعتمدة: ${targetChannels.join(' و ') || '@jhdhhdcj'}.
+• قنوات النشر المعتمدة: ${targetChannels.join(' و ') || 'لم تُحدد قنوات نشر بعد'}.
 • يتم استبعاد أي خبر لا يخص الجامعة المحددة تلقائياً لمنع التشتيت وضمان النشر الحصري الدقيق.`;
   }
 
