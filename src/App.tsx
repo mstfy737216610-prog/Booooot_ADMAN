@@ -26,6 +26,7 @@ import { InteractiveIdeaBoard } from './components/InteractiveIdeaBoard.tsx';
 import { TwitterIntegrationPanel } from './components/TwitterIntegrationPanel.tsx';
 import { KnowledgeIntelPanel } from './components/KnowledgeIntelPanel.tsx';
 import { DiagnosticsAndTestPublishPanel } from './components/DiagnosticsAndTestPublishPanel.tsx';
+import { AuthorizedUsersPanel } from './components/AuthorizedUsersPanel.tsx';
 import {
   Shield,
   Sparkles,
@@ -64,9 +65,9 @@ const DEFAULT_CONFIG: BotConfig = {
   preferredEngine: 'userbot',
   ai: {
     apiBase: 'https://api.hcnsec.cn/v1',
-    apiKey: 'sk-J2ky44F6VTDMkL8Q1GHL5sfmbeIpARVDayNuwMfxKI5zCdii',
-    primaryModel: 'DeepSeek-V4-Flash',
-    fallbackModel: 'auto',
+    apiKey: 'sk-ZimPNQ7NBOAqouWIL9Wa15qczOorNkLY72ns3zUfxoUmU307',
+    primaryModel: 'step-5-preview',
+    fallbackModel: 'glm-5.3-flash',
     systemPrompt: `# الدور: ممثل الدفعة والزميل الأكاديمي الناصح وصوت الطالب الحقيقي (إنسان حقيقي ورفيق لزملائه)
 ## الهوية والروح الحقيقية:
 أنت لست آلة تنسخ بيانات جامعية جافة، بل أنت ممثل الدفعة والزميل المقرب المحبوب والناصح الأمين. تنقل الأخبار الجامعية بمصداقية وأمانة مطلقة وبأسلوب أخوي راقٍ.
@@ -87,9 +88,13 @@ const DEFAULT_CONFIG: BotConfig = {
    - ادخل في صلب الموضوع مباشرة.
 
 ## 🔤 التنسيق والتنظيم الإلزامي:
-- أبرز المواعيد والنسب والشروط الحقيقية المذكورة فقط بالخط العريض <b>...</b> لتسهيل القراءة.
-- استخدم النقاط المنظمة [▫️] لسرد الخطوات الأكاديمية بوضوح تام.
-- اختم دائماً بدعوات طيبة ولمسة أخوية تلامس قلب الطالب.`,
+- 🚫 ممنوع منعاً باتاً تقطيع الفقرات العادية أو نصوص الرسائل والدعوات أو الترحيب إلى نقاط [▫️]!
+- استخدم النقاط [▫️] أو الترقيم فقط وحصرياً إذا كان المنشور الأصلي يحتوي فعلياً على قائمة خطوات أو شروط أو متطلبات متسلسلة.
+- الفقرات العادية، رسائل الترحيب، الدعوات الأكاديمية، والنصوص الثنائية اللغة (عربي/إنجليزي) تُترك كفقرات متناسقة ومرتبة دون نقاط مجزأة مشوهة.
+- الوسوم (الهاشتاجات): استخرج 3-4 وسوم ذكية مشتقة مباشرة من موضوع المنشور الفعلي (مثل: #مشروع_تخرج #استبيان #الصحة_النفسية #الإمارات)، وممنوع وضع وسوم ثابتة مكررة مثل #جامعة في كل منشور.
+- الخاتمة: لا تكرر نفس الخاتمة في كل منشور؛ إذا كان المنشور يحتوي على شكر أو خاتمة من صاحبه فاحتفظ به، وإلا فاختر عبارة طبيعية متنوعة تناسب سياق الخبر (دعاء بالنجاح للاختبارات، تشجيع ودعاء بالتوفيق للمشاريع والاستبيانات، تذكير للزملاء بمواعيد التسجيل).
+- الرابط: حدد وصف الرابط بدقة بحسب نوعه (مثال: رابط تعبئة الاستبيان / رابط بوابة التسجيل والقبول / الرابط الرسمي المباشر).
+- 🚫 ممنوع منعاً باتاً كتابة أي بادئات إدارية أو اسم الحساب أو البوت مثل ADMIN_p: أو ADMIN: في بداية المنشور.`,
     customInstructions: 'التزم بنقل الحقائق والتواريخ المذكورة نصاً في الخبر فقط دون اختراع أي مواعيد أو أسماء وهمية. اعزل الجامعات بدقة، واحذف أسطر الروابط إن لم يكن هناك رابط حقيقي.',
     enableWebSearch: true,
   },
@@ -183,7 +188,7 @@ export default function App() {
   // Re-organized Professional Hubs & Sub-Navigation
   type MainHub = 'control' | 'sources' | 'twitter' | 'ai' | 'telegram' | 'logs' | 'all';
   const [activeHub, setActiveHub] = useState<MainHub>('control');
-  const [subControl, setSubControl] = useState<'diagnostics' | 'credentials' | 'github' | 'guide'>('diagnostics');
+  const [subControl, setSubControl] = useState<'diagnostics' | 'credentials' | 'whitelist' | 'github' | 'guide'>('diagnostics');
   const [subSources, setSubSources] = useState<'manager' | 'intel'>('manager');
   const [subAi, setSubAi] = useState<'editor' | 'sim' | 'chat'>('editor');
   const [subTelegram, setSubTelegram] = useState<'userbot' | 'ad_replace'>('userbot');
@@ -842,6 +847,15 @@ export default function App() {
               </button>
               <button
                 type="button"
+                onClick={() => setSubControl('whitelist')}
+                className={`px-3 py-1.5 rounded-lg font-semibold transition-all shrink-0 cursor-pointer ${
+                  subControl === 'whitelist' ? 'bg-sky-600 text-white' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                🔐 المشرفون والمصرح لهم (Whitelist)
+              </button>
+              <button
+                type="button"
                 onClick={() => setSubControl('github')}
                 className={`px-3 py-1.5 rounded-lg font-semibold transition-all shrink-0 cursor-pointer ${
                   subControl === 'github' ? 'bg-sky-600 text-white' : 'text-slate-400 hover:text-white'
@@ -1011,6 +1025,14 @@ export default function App() {
               onSaveBotToken={handleSaveBotToken}
               isTestingBot={isTestingBot}
               botInfo={botInfo}
+            />
+          </section>
+        )}
+
+        {(activeHub === 'all' || (activeHub === 'control' && subControl === 'whitelist')) && (
+          <section id="whitelist-section" className="space-y-4">
+            <AuthorizedUsersPanel
+              onNotify={(msg) => setToastMessage(msg)}
             />
           </section>
         )}

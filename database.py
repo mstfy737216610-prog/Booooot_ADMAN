@@ -358,6 +358,31 @@ def init_db():
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_diag_code ON system_diagnostics (error_code)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_diag_time ON system_diagnostics (created_at DESC)")
 
+            # 18. جدول المشرفين والمصرح لهم حصرياً باستخدام البوت (Strict Whitelist Access)
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS authorized_users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER UNIQUE,
+                username TEXT DEFAULT '',
+                notes TEXT DEFAULT '',
+                added_by INTEGER DEFAULT 0,
+                created_at TEXT
+            )
+            """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_auth_user_id ON authorized_users (user_id)")
+
+            # إضافة المشرف العام المعتمد تلقائياً
+            try:
+                now_str = datetime.utcnow().isoformat()
+                cursor.execute("SELECT COUNT(*) as c FROM authorized_users WHERE user_id = 7607633343")
+                if cursor.fetchone()["c"] == 0:
+                    cursor.execute("""
+                    INSERT INTO authorized_users (user_id, username, notes, added_by, created_at)
+                    VALUES (7607633343, 'M_S_F_G', 'المشرف العام ومالك البوت 👑', 7607633343, ?)
+                    """, (now_str,))
+            except Exception:
+                pass
+
             # إزالة أي بيانات وهمية أو تجريبية سابقة لضمان أن النظام يبدأ نظيفاً وفارغاً تماماً
             try:
                 cursor.execute("DELETE FROM target_channels WHERE channel_id = '@jhdhhdcj' OR title LIKE '%قناة النشر الرسمية%'")
@@ -576,7 +601,98 @@ def list_users(limit: int = 50) -> List[Dict[str, Any]]:
             conn.close()
 
 
+# ----------------- وظائف إدارة المشرفين والمصرح لهم حصرياً (Whitelist) -----------------
+
+def get_authorized_users() -> List[Dict[str, Any]]:
+    """الحصول على قائمة المشرفين والمصرح لهم باستخدام البوت"""
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM authorized_users ORDER BY id ASC")
+            rows = cursor.fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
+
+def add_authorized_user(user_id: int, username: str = "", notes: str = "", added_by: int = 0) -> bool:
+    """إضافة مستخدم جديد إلى قائمة المصرح لهم بالدخول"""
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            clean_username = username.replace("@", "").strip() if username else ""
+            now_str = datetime.utcnow().isoformat()
+            cursor.execute("""
+                INSERT INTO authorized_users (user_id, username, notes, added_by, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET
+                    username = coalesce(nullif(excluded.username, ''), authorized_users.username),
+                    notes = excluded.notes
+            """, (user_id, clean_username, notes, added_by, now_str))
+
+            # ترقية دوره تلقائياً في جدول users
+            cursor.execute("""
+                UPDATE users SET role = 'admin' WHERE user_id = ?
+            """, (user_id,))
+            conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"Error adding authorized user: {e}")
+            return False
+        finally:
+            conn.close()
+
+
+def remove_authorized_user(user_id: int) -> bool:
+    """حذف مستخدم من قائمة المصرح لهم (حماية المالك الأساسي 7607633343 من الحذف)"""
+    if user_id == 7607633343:
+        return False
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM authorized_users WHERE user_id = ?", (user_id,))
+            deleted = cursor.rowcount > 0
+            cursor.execute("UPDATE users SET role = 'user' WHERE user_id = ?", (user_id,))
+            conn.commit()
+            return deleted
+        finally:
+            conn.close()
+
+
+def is_user_authorized(user_id: int, username: str = "") -> bool:
+    """التحقق المشدد من تصريح المستخدم (المشرف الأساسي أو المدرجين يدوياً حصراً)"""
+    if user_id == 7607633343:
+        return True
+    clean_username = username.replace("@", "").strip().lower() if username else ""
+    if clean_username and clean_username in ["m_s_f_g"]:
+        return True
+
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT user_id FROM authorized_users WHERE user_id = ?", (user_id,))
+            if cursor.fetchone():
+                return True
+            if clean_username:
+                cursor.execute("SELECT user_id FROM authorized_users WHERE lower(username) = ?", (clean_username,))
+                if cursor.fetchone():
+                    return True
+            # فحص إضافي في جدول users
+            cursor.execute("SELECT role, is_banned FROM users WHERE user_id = ?", (user_id,))
+            u = cursor.fetchone()
+            if u and not u["is_banned"] and u["role"] in ["admin", "superadmin", "moderator"]:
+                return True
+            return False
+        finally:
+            conn.close()
+
+
 # ----------------- وظائف الإعدادات -----------------
+
 
 def get_setting(key: str, default: Any = "") -> str:
     with _db_lock:

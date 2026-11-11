@@ -120,54 +120,168 @@ TELEGRAM_API_HASH = os.getenv("TELEGRAM_API_HASH", "abcdef0123456789abcdef012345
 STRING_SESSION = _raw_session
 
 AI_BASE_URL = os.getenv("AI_BASE_URL", "https://api.hcnsec.cn/v1").rstrip("/")
-AI_API_KEY = os.getenv("AI_API_KEY", "sk-J2ky44F6VTDMkL8Q1GHL5sfmbeIpARVDayNuwMfxKI5zCdii").strip()
-PRIMARY_MODEL = os.getenv("PRIMARY_MODEL", "DeepSeek-V4-Flash").strip()
-FALLBACK_MODEL = os.getenv("FALLBACK_MODEL", "DeepSeek-V4.1-Flash").strip()
+AI_API_KEY = os.getenv("AI_API_KEY", "sk-ZimPNQ7NBOAqouWIL9Wa15qczOorNkLY72ns3zUfxoUmU307").strip()
+PRIMARY_MODEL = os.getenv("PRIMARY_MODEL", "step-5-preview").strip()
+FALLBACK_MODEL = os.getenv("FALLBACK_MODEL", "glm-5.3-flash").strip()
 
-# كوكبة النماذج الذكية المتتالية للعمل بأقصى سرعة واستيعاب وتخطي أي أخطاء 503 تلقائياً
+# كوكبة النماذج الذكية المتتالية للعمل بأقصى سرعة وتخطي أي أخطاء تلقائياً
 AI_MODELS_CASCADE = [
     PRIMARY_MODEL,
-    "DeepSeek-V4-Flash",
-    "DeepSeek-V4.1-Flash",
-    "auto",
+    "step-5-preview",
+    "glm-5.3-flash",
     "glm-5.3",
+    "DeepSeek-V4.1-Flash",
     "MiniMax-M3.1-Flash"
 ]
 def get_current_ai_config() -> Tuple[str, str, str, str]:
     """استدعاء أحدث إعدادات ومفاتيح الذكاء الاصطناعي من قاعدة البيانات والملفات مباشرة لحظة بلحظة"""
     base = db.get_setting("ai_base_url", os.getenv("AI_BASE_URL", "https://api.hcnsec.cn/v1")).rstrip("/")
     key = db.get_setting("ai_api_key", os.getenv("AI_API_KEY", "sk-ZimPNQ7NBOAqouWIL9Wa15qczOorNkLY72ns3zUfxoUmU307")).strip()
-    primary = db.get_setting("primary_model", os.getenv("PRIMARY_MODEL", "DeepSeek-V4-Flash")).strip()
+    primary = db.get_setting("primary_model", os.getenv("PRIMARY_MODEL", "step-5-preview")).strip()
     gemini_k = db.get_setting("gemini_api_key", os.getenv("GEMINI_API_KEY", "")).strip()
     return base, key, primary, gemini_k
 
 
-def format_fallback_academic_post(raw_text: str, target_univ: Optional[str] = None, ext_links: Optional[List[str]] = None) -> str:
-    """صياغة أكاديمية موثقة ودافئة تنشر فوراً دون أي حذف أو اقتطاع للأخبار الأكاديمية"""
-    lines = [l.strip() for l in raw_text.split('\n') if l.strip()]
-    first_line = lines[0] if lines else "تحديث وإعلان أكاديمي هام"
-    first_line = re.sub(r'^[•\-*#📌📢✨🎓]\s*', '', first_line).strip()
-    title = first_line[:90] if len(first_line) > 90 else first_line
+def get_contextual_link_label(url: str, text: str = "") -> str:
+    """تحديد التسمية الأكاديمية الدقيقة للرابط بحسب نوعه وسياق المحتوى"""
+    u = url.lower()
+    t = text.lower()
+    if any(k in u for k in ["forms.cloud.microsoft", "forms.office.com", "forms.gle", "docs.google.com/forms", "surveymonkey", "typeform"]) or any(k in t for k in ["استبيان", "استبانة", "استمارة", "questionnaire", "survey", "مشروع تخرج", "بحث تخرج"]):
+        return "🔗 <b>رابط تعبئة الاستبيان / المشاركة في البحث:</b>"
+    if any(k in u or k in t for k in ["admission", "register", "apply", "تسجيل", "قبول", "تقديم", "شروط القبول"]):
+        return "🔗 <b>رابط بوابة التسجيل والقبول المباشر:</b>"
+    if any(k in u or k in t for k in ["exam", "schedule", "جدول", "اختبار", "امتحان", "فاينل"]):
+        return "🔗 <b>رابط جدول الاختبارات المباشر:</b>"
+    return "🔗 <b>الرابط الرسمي المباشر:</b>"
 
-    bullets = []
-    for l in lines[1:]:
-        clean_l = re.sub(r'^[•\-*#📌📢✨🎓]\s*', '', l).strip()
-        if len(clean_l) > 3 and not clean_l.startswith("http") and not clean_l.startswith("@"):
-            bullets.append(f"▫️ {clean_l}")
 
-    body = "\n".join(bullets) if bullets else f"▫️ {first_line}"
-    u_label = f" ({target_univ})" if target_univ else ""
-
-    links_part = ""
-    if ext_links and len(ext_links) > 0:
-        links_part = f"\n\n🔗 <b>رابط البوابة الإلكترونية المعتمدة:</b>\n{ext_links[0]}"
-
-    tag = "#جامعة"
+def extract_dynamic_academic_hashtags(text: str, target_univ: Optional[str] = None) -> str:
+    """استخراج وسوم أكاديمية ذكية مستمدة بدقة من صلب المنشور بدون تكرار ثابت"""
+    tags = []
     if target_univ:
-        clean_tag = re.sub(r'\s+', '_', target_univ.strip())
-        tag = f"#{clean_tag} #شؤون_الطلاب #مواعيد"
+        clean_u = re.sub(r'\s+', '_', target_univ.strip())
+        tags.append(f"#{clean_u}")
 
-    return f"📌 <b>{title}</b>{u_label}\n\n{body}{links_part}\n\nدعواتنا لكم بالتوفيق والنجاح الدائم 🤲\nشاركوا التنبيه مع زملائكم الطلاب 🤝\n{tag}"
+    t = text.lower()
+    topic_rules = [
+        (["مشروع تخرج", "مشروع التخرج", "graduation project", "بحث تخرج", "بحوث تخرج"], "#مشروع_تخرج"),
+        (["استبيان", "استبانة", "questionnaire", "survey", "forms.office", "forms.cloud", "forms.gle"], "#استبيان"),
+        (["صحة نفسية", "الصحة النفسية", "mental health", "دعم نفسي"], "#الصحة_النفسية"),
+        (["ذكاء اصطناعي", "الذكاء الاصطناعي", "ai system", "artificial intelligence"], "#الذكاء_الاصطناعي"),
+        (["إمارات", "امارات", "united arab emirates", "uae", "أبوظبي", "دبي", "الشارقة", "hct"], "#الإمارات"),
+        (["سعودية", "المملكة", "ksu", "الرياض", "جدة"], "#السعودية"),
+        (["كويت", "kuwait", "aum"], "#الكويت"),
+        (["قبول", "تسجيل", "admission", "register", "enroll"], "#القبول_والتسجيل"),
+        (["اختبار", "امتحان", "فاينل", "كويز", "exam", "final"], "#اختبارات_نهائية"),
+        (["صيفي", "سمر", "summer"], "#الفصل_الصيفي"),
+        (["حفل تخرج", "تخرج", "خريجين", "graduation"], "#تخرج"),
+        (["مكافأة", "مكافآت", "مكافاه"], "#مكافآت_الطلاب"),
+        (["جداول", "جدول", "شعب", "سكشن", "schedule"], "#الجداول_الدراسية"),
+        (["وظائف", "تدريب", "internship", "training"], "#تدريب_تعاوني")
+    ]
+    for keywords, tag in topic_rules:
+        if tag not in tags and any(k in t for k in keywords):
+            tags.append(tag)
+
+    raw_tags = re.findall(r'#(\w+)', text)
+    for rt in raw_tags:
+        formatted = f"#{rt}"
+        if formatted not in tags and len(formatted) > 3 and not formatted.isdigit():
+            tags.append(formatted)
+
+    if not tags:
+        tags = ["#شؤون_الطلاب", "#أخبار_الجامعات"]
+
+    return " ".join(tags[:4])
+
+
+def format_fallback_academic_post(raw_text: str, target_univ: Optional[str] = None, ext_links: Optional[List[str]] = None) -> str:
+    """صياغة أكاديمية موثقة تحافظ على فقرات المنشور كاملة وتمنع التقطيع العشوائي أو الخواتم المكررة"""
+    # 1. إزالة أي بادئات مزعجة أو قوالب إدارية
+    text = re.sub(r'^(?:ADMIN_p|ADMIN|Admin|Bot|محرر|المشرف):\s*', '', raw_text.strip(), flags=re.IGNORECASE)
+    text = re.sub(r'\[Forwarded from [^\]]+\]\s*', '', text)
+    text = re.sub(r'https?://[^\s<>\"\']+', '', text)
+
+    lines = [l.strip() for l in text.split('\n') if l.strip()]
+    if not lines:
+        return "📌 <b>تحديث وإعلان أكاديمي هام</b>"
+
+    first_line = lines[0]
+    first_line_clean = re.sub(r'^[•\-*#📌📢✨🎓▫️]\s*', '', first_line).strip()
+    u_label = f" ({target_univ})" if target_univ else ""
+    title = f"📌 <b>{first_line_clean}</b>{u_label}"
+
+    # 2. بناء الفقرات والقوائم بذكاء دون إجبار كل سطر على نقطة ▫️
+    paragraphs = []
+    current_para = []
+    is_prev_bullet = False
+
+    for line in lines[1:]:
+        clean_l = line.strip()
+        if not clean_l or clean_l.startswith("@"):
+            continue
+
+        is_bullet = bool(re.match(r'^(?:[•\-*▫️▪️]|(?:\d+[\.\-\)]))\s+', clean_l))
+        clean_item = re.sub(r'^(?:[•\-*▫️▪️]|(?:\d+[\.\-\)]))\s*', '', clean_l).strip()
+
+        if is_bullet:
+            if current_para:
+                paragraphs.append(" ".join(current_para))
+                current_para = []
+            paragraphs.append(f"▫️ {clean_item}")
+            is_prev_bullet = True
+        else:
+            is_english = bool(re.match(r'^[A-Za-z]', clean_l))
+            prev_english = bool(re.match(r'^[A-Za-z]', current_para[-1])) if current_para else False
+
+            if current_para and (is_english != prev_english or is_prev_bullet):
+                paragraphs.append(" ".join(current_para))
+                current_para = [clean_l]
+            else:
+                current_para.append(clean_l)
+            is_prev_bullet = False
+
+    if current_para:
+        paragraphs.append(" ".join(current_para))
+
+    body = "\n\n".join(paragraphs) if paragraphs else ""
+
+    # 3. قسم الروابط التفاعلية الموثقة بتسمية ذكية
+    links_part = ""
+    all_links = list(ext_links or [])
+    raw_urls = re.findall(r'https?://[^\s<>\"\']+', raw_text)
+    for u in raw_urls:
+        if u not in all_links:
+            all_links.append(u)
+
+    if all_links:
+        primary_link = all_links[0]
+        label = get_contextual_link_label(primary_link, raw_text)
+        links_part = f"\n\n{label}\n{primary_link}"
+
+    # 4. الخاتمة السياقية الذكية (عدم تكرار الخاتمة إذا كان المنشور يحتوي على شكر أو خاتمة مسبقاً)
+    has_closing = any(k in raw_text.lower() for k in [
+        "شكراً", "شكرا", "thank you", "بالتوفيق", "دمتم", "مع تحيات", "تحياتي", "نسأل الله", "جزاكم الله", "أطيب التمنيات"
+    ])
+    ending_part = ""
+    if not has_closing:
+        t_low = raw_text.lower()
+        if "مشروع تخرج" in t_low or "استبيان" in t_low:
+            ending_part = "\n\nدعواتنا للزملاء بالتوفيق والتميز في مشروع تخرجهم 🤍🎓"
+        elif any(k in t_low for k in ["اختبار", "فاينل", "امتحان"]):
+            ending_part = "\n\nفالكم التوفيق وأعلى الدرجات بإذن الله 🤲✨"
+        elif any(k in t_low for k in ["تسجيل", "قبول", "شروط"]):
+            ending_part = "\n\nشاركوا التنبيه مع زملائكم لتعم الفائدة 🤝"
+        else:
+            ending_part = "\n\nدعواتنا لكم بدوام التوفيق والنجاح 🌸"
+
+    # 5. الوسوم الأكاديمية الديناميكية المشتقة من صلب الخبر
+    tags = extract_dynamic_academic_hashtags(raw_text, target_univ)
+    tags_part = f"\n\n{tags}" if tags else ""
+
+    content_middle = f"\n\n{body}" if body else ""
+    return f"{title}{content_middle}{links_part}{ending_part}{tags_part}".strip()
+
 
 
 _raw_port = safe_int(os.getenv("PORT", os.getenv("KEEPALIVE_PORT", "8088")), 8088)
@@ -214,9 +328,13 @@ SYSTEM_PROMPT_REPHRASE = """# الدور: ممثل الدفعة والزميل �
    - ادخل في صلب الموضوع مباشرة بأسلوب ممثل الدفعة الناصح والمبسط.
 
 ## 🔤 التنسيق والتنظيم الإلزامي:
-- أبرز المواعيد والنسب والشروط الحقيقية المذكورة فقط بالخط العريض <b>...</b> لتسهيل القراءة.
-- استخدم النقاط المنظمة [▫️] لسرد الخطوات الأكاديمية بوضوح تام.
-- اختم دائماً بدعوات طيبة ولمسة أخوية تلامس قلب الطالب."""
+- 🚫 ممنوع منعاً باتاً تقطيع الفقرات العادية أو نصوص الرسائل والدعوات أو الترحيب إلى نقاط [▫️]!
+- استخدم النقاط [▫️] أو الترقيم فقط وحصرياً إذا كان المنشور الأصلي يحتوي فعلياً على قائمة خطوات أو شروط أو متطلبات متسلسلة.
+- الفقرات العادية، رسائل الترحيب، الدعوات الأكاديمية، والنصوص الثنائية اللغة (عربي/إنجليزي) تُترك كفقرات متناسقة ومرتبة دون نقاط مجزأة مشوهة.
+- الوسوم (الهاشتاجات): استخرج 3-4 وسوم ذكية مشتقة مباشرة من موضوع المنشور الفعلي (مثل: #مشروع_تخرج #استبيان #الصحة_النفسية #الإمارات)، وممنوع وضع وسوم ثابتة مكررة مثل #جامعة في كل منشور.
+- الخاتمة: لا تكرر نفس الخاتمة في كل منشور؛ إذا كان المنشور يحتوي على شكر أو خاتمة من صاحبه فاحتفظ به، وإلا فاختر عبارة طبيعية متنوعة تناسب سياق الخبر (دعاء بالنجاح للاختبارات، تشجيع ودعاء بالتوفيق للمشاريع والاستبيانات، تذكير للزملاء بمواعيد التسجيل).
+- الرابط: حدد وصف الرابط بدقة بحسب نوعه (مثال: رابط تعبئة الاستبيان / رابط بوابة التسجيل والقبول / الرابط الرسمي المباشر).
+- 🚫 ممنوع منعاً باتاً كتابة أي بادئات إدارية أو اسم الحساب أو البوت مثل ADMIN_p: أو ADMIN: أو غيرها في بداية المنشور."""
 
 
 
@@ -1987,50 +2105,60 @@ class StandaloneTelegramEducationalBot:
 
 
     # ----------------- فحص الصلاحيات والأدوار -----------------
+    # ----------------- فحص الصلاحيات المشدد وقفل الأمان (Strict Whitelist Security) -----------------
+    def is_admin(self, user_id: int, username: str = "") -> bool:
+        """التحقق المشدد من المشرف: المالك الأساسي أو المدرجين يدوياً في القائمة البيضاء حصراً"""
+        if user_id == ADMIN_ID:
+            return True
+        clean_u = (username or "").replace("@", "").strip().lower()
+        if ADMIN_USERNAME and clean_u == ADMIN_USERNAME.lower():
+            return True
+        return db.is_user_authorized(user_id, clean_u)
+
+    def is_moderator(self, user_id: int, username: str = "") -> bool:
+        return self.is_admin(user_id, username)
+
     def check_user_access(self, from_user: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
+        """
+        قفل أمان حديدي:
+        - لا يُسمح إطلاقاً لأي غريب باستخدام البوت أو رؤية قنواته ومجموعاته
+        - يعمل البوت حصراً مع المشرف الأساسي أو من تم إدخاله يدوياً في القائمة البيضاء (Whitelist)
+        """
         user_id = from_user.get("id")
-        username = (from_user.get("username") or "").replace("@", "")
+        username = (from_user.get("username") or "").replace("@", "").strip()
         first_name = from_user.get("first_name", "")
+
+        is_auth = self.is_admin(user_id, username)
 
         user = db.get_user(user_id)
         if not user:
-            role = "admin" if user_id == ADMIN_ID else "user"
+            role = "admin" if is_auth else "unauthorized"
             user = db.upsert_user(user_id, username, first_name, role)
+        elif is_auth and user.get("role") != "admin":
+            db.set_user_role(user_id, "admin")
+            user["role"] = "admin"
 
-        if user.get("is_banned"):
+        if user.get("is_banned") or not is_auth:
             return False, user
 
         return True, user
 
-    def is_admin(self, user_id: int) -> bool:
-        if user_id == ADMIN_ID:
-            return True
-        u = db.get_user(user_id)
-        return bool(u and u.get("role") in ["admin", "superadmin"])
-
-    def is_moderator(self, user_id: int) -> bool:
-        if self.is_admin(user_id):
-            return True
-        u = db.get_user(user_id)
-        return bool(u and u.get("role") in ["admin", "moderator"])
-
-    # ----------------- لوحات المفاتيح والأزرار -----------------
-    def get_main_reply_keyboard(self, user_role: str = "user") -> Dict[str, Any]:
+    # ----------------- لوحات المفاتيح والأزرار المحسنة والمنسقة -----------------
+    def get_main_reply_keyboard(self, user_role: str = "admin") -> Dict[str, Any]:
         is_google_enabled = db.is_google_news_enabled()
-        google_btn_text = "🛑 إيقاف بحث جوجل" if is_google_enabled else "🟢 تفعيل بحث جوجل"
+        google_btn_text = "🛑 إيقاف جوجل نيوز" if is_google_enabled else "🟢 تفعيل جوجل نيوز"
         is_tw_enabled = db.is_twitter_search_enabled()
-        twitter_btn_text = "🛑 إيقاف بحث تويتر" if is_tw_enabled else "🐦 تفعيل بحث تويتر"
+        twitter_btn_text = "🛑 إيقاف تويتر/X" if is_tw_enabled else "🐦 تفعيل تويتر/X"
 
         kb = [
             [{"text": "🏛️ إدارة الجامعات وقنوات النشر"}, {"text": "➕ إضافة جامعة وقناة نشر"}],
-            [{"text": "🧠 تعليمات وتدريب البوت"}, {"text": "🐦 سحب وفحص حسابات تويتر"}],
-            [{"text": twitter_btn_text}, {"text": google_btn_text}],
             [{"text": "🔄 فحص وسحب أخبار الجامعات"}, {"text": "📝 صياغة ونشر خبر فوري"}],
-            [{"text": "📂 مزامنة التخزين الداخلي (Termux)"}, {"text": "🔄 مزامنة جيت هاب (Git Sync)"}],
-            [{"text": "🎯 إعلان خدماتي البديل"}, {"text": "💬 محادثة وبحث الذكاء"}],
-            [{"text": "⏸ إيقاف / استئناف"}, {"text": "📊 تقارير القنوات"}],
-            [{"text": "👥 إدارة المستخدمين"}, {"text": "👤 حسابي والاشتراك"}],
-            [{"text": "🧪 تجربة الصياغة الفورية"}]
+            [{"text": twitter_btn_text}, {"text": google_btn_text}],
+            [{"text": "🐦 سحب وفحص حسابات تويتر"}, {"text": "🌐 أخبار جوجل للجامعات"}],
+            [{"text": "🧠 تعليمات وتدريب البوت"}, {"text": "🎯 إعلان خدماتي البديل"}],
+            [{"text": "👥 المشرفون والمصرح لهم"}, {"text": "📊 تقارير القنوات والإحصائيات"}],
+            [{"text": "📂 مزامنة التخزين الداخلي (Termux)"}, {"text": "⏸ إيقاف / استئناف البوت"}],
+            [{"text": "🧪 تجربة الصياغة الفورية"}, {"text": "💬 محادثة وبحث الذكاء"}]
         ]
         return {
             "keyboard": kb,
@@ -2054,9 +2182,9 @@ class StandaloneTelegramEducationalBot:
         is_paused = db.get_setting("is_paused", "0") == "1"
         pause_btn_text = "▶️ استئناف النشر" if is_paused else "⏸ إيقاف مؤقت"
         is_google_enabled = db.is_google_news_enabled()
-        google_btn_text = "🛑 إيقاف بحث جوجل" if is_google_enabled else "🟢 تفعيل بحث جوجل"
+        google_btn_text = "🛑 إيقاف جوجل" if is_google_enabled else "🟢 تفعيل جوجل"
         is_tw_enabled = db.is_twitter_search_enabled()
-        twitter_btn_text = "🛑 إيقاف بحث تويتر" if is_tw_enabled else "🐦 تفعيل بحث تويتر"
+        twitter_btn_text = "🛑 إيقاف تويتر" if is_tw_enabled else "🐦 تفعيل تويتر"
 
         buttons = [
             [
@@ -2068,28 +2196,31 @@ class StandaloneTelegramEducationalBot:
                 {"text": google_btn_text, "callback_data": "panel_toggle_google_search"}
             ],
             [
-                {"text": "📂 مزامنة التخزين الداخلي (Termux)", "callback_data": "panel_sync_storage"},
-                {"text": "🔄 فحص وسحب أخبار الجامعات", "callback_data": "panel_crawl"}
+                {"text": "🔄 فحص وسحب أخبار الجامعات", "callback_data": "panel_crawl"},
+                {"text": "📝 صياغة ونشر خبر فوري", "callback_data": "panel_new_post"}
             ],
             [
-                {"text": "🐦 فحص حسابات تويتر المتصلة", "callback_data": "panel_crawl_twitter"},
-                {"text": "🧠 تعليمات وتدريب البوت", "callback_data": "panel_instructions"}
+                {"text": "🐦 فحص حسابات تويتر", "callback_data": "panel_crawl_twitter"},
+                {"text": "🌐 أخبار جوجل للجامعة", "callback_data": "panel_gnews"}
             ],
             [
-                {"text": "📝 صياغة ونشر خبر فوري", "callback_data": "panel_new_post"},
+                {"text": "🧠 تعليمات وتدريب البوت", "callback_data": "panel_instructions"},
                 {"text": "🎯 إعلان خدماتي البديل", "callback_data": "panel_ad"}
             ],
             [
-                {"text": "📊 حالة النظام والتقارير", "callback_data": "panel_stats"},
+                {"text": "👥 المشرفون والمصرح لهم (Whitelist)", "callback_data": "panel_admins"},
+                {"text": "📊 حالة النظام والتقارير", "callback_data": "panel_stats"}
+            ],
+            [
+                {"text": "📂 مزامنة التخزين (Termux)", "callback_data": "panel_sync_storage"},
                 {"text": pause_btn_text, "callback_data": "panel_toggle_pause"}
             ],
             [
-                {"text": "👥 إدارة المستخدمين", "callback_data": "panel_users"},
-                {"text": "🧪 تجربة الصياغة المباشرة", "callback_data": "panel_test"}
+                {"text": "🧪 تجربة الصياغة المباشرة", "callback_data": "panel_test"},
+                {"text": "🔄 تحديث اللوحة", "callback_data": "panel_start"}
             ],
             [
-                {"text": "🔄 تحديث اللوحة", "callback_data": "panel_start"},
-                {"text": "📞 الدعم الفني (@M_S_F_G)", "url": "https://t.me/M_S_F_G"}
+                {"text": "👑 المشرف العام المعتمد (@M_S_F_G)", "url": "https://t.me/M_S_F_G"}
             ]
         ]
         return {"inline_keyboard": buttons}
@@ -2688,12 +2819,15 @@ class StandaloneTelegramEducationalBot:
             # تنظيف أي روابط وهمية قد يكون الذكاء الاصطناعي قد اخترعها رغم التحذيرات
             cleaned_ai = re.sub(r'\[?(?:الرابط هنا|رابط البوابة|اضغط هنا)\]?', '', text)
             cleaned_ai = re.sub(r'https?://(?:www\.)?example\.com\S*', '', cleaned_ai)
+            # إزالة أي بادئات إدارية أو اسم الحساب
+            cleaned_ai = re.sub(r'^(?:ADMIN_p|ADMIN|Admin|Bot|محرر|المشرف):\s*', '', cleaned_ai.strip(), flags=re.IGNORECASE)
             cleaned_ai = self.clean_text_from_sources(cleaned_ai)
-            
+
             # إضافة الروابط الحقيقية فقط إذا لم تكن موجودة بالفعل في النص
             for lk in ext_links:
                 if lk not in cleaned_ai:
-                    cleaned_ai += f"\n\n🔗 <b>رابط البوابة الإلكترونية المعتمدة:</b>\n{lk}"
+                    label = get_contextual_link_label(lk, text)
+                    cleaned_ai += f"\n\n{label}\n{lk}"
             return cleaned_ai.strip()
 
 
@@ -2727,16 +2861,19 @@ class StandaloneTelegramEducationalBot:
                 except Exception:
                     continue
 
-        # محاولة كوكبة النماذج الذكية المتتالية (Failover Cluster) بمهلة متوازنة (7.5 ثانية)
-        if ai_key and ai_key != "sk-J2ky44F6VTDMkL8Q1GHL5sfmbeIpARVDayNuwMfxKI5zCdii":
-            for model_name in AI_MODELS_CASCADE[:3]:
+        # محاولة كوكبة النماذج الذكية المتتالية (Failover Cluster)
+        if ai_key:
+            for model_name in AI_MODELS_CASCADE:
                 payload["model"] = model_name
                 try:
                     req = urllib.request.Request(endpoint, data=json.dumps(payload).encode("utf-8"), headers=headers)
-                    with urllib.request.urlopen(req, context=ssl_ctx, timeout=7.5) as resp:
+                    with urllib.request.urlopen(req, context=ssl_ctx, timeout=8.5) as resp:
                         data = json.loads(resp.read().decode("utf-8"))
                         if "choices" in data and len(data["choices"]) > 0:
-                            ai_text = data["choices"][0]["message"]["content"].strip()
+                            msg_item = data["choices"][0]["message"]
+                            ai_text = (msg_item.get("content") or msg_item.get("reasoning_content") or "").strip()
+                            if not ai_text:
+                                continue
                             if "IGNORE_EXPIRED" in ai_text.upper():
                                 logger.info("🛡️ [مصفاة التواريخ] تم استبعاد الخبر لأنه قديم أو انتهى وقته (Expired).")
                                 return None
@@ -4220,7 +4357,17 @@ class StandaloneTelegramEducationalBot:
 
         authorized, user_data = self.check_user_access(from_user)
         if not authorized:
-            self.send_msg(chat_id, "⛔️ عذراً، تم حظر حسابك من استخدام هذا النظام بأمر المشرف.")
+            u_name = f"@{from_user.get('username')}" if from_user.get('username') else "بدون يوزر"
+            logger.warning(f"🛡️ [حظر دخول] محاولة وصول غير مصرح بها من: {chat_id} ({u_name}) - تم حجب كافة القنوات والمجموعات.")
+            lock_msg = f"""⛔️ <b>عذراً، هذا البوت خاص ومحمي بالكامل 🔒</b>
+━━━━━━━━━━━━━━━━━━━
+لا يمكن استخدام هذا البوت أو استعراض مجموعاته وقنواته إلا من قبل <b>المشرف العام المعتمد</b> أو الأشخاص المصرح لهم بالدخول يدوياً.
+
+🆔 <b>معرفك (User ID):</b> <code>{chat_id}</code>
+👤 <b>حسابك:</b> {u_name}
+
+💡 <i>إذا كنت مشرفاً أو مأذوناً لك بالنشر، يرجى تزويد المالك بمعرفك الرقمي أعلاه ليتم إضافتك إلى القائمة البيضاء.</i>"""
+            self.send_msg(chat_id, lock_msg)
             return
 
         # 1. معالجة مشاركة رقم الهاتف (Contact Registration)
@@ -4391,7 +4538,27 @@ class StandaloneTelegramEducationalBot:
                 # إلغاء الحالة المعلقة فوراً والتنفيذ المباشر للزر أو الأمر المختار
 
 
-            if state == "waiting_for_new_source":
+            if state == "waiting_add_admin":
+                self.user_waiting_state.pop(chat_id, None)
+                parts = clean_text.split(None, 1)
+                first_part = parts[0].strip() if parts else ""
+                notes = parts[1].strip() if len(parts) > 1 else "مشرف مصرح له"
+                uid = None
+                uname = ""
+                if first_part.lstrip("-").isdigit():
+                    uid = int(first_part)
+                elif first_part.startswith("@"):
+                    uname = first_part.replace("@", "").strip()
+                    uid = abs(hash(uname)) % 1000000000
+
+                if uid:
+                    db.add_authorized_user(uid, uname, notes, added_by=chat_id)
+                    self.send_msg(chat_id, f"✅ <b>تم بنجاح تصريح المستخدم وإضافته للقائمة البيضاء!</b>\n• المعرف: <code>{uid}</code>\n• الحساب: @{uname or 'بدون'}\n• الوصف: {notes}\n\n🔒 يمكنه الآن استخدام البوت بشكل رسمي دون حظر.")
+                else:
+                    self.send_msg(chat_id, "⚠️ <b>صيغة غير صحيحة</b>: يرجى إرسال المعرف الرقمي (User ID) متبوعاً بملاحظة.\nمثال: <code>123456789 مساعد_نشر</code>")
+                self.show_authorized_admins_panel(chat_id)
+                return
+            elif state == "waiting_for_new_source":
                 self.user_waiting_state.pop(chat_id, None)
                 self.process_add_source(chat_id, clean_text)
                 return
@@ -4712,8 +4879,47 @@ class StandaloneTelegramEducationalBot:
 
         # أوامر الإدارة المشرفة
         if self.is_admin(chat_id):
-            if clean_text in ["👥 إدارة المستخدمين", "/users"]:
-                self.show_users_admin_panel(chat_id)
+            if clean_text in ["👥 إدارة المستخدمين", "👥 المشرفون والمصرح لهم", "/users", "/admins", "/whitelist"]:
+                self.show_authorized_admins_panel(chat_id)
+                return
+
+            if clean_text.startswith("/add_admin") or clean_text.startswith("/add_moderator"):
+                raw_args = clean_text.split(None, 2)
+                if len(raw_args) < 2:
+                    self.send_msg(chat_id, "💡 <b>طريقة إضافة مصرح له:</b>\n<code>/add_admin 123456789 مساعد للنشر</code>")
+                    return
+                target_str = raw_args[1].strip()
+                notes = raw_args[2].strip() if len(raw_args) > 2 else "مشرف مصرح له"
+                uid = None
+                uname = ""
+                if target_str.lstrip("-").isdigit():
+                    uid = int(target_str)
+                elif target_str.startswith("@"):
+                    uname = target_str.replace("@", "").strip()
+                    uid = abs(hash(uname)) % 1000000000
+
+                if uid:
+                    db.add_authorized_user(uid, uname, notes, added_by=chat_id)
+                    self.send_msg(chat_id, f"✅ <b>تم بنجاح إضافة المصرح له!</b>\n• المعرف: <code>{uid}</code>\n• الملاحظة: {notes}\n🔒 أصبح البوت متاحاً له الآن.")
+                else:
+                    self.send_msg(chat_id, "⚠️ لم يتم التعرف على المعرف. يرجى إرسال رقم الـ ID الخاص بالمستخدم.")
+                self.show_authorized_admins_panel(chat_id)
+                return
+
+            if clean_text.startswith("/del_admin") or clean_text.startswith("/del_moderator"):
+                raw_args = clean_text.split(None, 1)
+                if len(raw_args) < 2:
+                    self.send_msg(chat_id, "💡 <b>طريقة إلغاء تصريح مستخدم:</b>\n<code>/del_admin 123456789</code>")
+                    return
+                target_str = raw_args[1].strip()
+                if target_str.lstrip("-").isdigit():
+                    target_uid = int(target_str)
+                    if target_uid == 7607633343:
+                        self.send_msg(chat_id, "⚠️ لا يمكن إلغاء تصريح المشرف العام والمالك الأساسي 👑")
+                    else:
+                        db.remove_authorized_user(target_uid)
+                        self.send_msg(chat_id, f"🗑️ تم بنجاح إلغاء تصريح المستخدم <code>{target_uid}</code> وحظره من البوت.")
+                self.show_authorized_admins_panel(chat_id)
                 return
 
             if clean_text.startswith("/ban "):
@@ -4849,7 +5055,7 @@ class StandaloneTelegramEducationalBot:
 
         authorized, user_data = self.check_user_access(from_user)
         if not authorized:
-            self.answer_callback(cb_id, "⛔️ غير مصرح لك.", alert=True)
+            self.answer_callback(cb_id, "⛔️ عذراً، هذا البوت خاص ومحمي ولا يسمح لغير المشرفين المصرح لهم باستخدامه.", alert=True)
             return
 
         self.answer_callback(cb_id)
@@ -4907,8 +5113,26 @@ class StandaloneTelegramEducationalBot:
         elif data == "panel_stats":
             self.show_stats_panel(chat_id, message_id=msg_id)
 
-        elif data == "panel_users":
-            self.show_users_admin_panel(chat_id, message_id=msg_id)
+        elif data in ["panel_admins", "panel_users"]:
+            self.show_authorized_admins_panel(chat_id, message_id=msg_id)
+
+        elif data == "admin_prompt_add":
+            self.user_waiting_state[chat_id] = "waiting_add_admin"
+            self.send_msg(chat_id, "📝 <b>أرسل الآن المعرف الرقمي (User ID) للشخص المراد تصريحه:</b>\n(مثال: <code>123456789 مساعد للنشر</code> أو <code>@username</code>)\n\n<i>أرسل /cancel للإلغاء والعودة.</i>")
+
+        elif data.startswith("admin_del_"):
+            target_uid_str = data.replace("admin_del_", "")
+            try:
+                target_uid = int(target_uid_str)
+                if target_uid == 7607633343:
+                    self.answer_callback(cb_id, "⚠️ لا يمكن إلغاء تصريح المالك الأساسي 👑", alert=True)
+                else:
+                    db.remove_authorized_user(target_uid)
+                    self.answer_callback(cb_id, f"✅ تم إلغاء تصريح المستخدم {target_uid} بنجاح وحظره من البوت.")
+                    self.show_authorized_admins_panel(chat_id, message_id=msg_id)
+            except Exception as e_del:
+                logger.error(f"Error removing admin: {e_del}")
+                self.answer_callback(cb_id, "حدث خطأ أثناء الإلغاء.", alert=True)
 
         elif data == "panel_universities":
             self.show_universities_panel(chat_id, message_id=msg_id)
@@ -5167,23 +5391,49 @@ class StandaloneTelegramEducationalBot:
                 return
         self.send_msg(chat_id, text, kb)
 
-    def show_users_admin_panel(self, chat_id: int, message_id: Optional[int] = None):
-        users = db.list_users(20)
-        text = f"👥 **المستخدمون المسجلون ({len(users)}):**\n━━━━━━━━━━━━━━━━━━━\n"
-        for u in users:
-            banned = "🚫 محظور" if u["is_banned"] else "✅ نشط"
-            ph = u["phone_number"] or "بلا هاتف"
-            text += f"• `{u['user_id']}` (@{u.get('username') or 'بلا_يوزر'}) | {u['role']} | {banned}\n  📱 {ph}\n"
-        kb = {
-            "inline_keyboard": [
-                [{"text": "🔙 اللوحة الرئيسية", "callback_data": "panel_start"}]
-            ]
-        }
+    def show_authorized_admins_panel(self, chat_id: int, message_id: Optional[int] = None):
+        """لوحة استعراض وإدارة المشرفين والمصرح لهم حصرياً باستخدام البوت"""
+        admins = db.get_authorized_users()
+        text = f"""👥 <b>إدارة المشرفين والمصرح لهم بالبوت (Whitelist Security):</b>
+━━━━━━━━━━━━━━━━━━━
+🔒 <b>قفل أمان حديدي:</b> البوت لا يستجيب لأي شخص ولا يعرض مجموعاتك وقنواتك إلا للأشخاص المعتمدين هنا فقط. أي شخص غريب يتم حجب كافة القنوات والمجموعات عنه تلقائياً.
+
+👑 <b>المالك والمشرف الأساسي:</b>
+• المعرف: <code>7607633343</code> (@M_S_F_G)
+
+📋 <b>قائمة المصرح لهم حالياً ({len(admins)}):</b>
+"""
+        inline_buttons = []
+        for i, a in enumerate(admins, 1):
+            uid = a["user_id"]
+            u_name = f"@{a['username']}" if a.get("username") else "بدون يوزر"
+            note = f" <i>({a['notes']})</i>" if a.get("notes") else ""
+            is_owner = (uid == 7607633343)
+            owner_badge = " <b>[المالك 👑]</b>" if is_owner else ""
+            text += f"{i}. <code>{uid}</code> {u_name}{note}{owner_badge}\n"
+
+            if not is_owner:
+                inline_buttons.append([
+                    {"text": f"🗑️ إلغاء تصريح: {a.get('username') or uid}", "callback_data": f"admin_del_{uid}"}
+                ])
+
+        text += """━━━━━━━━━━━━━━━━━━━
+💡 <b>للإضافة:</b> اضغط زر (➕ إضافة مصرح له) أدناه أو أرسل مباشرة:
+<code>/add_admin 123456789 مساعد_نشر</code>"""
+
+        inline_buttons.append([{"text": "➕ إضافة مصرح له جديد", "callback_data": "admin_prompt_add"}])
+        inline_buttons.append([{"text": "🔄 تحديث القائمة", "callback_data": "panel_admins"}])
+        inline_buttons.append([{"text": "🔙 اللوحة الرئيسية", "callback_data": "panel_start"}])
+
+        kb = {"inline_keyboard": inline_buttons}
         if message_id:
             res = self.edit_msg_text(chat_id, message_id, text, kb)
             if res.get("ok"):
                 return
         self.send_msg(chat_id, text, kb)
+
+    def show_users_admin_panel(self, chat_id: int, message_id: Optional[int] = None):
+        self.show_authorized_admins_panel(chat_id, message_id)
 
     def show_ad_panel(self, chat_id: int, message_id: Optional[int] = None):
         custom_ad = db.get_setting("custom_ad", "")

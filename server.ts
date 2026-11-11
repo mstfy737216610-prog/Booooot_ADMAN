@@ -2769,9 +2769,13 @@ app.post('/api/ai/rephrase', async (req: Request, res: Response) => {
    - يمنع البدء بـ "🚨 تنبيه لطلاب..." أو أي قالب نمطي مكرر. ادخل في صلب الموضوع مباشرة.
 
 ## 🔤 التنسيق والتنظيم الإلزامي:
-- أبرز المواعيد والنسب والشروط الحقيقية المذكورة فقط بالخط العريض <b>...</b> لتسهيل القراءة.
-- استخدم النقاط المنظمة [▫️] لسرد الخطوات الأكاديمية بوضوح تام.
-- اختم دائماً بدعوات طيبة ولمسة أخوية تلامس قلب الطالب.`;
+- 🚫 ممنوع منعاً باتاً تقطيع الفقرات العادية أو نصوص الرسائل والدعوات أو الترحيب إلى نقاط [▫️]!
+- استخدم النقاط [▫️] أو الترقيم فقط وحصرياً إذا كان المنشور الأصلي يحتوي فعلياً على قائمة خطوات أو شروط أو متطلبات متسلسلة.
+- الفقرات العادية، رسائل الترحيب، الدعوات الأكاديمية، والنصوص الثنائية اللغة (عربي/إنجليزي) تُترك كفقرات متناسقة ومرتبة دون نقاط مجزأة مشوهة.
+- الوسوم (الهاشتاجات): استخرج 3-4 وسوم ذكية مشتقة مباشرة من موضوع المنشور الفعلي (مثل: #مشروع_تخرج #استبيان #الصحة_النفسية #الإمارات)، وممنوع وضع وسوم ثابتة مكررة مثل #جامعة في كل منشور.
+- الخاتمة: لا تكرر نفس الخاتمة في كل منشور؛ إذا كان المنشور يحتوي على شكر أو خاتمة من صاحبه فاحتفظ به، وإلا فاختر عبارة طبيعية متنوعة تناسب سياق الخبر (دعاء بالنجاح للاختبارات، تشجيع ودعاء بالتوفيق للمشاريع والاستبيانات، تذكير للزملاء بمواعيد التسجيل).
+- الرابط: حدد وصف الرابط بدقة بحسب نوعه (مثال: رابط تعبئة الاستبيان / رابط بوابة التسجيل والقبول / الرابط الرسمي المباشر).
+- 🚫 ممنوع منعاً باتاً كتابة أي بادئات إدارية أو اسم الحساب أو البوت مثل ADMIN_p: أو ADMIN: في بداية المنشور.`;
 
   const finalSystemPrompt = `${systemPrompt || defaultSystemPrompt}\n${liveContext ? '⚠️ تم سحب المحتوى الحي بنجاح. اقرأه واعرض آخر منشور بأسلوب ممثل الدفعة الناصح دون أي هلوسة.' : ''}`;
   const userContent = customInstructions
@@ -3094,44 +3098,146 @@ function cleanWebGarbage(txt: string): string {
   return s;
 }
 
-// Fallback intelligent rephraser
+// Helper to dynamically extract hashtags based on content
+function extractDynamicHashtagsTS(text: string): string {
+  const t = text.toLowerCase();
+  const tags: string[] = [];
+
+  const topicRules: [string[], string][] = [
+    [['مشروع تخرج', 'مشروع التخرج', 'graduation project', 'بحث تخرج'], '#مشروع_تخرج'],
+    [['استبيان', 'استبانة', 'questionnaire', 'survey', 'forms.office', 'forms.cloud', 'forms.gle'], '#استبيان'],
+    [['صحة نفسية', 'الصحة النفسية', 'mental health'], '#الصحة_النفسية'],
+    [['ذكاء اصطناعي', 'الذكاء الاصطناعي', 'ai system', 'artificial intelligence'], '#الذكاء_الاصطناعي'],
+    [['إمارات', 'امارات', 'united arab emirates', 'uae', 'أبوظبي', 'دبي', 'الشارقة', 'hct'], '#الإمارات'],
+    [['سعودية', 'المملكة', 'ksu', 'الرياض', 'جدة'], '#السعودية'],
+    [['كويت', 'kuwait', 'aum'], '#الكويت'],
+    [['قبول', 'تسجيل', 'admission', 'register', 'enroll'], '#القبول_والتسجيل'],
+    [['اختبار', 'امتحان', 'فاينل', 'كويز', 'exam', 'final'], '#اختبارات_نهائية'],
+    [['صيفي', 'سمر', 'summer'], '#الفصل_الصيفي'],
+    [['حفل تخرج', 'تخرج', 'خريجين', 'graduation'], '#تخرج'],
+    [['مكافأة', 'مكافآت', 'مكافاه'], '#مكافآت_الطلاب'],
+    [['جداول', 'جدول', 'شعب', 'سكشن', 'schedule'], '#الجداول_الدراسية'],
+    [['وظائف', 'تدريب', 'internship', 'training'], '#تدريب_تعاوني']
+  ];
+
+  for (const [keywords, tag] of topicRules) {
+    if (!tags.includes(tag) && keywords.some(k => t.includes(k))) {
+      tags.push(tag);
+    }
+  }
+
+  const rawTags = text.match(/#(\w+)/g);
+  if (rawTags) {
+    for (const rt of rawTags) {
+      if (!tags.includes(rt) && rt.length > 3) {
+        tags.push(rt);
+      }
+    }
+  }
+
+  if (tags.length === 0) {
+    tags.push('#شؤون_الطلاب', '#أخبار_الجامعات');
+  }
+
+  return tags.slice(0, 4).join(' ');
+}
+
+// Fallback intelligent rephraser (preserves paragraphs, dynamic hashtags, smart link labels)
 function fallbackRephrase(rawText: string, instructions?: string): string {
-  const sanitized = cleanWebGarbage(rawText);
+  const sanitized = cleanWebGarbage(rawText)
+    .replace(/^(?:ADMIN_p|ADMIN|Admin|Bot|محرر|المشرف):\s*/i, '')
+    .replace(/\[Forwarded from [^\]]+\]\s*/g, '');
+
   const extLinks = extractExternalLinks(rawText);
-  const cleanLines = sanitized
+  // remove inline URLs for clean structured presentation
+  const textWithoutUrls = sanitized.replace(/https?:\/\/[^\s<>"]+/g, '');
+
+  const rawLines = textWithoutUrls
     .split('\n')
     .map(l => l.trim())
-    .filter(l => l.length > 0 && !l.includes('t.me/') && !l.startsWith('@') && l !== '•' && l !== '-' && l !== '*' && l !== '📌' && l !== '🎓');
+    .filter(l => l.length > 0 && !l.includes('t.me/') && !l.startsWith('@'));
 
-  // Separate text lines from URL lines
-  const textLines = cleanLines.filter(l => !l.startsWith('http://') && !l.startsWith('https://') && l.length > 3);
-  if (textLines.length === 0) {
-    return `📌 **تحديث جامعي وأكاديمي هام**\n\n• متابعة مستمرة لأحدث الأخبار الأكاديمية والقرارات الجامعية.\n\n💬 يسعدنا استقبال استفساراتكم ومشاركة المنشور مع زملائكم الطلاب!\n\n#جامعة #أخبار_التعليم #مواعيد #شؤون_الطلاب`;
+  if (rawLines.length === 0) {
+    return `📌 **تحديث جامعي وأكاديمي هام**\n\nمتابعة مستمرة لأحدث الأخبار الأكاديمية والقرارات الجامعية.\n\n#شؤون_الطلاب #أخبار_الجامعات`;
   }
 
-  const rawFirst = textLines[0].replace(/^[•\-*#📌📢✨🎓]\s*/, '').trim();
-  const firstLine = rawFirst.length > 0 ? rawFirst : 'تحديث جامعي وأكاديمي هام';
-  const title = firstLine.length < 70 ? firstLine : firstLine.slice(0, 65) + '...';
+  const firstLineClean = rawLines[0].replace(/^[•\-*#📌📢✨🎓▫️]\s*/, '').trim();
+  const title = `📌 **${firstLineClean}**`;
 
-  const bodyLines = textLines.slice(1).filter(l => l.length > 3);
-  const bullets = bodyLines.length > 0
-    ? bodyLines.map(l => `• ${l.replace(/^[•\-*#📌📢✨🎓]\s*/, '')}`).join('\n')
-    : `• ${firstLine}`;
+  // Group lines into natural paragraphs and explicit bullet lists
+  const paragraphs: string[] = [];
+  let currentPara: string[] = [];
+  let isPrevBullet = false;
 
+  for (const line of rawLines.slice(1)) {
+    const isBullet = /^(?:[•\-*▫️▪️]|(?:\d+[\.\-\)]))\s+/.test(line);
+    const cleanItem = line.replace(/^(?:[•\-*▫️▪️]|(?:\d+[\.\-\)]))\s*/, '').trim();
+
+    if (isBullet) {
+      if (currentPara.length > 0) {
+        paragraphs.push(currentPara.join(' '));
+        currentPara = [];
+      }
+      paragraphs.push(`▫️ ${cleanItem}`);
+      isPrevBullet = true;
+    } else {
+      const isEnglish = /^[A-Za-z]/.test(line);
+      const prevEnglish = currentPara.length > 0 ? /^[A-Za-z]/.test(currentPara[currentPara.length - 1]) : false;
+
+      if (currentPara.length > 0 && (isEnglish !== prevEnglish || isPrevBullet)) {
+        paragraphs.push(currentPara.join(' '));
+        currentPara = [line];
+      } else {
+        currentPara.push(line);
+      }
+      isPrevBullet = false;
+    }
+  }
+
+  if (currentPara.length > 0) {
+    paragraphs.push(currentPara.join(' '));
+  }
+
+  const body = paragraphs.join('\n\n');
+
+  // Contextual Link Section
   let linksSection = '';
   if (extLinks.length > 0) {
-    linksSection = `\n\n🔗 **رابط التقديم / البوابة الإلكترونية المباشرة:**\n` + extLinks.join('\n');
+    const primaryLink = extLinks[0];
+    const uLow = primaryLink.toLowerCase();
+    const tLow = rawText.toLowerCase();
+
+    let label = '🔗 **الرابط المباشر:**';
+    if (uLow.includes('forms.') || tLow.includes('استبيان') || tLow.includes('استبانة') || tLow.includes('مشروع تخرج')) {
+      label = '🔗 **رابط تعبئة الاستبيان / المشاركة في البحث:**';
+    } else if (uLow.includes('admission') || tLow.includes('تسجيل') || tLow.includes('قبول')) {
+      label = '🔗 **رابط بوابة التسجيل والقبول المباشر:**';
+    } else if (tLow.includes('اختبار') || tLow.includes('جدول') || tLow.includes('امتحان')) {
+      label = '🔗 **رابط جدول الاختبارات المباشر:**';
+    }
+
+    linksSection = `\n\n${label}\n${primaryLink}`;
   }
 
-  const hashtags = '#جامعة #أخبار_التعليم #مواعيد #شؤون_الطلاب';
+  // Smart Ending (avoid repetition if author already had thanks/closing)
+  const hasClosing = ['شكراً', 'شكرا', 'thank you', 'بالتوفيق', 'دمتم', 'مع تحيات', 'تحياتي', 'جزاكم الله'].some(k => rawText.toLowerCase().includes(k));
+  let ending = '';
+  if (!hasClosing) {
+    const tLow = rawText.toLowerCase();
+    if (tLow.includes('مشروع تخرج') || tLow.includes('استبيان')) {
+      ending = '\n\nدعواتنا للزملاء بالتوفيق والتميز في مشروع تخرجهم 🤍🎓';
+    } else if (tLow.includes('اختبار') || tLow.includes('فاينل')) {
+      ending = '\n\nفالكم التوفيق وأعلى الدرجات بإذن الله 🤲✨';
+    } else if (tLow.includes('تسجيل') || tLow.includes('قبول')) {
+      ending = '\n\nشاركوا التنبيه مع زملائكم لتعم الفائدة 🤝';
+    } else {
+      ending = '\n\nدعواتنا لكم بدوام التوفيق والنجاح 🌸';
+    }
+  }
 
-  return `📌 **${title}**
+  const hashtags = extractDynamicHashtagsTS(rawText);
 
-${bullets}${linksSection}
-
-💬 يسعدنا استقبال استفساراتكم ومشاركة المنشور مع زملائكم الطلاب!
-
-${hashtags}`;
+  return `${title}\n\n${body}${linksSection}${ending}\n\n${hashtags}`.trim();
 }
 
 // ----------------- AI MEMORY & FEEDBACK LOOP ENDPOINTS -----------------
@@ -3359,6 +3465,68 @@ app.post('/api/git/sync', (req: Request, res: Response) => {
       branch: 'main',
       message: pushMsg
     });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+// ----------------- AUTHORIZED USERS (WHITELIST SECURITY) ENDPOINTS -----------------
+app.get('/api/authorized-users', (_req: Request, res: Response) => {
+  try {
+    const pyScript = `
+import database as db, json
+db.init_db()
+users = db.get_authorized_users()
+print(json.dumps({"success": True, "admin": {"id": 7607633343, "username": "M_S_F_G"}, "users": users}))
+`;
+    const out = execFileSync('python3', ['-c', pyScript], { timeout: 8000 }).toString();
+    res.json(JSON.parse(out));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+app.post('/api/authorized-users', (req: Request, res: Response) => {
+  try {
+    const { userId, username = '', notes = '' } = req.body;
+    const cleanId = parseInt(String(userId).trim(), 10);
+    if (!cleanId || isNaN(cleanId)) {
+      res.status(400).json({ success: false, error: 'المعرف الرقمي (User ID) غير صحيح' });
+      return;
+    }
+    const pyScript = `
+import database as db, json, sys
+uid = int(sys.argv[1])
+uname = sys.argv[2]
+notes = sys.argv[3]
+ok = db.add_authorized_user(uid, uname, notes, added_by=7607633343)
+print(json.dumps({"success": ok}))
+`;
+    const out = execFileSync('python3', ['-c', pyScript, String(cleanId), String(username), String(notes)], { timeout: 8000 }).toString();
+    res.json(JSON.parse(out));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+app.delete('/api/authorized-users/:userId', (req: Request, res: Response) => {
+  try {
+    const userId = parseInt(req.params.userId, 10);
+    if (userId === 7607633343) {
+      res.status(400).json({ success: false, error: 'لا يمكن حذف المالك الأساسي للنظام' });
+      return;
+    }
+    const pyScript = `
+import database as db, json, sys
+uid = int(sys.argv[1])
+ok = db.remove_authorized_user(uid)
+print(json.dumps({"success": ok}))
+`;
+    const out = execFileSync('python3', ['-c', pyScript, String(userId)], { timeout: 8000 }).toString();
+    res.json(JSON.parse(out));
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     res.status(500).json({ success: false, error: message });
