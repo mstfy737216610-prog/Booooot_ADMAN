@@ -35,8 +35,8 @@ AI_SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
 # مفاتيح ونماذج المزوّد الأساسي (HCNSEC)
 PRIMARY_API_BASE = "https://api.hcnsec.cn/v1"
 PRIMARY_API_KEY = "sk-ZimPNQ7NBOAqouWIL9Wa15qczOorNkLY72ns3zUfxoUmU307"
-BACKUP_API_KEY = "sk-J2ky44F6VTDMkL8Q1GHL5sfmbeIpARVDayNuwMfxKI5zCdii"
-DEFAULT_TEXT_MODEL = "DeepSeek-V4-Flash"
+BACKUP_API_KEY = "sk-ZimPNQ7NBOAqouWIL9Wa15qczOorNkLY72ns3zUfxoUmU307"
+DEFAULT_TEXT_MODEL = "MiMo-V2.6-Flash"
 
 
 class BaseAIProvider(ABC):
@@ -86,8 +86,11 @@ class PrimaryAPIProvider(BaseAIProvider):
             try:
                 with urllib.request.urlopen(req, timeout=30) as resp:
                     res_data = json.loads(resp.read().decode("utf-8"))
-                    text = res_data["choices"][0]["message"]["content"].strip()
-                    return {"ok": True, "text": text, "model": self.model}
+                    msg = res_data.get("choices", [{}])[0].get("message", {})
+                    text = (msg.get("content") or msg.get("reasoning_content") or "").strip()
+                    if text:
+                        return {"ok": True, "text": text, "model": self.model}
+                    last_err = "Empty content returned by model"
             except Exception as e:
                 last_err = str(e)
                 logger.warning(f"ملاحظة في PrimaryAPIProvider مع المفتاح {k[:8]}...: {e}")

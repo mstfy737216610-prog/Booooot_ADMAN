@@ -24,7 +24,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 API_ENDPOINT = "https://api.hcnsec.cn/v1/chat/completions"
 VISION_MODEL = "MiniCPM-V-4.7-35B-A3B"
 PRIMARY_KEY = "sk-ZimPNQ7NBOAqouWIL9Wa15qczOorNkLY72ns3zUfxoUmU307"
-BACKUP_KEY = "sk-J2ky44F6VTDMkL8Q1GHL5sfmbeIpARVDayNuwMfxKI5zCdii"
+BACKUP_KEY = PRIMARY_KEY
 
 
 def load_admin_contact() -> Tuple[str, str]:

@@ -4,9 +4,9 @@
   "adminUsername": "M_S_F_G",
   "ai": {
     "apiBase": "https://api.hcnsec.cn/v1",
-    "apiKey": "sk-J2ky44F6VTDMkL8Q1GHL5sfmbeIpARVDayNuwMfxKI5zCdii",
-    "primaryModel": "DeepSeek-V4-Flash",
-    "fallbackModel": "DeepSeek-V4.1-Flash",
+    "apiKey": "sk-ZimPNQ7NBOAqouWIL9Wa15qczOorNkLY72ns3zUfxoUmU307",
+    "primaryModel": "MiMo-V2.6-Flash",
+    "fallbackModel": "MiniMax-M3.1-Flash",
     "systemPrompt": "",
     "customInstructions": "أنت ممثل الدفعة ومستشار طلابي خليجي مقرب: ادخل في صلب الموضوع فوراً بدون أي قوالب مكررة (لا تبدأ أبداً بـ \"تنبيه لطلاب\" ولا تكتب \"أبرز التفاصيل\")، ركز 100% على ما يهم الطالب (التسجيل، السمر، جداول الاختبارات، الأدفايزر، إعلانات الدكاترة)، واجعل المواعيد والأوقات بخط عريض <b>...</b>، واحتفظ بالأدعية وذكر الصلاة على النبي والأذكار بروح خليجية ودية صادقة.",
     "geminiApiKey": "",

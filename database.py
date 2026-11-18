@@ -461,9 +461,12 @@ def migrate_from_json(conn: sqlite3.Connection):
     defaults = {
         "bot_status": "active",
         "is_paused": "0",
-        "ai_model": "DeepSeek-V4-Flash",
+        "group_auto_reply_enabled": "0",
+        "ai_model": "MiMo-V2.6-Flash",
+        "primary_model": "MiMo-V2.6-Flash",
+        "fallback_model": "MiniMax-M3.1-Flash",
         "ai_base_url": "https://api.hcnsec.cn/v1",
-        "ai_api_key": "sk-J2ky44F6VTDMkL8Q1GHL5sfmbeIpARVDayNuwMfxKI5zCdii",
+        "ai_api_key": "sk-ZimPNQ7NBOAqouWIL9Wa15qczOorNkLY72ns3zUfxoUmU307",
         "custom_ad": """🎓 خدمات طلابية معتمدة وأكاديمية متكاملة 🎓
 يسرنا تقديم الدعم الأكاديمي الشامل للطلبة والباحثين:
 • مساعدة في البحوث والمشاريع الأكاديمية
@@ -1798,11 +1801,32 @@ def toggle_twitter_search_enabled() -> bool:
     return new_state
 
 
+def is_group_auto_reply_enabled() -> bool:
+    """التحقق هل الرد التلقائي في المجموعات وتعليقات القنوات مفعل (افتراضياً: مقفل 🔒 لحماية الخصوصية)"""
+    return get_setting("group_auto_reply_enabled", "0") == "1"
+
+
+def set_group_auto_reply_enabled(enabled: bool):
+    """تفعيل أو إيقاف الرد التلقائي في المجموعات وتعليقات القنوات"""
+    val = "1" if enabled else "0"
+    set_setting("group_auto_reply_enabled", val)
+    sync_to_json_files()
+
+
+def toggle_group_auto_reply_enabled() -> bool:
+    """تبديل حالة الرد التلقائي في المجموعات وإرجاع الحالة الجديدة"""
+    current = is_group_auto_reply_enabled()
+    new_state = not current
+    set_group_auto_reply_enabled(new_state)
+    return new_state
+
+
 def get_source_toggles() -> Dict[str, bool]:
     """استرجاع إعدادات تشغيل مصادر الأخبار الحالية"""
     return {
         "google_news_enabled": is_google_news_enabled(),
-        "twitter_search_enabled": is_twitter_search_enabled()
+        "twitter_search_enabled": is_twitter_search_enabled(),
+        "group_auto_reply_enabled": is_group_auto_reply_enabled()
     }
 
 
@@ -1909,7 +1933,7 @@ def sync_to_json_files():
             "forwarded_count": int(get_setting("forwarded_count", "15")),
             "ad_replaced_count": int(get_setting("ad_replaced_count", "3")),
             "custom_instructions": get_setting("custom_instructions", ""),
-            "ai_primary_model": get_setting("primary_model", "DeepSeek-V4-Flash"),
+            "ai_primary_model": get_setting("primary_model", "MiMo-V2.6-Flash"),
             "ai_base_url": get_setting("ai_base_url", "https://api.hcnsec.cn/v1"),
             "last_ai_status": get_setting("last_ai_status", "active"),
             "last_ai_error": get_setting("last_ai_error", ""),
@@ -1938,10 +1962,10 @@ def get_full_config() -> Dict[str, Any]:
     bot_token = get_setting("bot_token", os.getenv("BOT_TOKEN", os.getenv("TELEGRAM_BOT_TOKEN", "")))
     admin_id = get_setting("admin_id", os.getenv("ADMIN_ID", "7607633343"))
     admin_user = get_setting("admin_user", os.getenv("ADMIN_USERNAME", "M_S_F_G")).replace("@", "")
-    ai_api_key = get_setting("ai_api_key", os.getenv("AI_API_KEY", "sk-J2ky44F6VTDMkL8Q1GHL5sfmbeIpARVDayNuwMfxKI5zCdii"))
+    ai_api_key = get_setting("ai_api_key", os.getenv("AI_API_KEY", "sk-ZimPNQ7NBOAqouWIL9Wa15qczOorNkLY72ns3zUfxoUmU307"))
     ai_base_url = get_setting("ai_base_url", os.getenv("AI_BASE_URL", "https://api.hcnsec.cn/v1"))
-    primary_model = get_setting("primary_model", os.getenv("PRIMARY_MODEL", "DeepSeek-V4-Flash"))
-    fallback_model = get_setting("fallback_model", os.getenv("FALLBACK_MODEL", "DeepSeek-V4.1-Flash"))
+    primary_model = get_setting("primary_model", os.getenv("PRIMARY_MODEL", "MiMo-V2.6-Flash"))
+    fallback_model = get_setting("fallback_model", os.getenv("FALLBACK_MODEL", "MiniMax-M3.1-Flash"))
     system_prompt = get_setting("ai_system_prompt", "")
     custom_instructions = get_setting("custom_instructions", "")
     gemini_key = get_setting("gemini_api_key", os.getenv("GEMINI_API_KEY", ""))
@@ -1975,8 +1999,8 @@ def get_full_config() -> Dict[str, Any]:
         "ai": {
             "apiBase": ai_base_url or file_cfg.get("ai", {}).get("apiBase", "https://api.hcnsec.cn/v1"),
             "apiKey": ai_api_key or file_cfg.get("ai", {}).get("apiKey", ""),
-            "primaryModel": primary_model or file_cfg.get("ai", {}).get("primaryModel", "DeepSeek-V4-Flash"),
-            "fallbackModel": fallback_model or file_cfg.get("ai", {}).get("fallbackModel", "DeepSeek-V4.1-Flash"),
+            "primaryModel": primary_model or file_cfg.get("ai", {}).get("primaryModel", "MiMo-V2.6-Flash"),
+            "fallbackModel": fallback_model or file_cfg.get("ai", {}).get("fallbackModel", "MiniMax-M3.1-Flash"),
             "systemPrompt": system_prompt or file_cfg.get("ai", {}).get("systemPrompt", ""),
             "customInstructions": custom_instructions or file_cfg.get("ai", {}).get("customInstructions", ""),
             "geminiApiKey": gemini_key or file_cfg.get("ai", {}).get("geminiApiKey", ""),
@@ -2320,8 +2344,8 @@ def check_ai_health() -> Dict[str, Any]:
     ssl_ctx.verify_mode = ssl.CERT_NONE
 
     base = get_setting("ai_base_url", os.getenv("AI_BASE_URL", "https://api.hcnsec.cn/v1")).rstrip("/")
-    key = get_setting("ai_api_key", os.getenv("AI_API_KEY", "")).strip()
-    model = get_setting("primary_model", os.getenv("PRIMARY_MODEL", "DeepSeek-V4-Flash")).strip()
+    key = get_setting("ai_api_key", os.getenv("AI_API_KEY", "sk-ZimPNQ7NBOAqouWIL9Wa15qczOorNkLY72ns3zUfxoUmU307")).strip()
+    model = get_setting("primary_model", os.getenv("PRIMARY_MODEL", "MiMo-V2.6-Flash")).strip()
     gemini_key = get_setting("gemini_api_key", os.getenv("GEMINI_API_KEY", "")).strip()
 
     result = {
@@ -2335,32 +2359,37 @@ def check_ai_health() -> Dict[str, Any]:
         "message": ""
     }
 
-    # 1. فحص OpenAI / DeepSeek
-    if key and key != "sk-J2ky44F6VTDMkL8Q1GHL5sfmbeIpARVDayNuwMfxKI5zCdii":
-        try:
-            t0 = time.time()
-            url = f"{base}/chat/completions"
-            payload = {
-                "model": model,
-                "messages": [{"role": "user", "content": "ping"}],
-                "max_tokens": 5
-            }
-            req = urllib.request.Request(
-                url,
-                data=json.dumps(payload).encode("utf-8"),
-                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
-            )
-            with urllib.request.urlopen(req, context=ssl_ctx, timeout=6) as r:
-                lat = int((time.time() - t0) * 1000)
-                result["status"] = "online"
-                result["latency_ms"] = lat
-                result["message"] = f"متصل بنجاح ({lat}ms)"
-                set_setting("last_ai_status", "online")
-                set_setting("last_ai_error", "")
-                set_setting("last_ai_latency", str(lat))
-                return result
-        except Exception as e:
-            err_msg = str(e)
+    # 1. فحص OpenAI / DeepSeek / HCNSEC عبر سلسلة النماذج السريعة
+    if key:
+        last_err_msg = ""
+        for try_m in dict.fromkeys([model, "MiMo-V2.6-Flash", "MiniMax-M3.1-Flash", "DeepSeek-V4.1-Flash"]):
+            try:
+                t0 = time.time()
+                url = f"{base}/chat/completions"
+                payload = {
+                    "model": try_m,
+                    "messages": [{"role": "user", "content": "ping"}],
+                    "max_tokens": 20
+                }
+                req = urllib.request.Request(
+                    url,
+                    data=json.dumps(payload).encode("utf-8"),
+                    headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+                )
+                with urllib.request.urlopen(req, context=ssl_ctx, timeout=8) as r:
+                    lat = int((time.time() - t0) * 1000)
+                    result["status"] = "online"
+                    result["primaryModel"] = try_m
+                    result["latency_ms"] = lat
+                    result["message"] = f"متصل بنجاح عبر {try_m} ({lat}ms)"
+                    set_setting("last_ai_status", "online")
+                    set_setting("last_ai_error", "")
+                    set_setting("last_ai_latency", str(lat))
+                    return result
+            except Exception as e:
+                last_err_msg = str(e)
+        err_msg = last_err_msg
+        if True:
             result["lastError"] = err_msg
             if "403" in err_msg:
                 result["message"] = "مفتاح مزود الذكاء الاصطناعي محظور أو منتهي الصلاحية (HTTP 403 Forbidden)"

@@ -2727,11 +2727,11 @@ async function callGemini(systemPrompt: string, userContent: string, useSearch: 
 app.post('/api/ai/rephrase', async (req: Request, res: Response) => {
   const {
     text,
-    model = 'DeepSeek-V4-Flash',
-    fallbackModel = 'auto',
+    model = 'MiMo-V2.6-Flash',
+    fallbackModel = 'MiniMax-M3.1-Flash',
     systemPrompt,
     customInstructions = '',
-    apiKey = 'sk-J2ky44F6VTDMkL8Q1GHL5sfmbeIpARVDayNuwMfxKI5zCdii',
+    apiKey = 'sk-ZimPNQ7NBOAqouWIL9Wa15qczOorNkLY72ns3zUfxoUmU307',
     apiBase = 'https://api.hcnsec.cn/v1'
   } = req.body;
 
@@ -2794,7 +2794,7 @@ app.post('/api/ai/rephrase', async (req: Request, res: Response) => {
     }
     if (apiBase) {
       const payload = {
-        model: targetModel.includes('gemini') ? 'DeepSeek-V4.1-Flash' : targetModel,
+        model: targetModel.includes('gemini') ? 'MiMo-V2.6-Flash' : targetModel,
         messages: [
           { role: 'system', content: finalSystemPrompt },
           { role: 'user', content: userContent }
@@ -2857,7 +2857,7 @@ app.post('/api/ai/chat', async (req: Request, res: Response) => {
     history = [],
     model = 'gemini-3.8-flash',
     systemPrompt,
-    apiKey = 'sk-J2ky44F6VTDMkL8Q1GHL5sfmbeIpARVDayNuwMfxKI5zCdii',
+    apiKey = 'sk-ZimPNQ7NBOAqouWIL9Wa15qczOorNkLY72ns3zUfxoUmU307',
     apiBase = 'https://api.hcnsec.cn/v1'
   } = req.body;
 
@@ -2909,7 +2909,7 @@ app.post('/api/ai/chat', async (req: Request, res: Response) => {
       ];
 
       const payload = {
-        model: model.includes('gemini') ? 'DeepSeek-V4.1-Flash' : model,
+        model: model.includes('gemini') ? 'MiMo-V2.6-Flash' : model,
         messages: messages,
         temperature: 0.2,
         max_tokens: 1000
@@ -2959,8 +2959,8 @@ app.post('/api/ai/chat', async (req: Request, res: Response) => {
 // 6.1 Test AI Connection Endpoint with Latency & Status
 app.post('/api/ai/test-connection', async (req: Request, res: Response) => {
   const {
-    model = 'DeepSeek-V4.1-Flash',
-    apiKey = 'sk-J2ky44F6VTDMkL8Q1GHL5sfmbeIpARVDayNuwMfxKI5zCdii',
+    model = 'MiMo-V2.6-Flash',
+    apiKey = 'sk-ZimPNQ7NBOAqouWIL9Wa15qczOorNkLY72ns3zUfxoUmU307',
     apiBase = 'https://api.hcnsec.cn/v1'
   } = req.body;
 
@@ -3033,7 +3033,7 @@ app.post('/api/ai/test-connection', async (req: Request, res: Response) => {
 
 // 7. Fact Verification Endpoint
 app.post('/api/ai/verify', async (req: Request, res: Response) => {
-  const { text, apiKey = 'sk-J2ky44F6VTDMkL8Q1GHL5sfmbeIpARVDayNuwMfxKI5zCdii', apiBase = 'https://api.hcnsec.cn/v1' } = req.body;
+  const { text, apiKey = 'sk-ZimPNQ7NBOAqouWIL9Wa15qczOorNkLY72ns3zUfxoUmU307', apiBase = 'https://api.hcnsec.cn/v1' } = req.body;
 
   const verifyPrompt = `# الدور: مدقق معلومات تعليمية
 تحقق من صحة المعلومات التالية (أرقام، مواعيد، نسب، شروط):
@@ -3054,7 +3054,7 @@ ${text}
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: 'DeepSeek-V4.1-Flash',
+        model: 'MiMo-V2.6-Flash',
         messages: [{ role: 'user', content: verifyPrompt }],
         max_tokens: 150
       }),
