@@ -22,6 +22,7 @@ import { BotTesterModal } from './components/BotTesterModal.tsx';
 import { UserBotPanel } from './components/UserBotPanel.tsx';
 import { ChatPanel } from './components/ChatPanel.tsx';
 import { PostAuditLogPanel } from './components/PostAuditLogPanel.tsx';
+import { PublicationLogPanel } from './components/PublicationLogPanel.tsx';
 import { InteractiveIdeaBoard } from './components/InteractiveIdeaBoard.tsx';
 import { TwitterIntegrationPanel } from './components/TwitterIntegrationPanel.tsx';
 import { KnowledgeIntelPanel } from './components/KnowledgeIntelPanel.tsx';
@@ -192,7 +193,7 @@ export default function App() {
   const [subSources, setSubSources] = useState<'manager' | 'intel'>('manager');
   const [subAi, setSubAi] = useState<'editor' | 'sim' | 'chat'>('editor');
   const [subTelegram, setSubTelegram] = useState<'userbot' | 'ad_replace'>('userbot');
-  const [subLogs, setSubLogs] = useState<'sqlite_logs' | 'audit' | 'ideas' | 'code'>('sqlite_logs');
+  const [subLogs, setSubLogs] = useState<'publication_log' | 'sqlite_logs' | 'audit' | 'ideas' | 'code'>('publication_log');
 
   const [isLicenseOpen, setIsLicenseOpen] = useState(false);
   const [isTesterModalOpen, setIsTesterModalOpen] = useState(false);
@@ -961,6 +962,15 @@ export default function App() {
               <span className="text-[11px] text-slate-400 px-2 font-medium shrink-0">سجلات المراقبة:</span>
               <button
                 type="button"
+                onClick={() => setSubLogs('publication_log')}
+                className={`px-3 py-1.5 rounded-lg font-semibold transition-all shrink-0 cursor-pointer ${
+                  subLogs === 'publication_log' ? 'bg-amber-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                📊 السجل الجدولي ومانع الروابط
+              </button>
+              <button
+                type="button"
                 onClick={() => setSubLogs('sqlite_logs')}
                 className={`px-3 py-1.5 rounded-lg font-semibold transition-all shrink-0 cursor-pointer ${
                   subLogs === 'sqlite_logs' ? 'bg-amber-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-white'
@@ -1137,6 +1147,12 @@ export default function App() {
         )}
 
         {/* ==================== HUB 6: AUDIT & EVENT LOGS ==================== */}
+        {(activeHub === 'all' || (activeHub === 'logs' && subLogs === 'publication_log')) && (
+          <section id="publication-log-section" className="space-y-4">
+            <PublicationLogPanel onNotify={(msg) => setToastMessage(msg)} />
+          </section>
+        )}
+
         {(activeHub === 'all' || (activeHub === 'logs' && subLogs === 'sqlite_logs')) && (
           <section id="logs-section" className="space-y-4">
             <ActivityLogs logs={logs} onClearLogs={() => setLogs([])} />

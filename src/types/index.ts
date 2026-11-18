@@ -176,3 +176,47 @@ export interface MessageSimulationResult {
   mediaAllowed: boolean;
   isAdReplaced?: boolean;
 }
+
+export interface PublicationAuditLogItem {
+  id: number;
+  post_id: string;
+  status: 'published' | 'rejected' | 'pending';
+  title: string;
+  raw_content: string;
+  final_content: string;
+  rejection_reason: string;
+  source_type: string;
+  source_origin: string;
+  target_destination: string;
+  target_univ: string;
+  media_type: string;
+  media_url: string;
+  notes: string;
+  is_future: boolean;
+  event_date: string;
+  post_links: string[];
+  source_published_at: string;
+  created_at: string;
+  published_at: string | null;
+}
+
+export interface PublicationAuditCounts {
+  total: number;
+  published: number;
+  rejected: number;
+  pending?: number;
+  future: number;
+}
+
+export interface BlockedLinkItem {
+  id: number;
+  pattern: string;
+  match_type: 'contains' | 'domain' | 'exact';
+  reason: string;
+  is_broken: boolean;
+  hit_count: number;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+

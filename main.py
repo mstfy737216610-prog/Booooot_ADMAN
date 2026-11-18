@@ -196,9 +196,10 @@ def extract_dynamic_academic_hashtags(text: str, target_univ: Optional[str] = No
 
 
 def format_fallback_academic_post(raw_text: str, target_univ: Optional[str] = None, ext_links: Optional[List[str]] = None) -> str:
-    """صياغة أكاديمية موثقة تحافظ على فقرات المنشور كاملة وتمنع التقطيع العشوائي أو الخواتم المكررة"""
-    # 1. إزالة أي بادئات مزعجة أو قوالب إدارية
-    text = re.sub(r'^(?:ADMIN_p|ADMIN|Admin|Bot|محرر|المشرف):\s*', '', raw_text.strip(), flags=re.IGNORECASE)
+    """صياغة أكاديمية موثقة تحافظ على فقرات المنشور كاملة وتمنع التقطيع العشوائي والروابط المحظورة"""
+    # 1. تنظيف البادئات والروابط المحظورة أولاً
+    sanitized_text, allowed_from_raw, _ = db.filter_blocked_urls_from_text(raw_text, increment_hit=True)
+    text = re.sub(r'^(?:ADMIN_p|ADMIN|Admin|Bot|محرر|المشرف):\s*', '', sanitized_text.strip(), flags=re.IGNORECASE)
     text = re.sub(r'\[Forwarded from [^\]]+\]\s*', '', text)
     text = re.sub(r'https?://[^\s<>\"\']+', '', text)
 
@@ -209,7 +210,7 @@ def format_fallback_academic_post(raw_text: str, target_univ: Optional[str] = No
     first_line = lines[0]
     first_line_clean = re.sub(r'^[•\-*#📌📢✨🎓▫️]\s*', '', first_line).strip()
     u_label = f" ({target_univ})" if target_univ else ""
-    title = f"📌 <b>{first_line_clean}</b>{u_label}"
+    title = f"📌 <b>{html.escape(first_line_clean)}</b>{u_label}"
 
     # 2. بناء الفقرات والقوائم بذكاء دون إجبار كل سطر على نقطة ▫️
     paragraphs = []
@@ -246,13 +247,16 @@ def format_fallback_academic_post(raw_text: str, target_univ: Optional[str] = No
 
     body = "\n\n".join(paragraphs) if paragraphs else ""
 
-    # 3. قسم الروابط التفاعلية الموثقة بتسمية ذكية
+    # 3. قسم الروابط التفاعلية الموثقة بتسمية ذكية (بعد استبعاد أي رابط محظور)
     links_part = ""
-    all_links = list(ext_links or [])
-    raw_urls = re.findall(r'https?://[^\s<>\"\']+', raw_text)
-    for u in raw_urls:
-        if u not in all_links:
-            all_links.append(u)
+    all_links: List[str] = []
+    for u in list(ext_links or []) + allowed_from_raw:
+        cu = u.strip()
+        if not cu:
+            continue
+        is_blk, _ = db.is_url_blocked(cu, increment_hit=False)
+        if not is_blk and cu not in all_links:
+            all_links.append(cu)
 
     if all_links:
         primary_link = all_links[0]
@@ -1287,10 +1291,74 @@ class StandaloneTelegramEducationalBot:
         return None
 
     def to_safe_html(self, text: str) -> str:
+        """
+        تحويل وتطبيع صيغة تيليجرام HTML بدقة عالية:
+        - إزالة أي بادئات غير مرغوبة وتحويل Markdown (**عريض**, `كود`, [نص](رابط), عناوين ###) إلى HTML معتمد
+        - إزالة أي روابط محظورة أو تالفة تلقائياً
+        - حماية وسوم تيليجرام الصالحة وتهريب علامات < و > و & العشوائية لمنع خطأ 400 parse entities
+        """
         if not text:
             return ""
-        s = text
-        s = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', s)
+        s = str(text)
+        # تنظيف أي بادئات إدارية
+        s = re.sub(r'^(?:ADMIN_p|ADMIN|Admin|Bot):\s*', '', s.strip(), flags=re.IGNORECASE)
+
+        # تحويل روابط Markdown [label](url) مع فحص مانع الروابط
+        def _md_link_repl(m):
+            lbl = m.group(1).strip()
+            url = m.group(2).strip()
+            is_blk, _ = db.is_url_blocked(url, increment_hit=False)
+            if is_blk:
+                return ""
+            safe_u = html.escape(url, quote=True)
+            safe_l = html.escape(lbl)
+            return f'<a href="{safe_u}">{safe_l}</a>'
+
+        s = re.sub(r'\[([^\]]+)\]\((https?://[^\s)]+)\)', _md_link_repl, s)
+
+        # حماية وسوم تيليجرام HTML الصالحة مؤقتاً قبل تهريب المحارف الخاصة
+        tokens: List[str] = []
+        valid_tag_re = re.compile(
+            r'<(/?)(b|strong|i|em|u|ins|s|strike|del|code|pre|blockquote)\b[^>]*>|'
+            r'<a\s+href=[\'"]([^\'"]+)[\'"][^>]*>|</a>',
+            re.IGNORECASE
+        )
+
+        def _stash_tag(m):
+            raw_tag = m.group(0)
+            # إذا كان وسم <a href="..."> نفحص إن كان محظوراً
+            href_val = m.group(3)
+            if href_val:
+                is_blk, _ = db.is_url_blocked(href_val, increment_hit=False)
+                if is_blk:
+                    tokens.append("")
+                    return f"__TG_TAG_{len(tokens) - 1}__"
+                raw_tag = f'<a href="{html.escape(href_val, quote=True)}">'
+            elif m.group(2):
+                slash = m.group(1) or ""
+                tname = m.group(2).lower()
+                raw_tag = f"<{slash}{tname}>"
+            tokens.append(raw_tag)
+            return f"__TG_TAG_{len(tokens) - 1}__"
+
+        s = valid_tag_re.sub(_stash_tag, s)
+
+        # تهريب المحارف الخاصة المتبقية (<, >, &) بعد فك أي كيانات مسبقة حتى لا تتضاعف
+        s = html.unescape(s)
+        s = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+        # تحويل تنسيقات Markdown الشائعة إلى HTML لتيليجرام
+        s = re.sub(r'^#{1,3}\s+(.+)$', r'<b>\1</b>', s, flags=re.MULTILINE)
+        s = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', s, flags=re.DOTALL)
+        s = re.sub(r'`([^`\n]+)`', r'<code>\1</code>', s)
+
+        # استعادة وسوم تيليجرام الموثقة
+        for idx, tok in enumerate(tokens):
+            s = s.replace(f"__TG_TAG_{idx}__", tok)
+
+        # إزالة أي روابط محظورة قد تكون وردت كنص صريح
+        s, _, _ = db.filter_blocked_urls_from_text(s, increment_hit=False)
+        s = re.sub(r'\n{3,}', '\n\n', s).strip()
         return self.balance_html_tags(s)
 
     def send_msg(self, chat_id: Any, text: str, reply_markup: Optional[Dict] = None, parse_mode: Optional[str] = "HTML", reply_to_message_id: Optional[int] = None) -> Dict[str, Any]:
@@ -2195,18 +2263,20 @@ class StandaloneTelegramEducationalBot:
     def extract_external_links(self, text: str, target_univ: Optional[str] = None) -> List[str]:
         if not text:
             return []
-        matches = re.findall(r'https?://[^\s<>"]+', text)
+        matches = re.findall(r'https?://[^\s<>"\'\u200f\u200e]+', text)
         valid = []
-        # روابط وهمية شائعة يجب حظرها تماماً
-        placeholder_domains = ["example.com", "google.com/search", "test.com", "edu.com"]
         for u in matches:
             u_clean = u.rstrip(".,;!?)>]\'\"")
             if "t.me/" in u_clean or "telegram.me/" in u_clean:
                 continue
-            if any(pd in u_clean.lower() for pd in placeholder_domains):
-                continue
             resolved = clean_and_resolve_url(u_clean, target_univ)
-            if resolved and resolved not in valid and "news.google.com" not in resolved:
+            if not resolved or "news.google.com" in resolved:
+                continue
+            is_blk, blk_reason = db.is_url_blocked(resolved, increment_hit=True)
+            if is_blk:
+                logger.info(f"🚫 [مانع الروابط] تم استبعاد رابط ({blk_reason}): {resolved}")
+                continue
+            if resolved not in valid:
                 valid.append(resolved)
         return valid
 
@@ -2673,8 +2743,11 @@ class StandaloneTelegramEducationalBot:
         # إذا تعذر الدمج بالذكاء الاصطناعي، نصيغ الخبر الأساسي بدقة ودفء عبر call_ai بدلاً من القوالب الصماء
         return self.call_ai(clean1, target_univ=target_univ)
 
-    def call_ai(self, raw_text: str, custom_instruction: str = "", system_prompt: Optional[str] = None, target_univ: Optional[str] = None) -> Optional[str]:
-        clean_input = self.clean_text_from_sources(raw_text)
+    def call_ai(self, raw_text: str, custom_instruction: str = "", system_prompt: Optional[str] = None, target_univ: Optional[str] = None, skip_expiry_check: bool = False) -> Optional[str]:
+        sanitized_raw, _, blocked_found = db.filter_blocked_urls_from_text(raw_text, increment_hit=True)
+        if blocked_found:
+            logger.info(f"🚫 [مانع الروابط] تم إزالة ({len(blocked_found)}) رابط محظور/غير صالح قبل الصياغة.")
+        clean_input = self.clean_text_from_sources(sanitized_raw)
         if not clean_input or len(clean_input.strip()) < 5:
             return None
 
@@ -2684,38 +2757,44 @@ class StandaloneTelegramEducationalBot:
             logger.info(f"🛡️ [فلترة الشأن الطلابي] تم استبعاد خبر غير طلابي أو حشو سياسي/اقتصادي ({rel_reason}): {clean_input[:60]}")
             return None
 
-        # 2. كشف السياق والمناسبة الأكاديمية بدقة (تسجيل، سمر، اختبارات، تخرج، جمعة، استبيانات)
+        # 2. محرك التدقيق الزمني وفهم التواريخ الفعلي
+        date_meta = db.extract_date_metadata(raw_text)
+        if not skip_expiry_check and date_meta.get("is_expired"):
+            logger.info(f"🛡️ [مصفاة التواريخ الذكية] تم استبعاد الخبر لانتهاء تواريخه ({date_meta.get('detected_dates')}).")
+            return None
+
+        # 3. كشف السياق والمناسبة الأكاديمية بدقة
         ctx = detect_student_context(clean_input)
-        is_prayer_or_motivational = (ctx in ["friday_prayer", "graduation"]) or any(w in clean_input for w in ["اللهم", "يا رب", "بالتوفيق", "دعواتنا", "أجمل التهاني", "مبارك التخرج", "صباح الخير", "جمعة مباركة", "إجازة سعيدة", "فالكم التوفيق"])
 
         context_hints = {
-            "registration": "المحتوى يخص القبول أو تسجيل المقررات. التزم حرفياً بالمواعيد والشروط المذكورة فقط في النص المصدر دون أي زيادة أو تأليف مواعيد أو ذكر أي شخص لم يرد في النص، وأبرز المواعيد بـ <b>...</b>.",
+            "registration": "المحتوى يخص القبول أو تسجيل المقررات. التزم حرفياً بالمواعيد والشروط المذكورة فقط في النص المصدر دون أي زيادة أو تأليف مواعيد، وأبرز المواعيد بـ <b>...</b>.",
             "summer_term": "المحتوى يخص الفصل الصيفي (السمر). صغ المنشور بأسلوب واضح ومباشر للشروط ومواعيد المقررات المذكورة فقط.",
             "exams": "المحتوى يخص الاختبارات أو الفاينل. هدأ الطلاب واذكرهم بالأذكار والأدعية والصلاة على النبي ﷺ والتوكل على الله وفالهم الـ A+، وأبرز التواريخ والقاعات المذكورة بـ <b>...</b>.",
             "graduation": "المحتوى يخص التخرج والنتائج. بارك لهم بالجهد والدعاء لهم بالتوفيق والنجاح.",
             "friday_prayer": "المحتوى إيماني أو يوم الجمعة. صغه بروح أخوية دافئة مع الصلاة على النبي ﷺ والتذكير بسورة الكهف وساعة الاستجابة ودعوات الخير للجميع.",
-            "student_project": "المحتوى استبيان أو مشروع تخرج لزميل. اطلب دعم الزملاء لتعبئة الرابط المرفق فقط.",
+            "student_project": "المحتوى استبيان أو مشروع تخرج لزميل. اطلب دعم الزملاء لتعبئة الرابط المرفق فقط وحافظ على الفقرات مترابطة.",
             "charity_volunteering": "المحتوى عمل خيري أو تطوع أو تبرع. شجع الطلاب على الخير والمشاركة واحتساب الأجر.",
-            "national_celebrations": "المحتوى احتفال وطني أو فعالية وطنية جامعية (مثل اليوم الوطني أو يوم التأسيس). صغ المنشور بروح وطنية واعتزاز وأسلوب طلابي دافئ ومبهج يبرز مواعيد الفعاليات المقامة بالجامعة المذكورة فقط.",
-            "campus_activities": "المحتوى فعالية طلابية، ورشة عمل، معرض، مسابقة، أو نشاط نادي طلابي. صغ المنشور بأسلوب مشجع ومحفز للطلبة للمشاركة وتنمية المهارات مع إبراز الموعد والقاعة.",
+            "national_celebrations": "المحتوى احتفال وطني أو فعالية وطنية جامعية. صغ المنشور بروح وطنية واعتزاز وأسلوب طلابي دافئ ومبهج يبرز مواعيد الفعاليات المقامة بالجامعة المذكورة فقط.",
+            "campus_activities": "المحتوى فعالية طلابية، ورشة عمل، معرض، مسابقة، أو نشاط نادي طلابي. صغ المنشور بأسلوب مشجع ومحفز للطلبة مع إبراز الموعد والقاعة.",
             "general_academic": "تحديث أو إعلان أكاديمي مهم. ادخل في صلب الموضوع مباشرة بأسلوب دقيق ومختصر ينقل الفائدة الحقيقية دون قوالب مكررة أو تضخيم."
         }
         ctx_guide = context_hints.get(ctx, context_hints["general_academic"])
 
-        # استخراج كافة الروابط الخارجية (بوابات التقديم، PowerApps، الاستمارات، بوابات الجامعات) مع تنظيفها وفك روابط Google News
+        # استخراج الروابط المسموحة فقط (بعد تطبيق مانع الروابط)
         ext_links = self.extract_external_links(raw_text, target_univ)
 
-        # 3. محرك التدقيق الزمني والتحقق من التواريخ (Date & Time Validation Engine)
         today = datetime.now()
         today_str = today.strftime("%Y-%m-%d (%A)")
-        
+
         active_system_prompt = system_prompt or SYSTEM_PROMPT_REPHRASE
         active_system_prompt += f"\n\n📅 تاريخ اليوم الحالي للمطابقة: {today_str}"
-        active_system_prompt += "\n\n⚠️ ضوابط التدقيق الزمني الصارمة:"
-        active_system_prompt += "\n- استخرج التواريخ الواردة في النص وقارنها بتاريخ اليوم."
-        active_system_prompt += "\n- إذا كان الخبر قديماً (انتهى موعد التسجيل، الاختبار فات، الفعالية انتهت)، أجب حصراً بكلمة: IGNORE_EXPIRED"
-        active_system_prompt += "\n- يمنع منعاً باتاً اختراع أي موعد أو تاريخ غير موجود في النص المصدر."
-        active_system_prompt += "\n- ركز على المنشورات التي تهم الطالب حالياً ومستقبلاً."
+        if date_meta.get("detected_dates"):
+            active_system_prompt += f"\n📆 التواريخ المستخرجة من الخبر: {', '.join(date_meta['detected_dates'])}"
+        active_system_prompt += "\n\n⚠️ ضوابط الصياغة لتيليجرام والتدقيق الزمني الصارمة:"
+        active_system_prompt += "\n- استخدم صيغة HTML الخاصة بتيليجرام فقط: <b>...</b> للعناوين والتواريخ المهمة، ويُمنع استخدام علامات ** أو ###."
+        active_system_prompt += "\n- استخرج التواريخ الواردة في النص بدقة وقارنها بتاريخ اليوم؛ إذا كان الخبر قديماً أو منتهياً أجب حصراً بكلمة: IGNORE_EXPIRED"
+        active_system_prompt += "\n- يمنع منعاً باتاً اختراع أي موعد أو تاريخ أو رابط غير موجود في النص المصدر."
+        active_system_prompt += "\n- حافظ على ترتيب المنشور، وضوح الفقرات، وعزله التام دون أي بادئات مثل ADMIN_p:."
 
         if target_univ:
             dialect_instruction = ""
@@ -2723,10 +2802,9 @@ class StandaloneTelegramEducationalBot:
                 dialect_instruction = "استخدم اللهجة السعودية البيضاء (جامعة الملك سعود)."
             elif "التقنية العليا" in target_univ or "HCT" in target_univ.upper():
                 dialect_instruction = "استخدم اللهجة الإماراتية البيضاء (كليات التقنية العليا)."
-            
+
             active_system_prompt += f"\n\n🚨 المنشور موجه لطلاب: ({target_univ}). {dialect_instruction} التزم بالحقائق الواردة فقط ولا تخترع أي تفاصيل."
 
-            # استدعاء المعرفة المستفادة وهوية الجامعة المستخلصة بعد فحص المصادر
             all_u = db.get_university_projects()
             matched_u = next((u for u in all_u if u["name"] == target_univ or target_univ in u["name"]), None)
             if matched_u:
@@ -2735,7 +2813,7 @@ class StandaloneTelegramEducationalBot:
                     active_system_prompt += f"\n\n🧠 الهوية الأكاديمية المستخلصة بعد فحص مصادر الجامعة وتخزينها:\n{k['knowledge_summary']}"
 
         instruction_addon = f"توجيهات إضافية من المشرف: {custom_instruction}\n\n" if custom_instruction else ""
-        user_prompt = f"{instruction_addon}[توجيه سياقي ذكي: {ctx_guide}]\n\nالمحتوى المطلوب تحليله وصياغته:\n{clean_input}"
+        user_prompt = f"{instruction_addon}[توجيه سياقي ذكي: {ctx_guide}]\n\nالمحتوى المطلوب تحليله وصياغته لتيليجرام:\n{clean_input}"
 
         ai_base, ai_key, primary_mdl, gemini_key = get_current_ai_config()
         payload = {
@@ -2756,19 +2834,18 @@ class StandaloneTelegramEducationalBot:
         endpoint = f"{ai_base}/chat/completions"
 
         def _process_ai_response(text: str) -> Optional[str]:
-            # تنظيف أي روابط وهمية قد يكون الذكاء الاصطناعي قد اخترعها رغم التحذيرات
+            # تنظيف أي روابط وهمية أو محظورة قد تكون وردت في رد الذكاء الاصطناعي
             cleaned_ai = re.sub(r'\[?(?:الرابط هنا|رابط البوابة|اضغط هنا)\]?', '', text)
-            cleaned_ai = re.sub(r'https?://(?:www\.)?example\.com\S*', '', cleaned_ai)
-            # إزالة أي بادئات إدارية أو اسم الحساب
             cleaned_ai = re.sub(r'^(?:ADMIN_p|ADMIN|Admin|Bot|محرر|المشرف):\s*', '', cleaned_ai.strip(), flags=re.IGNORECASE)
+            cleaned_ai, _, _ = db.filter_blocked_urls_from_text(cleaned_ai, increment_hit=True)
             cleaned_ai = self.clean_text_from_sources(cleaned_ai)
 
-            # إضافة الروابط الحقيقية فقط إذا لم تكن موجودة بالفعل في النص
+            # إضافة الروابط الحقيقية المسموحة فقط إذا لم تكن موجودة بالفعل في النص
             for lk in ext_links:
                 if lk not in cleaned_ai:
                     label = get_contextual_link_label(lk, text)
                     cleaned_ai += f"\n\n{label}\n{lk}"
-            return cleaned_ai.strip()
+            return self.to_safe_html(cleaned_ai)
 
 
         # محاولة الاتصال بـ Google Gemini REST أولاً إذا توفر المفتاح
@@ -2919,6 +2996,8 @@ class StandaloneTelegramEducationalBot:
                 target_channels = task.get("targets") or db.get_target_channels()
                 target_univ_name = task.get("target_univ")
                 user_id = task.get("user_id")
+                source_origin = task.get("source_origin") or ""
+                source_published_at = task.get("source_published_at") or ""
                 has_media_item = bool(photo or video or media_group or animation or document or media_type in ["photo", "video", "animation", "document"])
 
                 # 0. التعرف الضوئي على الحروف (OCR) للإعلانات وجداول الاختبارات والتعاميم المصورة
@@ -2930,6 +3009,29 @@ class StandaloneTelegramEducationalBot:
                         logger.info(f"✅ تم بنجاح استخراج {len(ocr_extracted)} حرف بالتعرف الضوئي وتمريرها للصياغة الأكاديمية!")
 
                 first_line = (raw_text.split("\n")[0] if raw_text else "منشور بدون عنوان")[:90]
+                raw_date_meta = db.extract_date_metadata(raw_text, source_published_at)
+                raw_links_all = db._extract_urls_list(raw_text)
+
+                # 0.5 تطبيق مانع الروابط المخصص قبل النشر
+                cleaned_raw_no_blocked, allowed_raw_links, blocked_raw_links = db.filter_blocked_urls_from_text(raw_text, increment_hit=True)
+                if blocked_raw_links and not cleaned_raw_no_blocked.strip() and not has_media_item:
+                    reasons_str = " | ".join(f"{b['url']} ({b['reason']})" for b in blocked_raw_links[:3])
+                    db.add_audit_log(
+                        status="rejected",
+                        title=first_line,
+                        raw_content=raw_text,
+                        rejection_reason=f"حظر بواسطة مانع الروابط: {reasons_str}",
+                        source_type="direct" if task_type == "direct_post" else "crawler",
+                        source_origin=source_origin,
+                        target_destination="مانع الروابط غير الصالحة",
+                        target_univ=target_univ_name or "عام",
+                        post_links=[b["url"] for b in blocked_raw_links],
+                        event_date=raw_date_meta.get("event_date") or "",
+                        is_future=raw_date_meta.get("is_future"),
+                        source_published_at=source_published_at,
+                    )
+                    post_queue.task_done()
+                    continue
 
                 # 1. كشف إعلانات المنافسين واستبدالها (فقط إذا كانت الميزة مفعلة صراحة من المشرف)
                 custom_ad = db.get_setting("custom_ad", "")
@@ -2941,15 +3043,19 @@ class StandaloneTelegramEducationalBot:
 
                 if is_ad:
                     db.increment_setting("ad_replaced_count", 1)
-                    # توثيق في سجل التدقيق
                     db.add_audit_log(
                         status="rejected",
                         title=first_line,
                         raw_content=raw_text,
                         rejection_reason="إعلان تجاري وخدمات مدفوعة مخالفة للوائح الأكاديمية",
                         source_type="direct" if task_type == "direct_post" else "crawler",
+                        source_origin=source_origin,
                         target_destination="محرك الاستبدال والفلترة",
-                        target_univ=target_univ_name or "عام"
+                        target_univ=target_univ_name or "عام",
+                        post_links=raw_links_all,
+                        event_date=raw_date_meta.get("event_date") or "",
+                        is_future=raw_date_meta.get("is_future"),
+                        source_published_at=source_published_at,
                     )
                     for ch in target_channels:
                         if media_group:
@@ -2977,8 +3083,13 @@ class StandaloneTelegramEducationalBot:
                             raw_content=raw_text,
                             rejection_reason=f"محتوى غير أكاديمي أو خارج الشأن الطلابي ({rel_reason})",
                             source_type="crawler",
+                            source_origin=source_origin,
                             target_destination="مصفاة الشأن الطلابي",
-                            target_univ=target_univ_name or "عام"
+                            target_univ=target_univ_name or "عام",
+                            post_links=raw_links_all,
+                            event_date=raw_date_meta.get("event_date") or "",
+                            is_future=raw_date_meta.get("is_future"),
+                            source_published_at=source_published_at,
                         )
                         post_queue.task_done()
                         continue
@@ -2994,13 +3105,18 @@ class StandaloneTelegramEducationalBot:
                             raw_content=raw_text,
                             rejection_reason=f"تكرار محتوى مماثل نُشر خلال 24 ساعة الماضية ({reason} - تطابق {score*100:.1f}%)",
                             source_type="crawler",
+                            source_origin=source_origin,
                             target_destination="مانع التكرار الذكي",
-                            target_univ=target_univ_name or "عام"
+                            target_univ=target_univ_name or "عام",
+                            post_links=raw_links_all,
+                            event_date=raw_date_meta.get("event_date") or "",
+                            is_future=raw_date_meta.get("is_future"),
+                            source_published_at=source_published_at,
                         )
                         post_queue.task_done()
                         continue
 
-                # 4. تفعيل محرك السحب الذكي (Smart Scraper) للروابط المكتشفة لاستخراج الصور الحقيقية فقط
+                # 4. تفعيل محرك السحب الذكي (Smart Scraper) للروابط المسموحة فقط لاستخراج الصور الحقيقية
                 ext_links = self.extract_external_links(raw_text, target_univ_name)
                 if ext_links:
                     logger.info(f"🌐 [Smart Scraper] جاري فحص الرابط المصدر: {ext_links[0]}...")
@@ -3013,23 +3129,42 @@ class StandaloneTelegramEducationalBot:
                 custom_instructions = db.get_setting("custom_instructions", "")
 
                 # صياغة الخبر بالذكاء الاصطناعي حصراً وفق سياق ونبرة ممثل الدفعة الناصح
-                rephrased = self.call_ai(raw_text, custom_instructions, target_univ=target_univ_name)
+                rephrased = self.call_ai(
+                    raw_text,
+                    custom_instructions,
+                    target_univ=target_univ_name,
+                    skip_expiry_check=is_direct_or_forced
+                )
 
                 if not rephrased:
-                    logger.info(f"🛡️ تم استبعاد المنشور من النشر لأن الذكاء الاصطناعي أو مصفاة الشأن الطلابي قررت عدم نشره: {first_line[:40]}")
+                    logger.info(f"🛡️ تم استبعاد المنشور من النشر لأن الذكاء الاصطناعي أو مصفاة الشأن الطلابي/التواريخ قررت عدم نشره: {first_line[:40]}")
+                    exp_reason = (
+                        f"منتهي الصلاحية: تواريخ الخبر قديمة ({', '.join(raw_date_meta.get('detected_dates', []))})"
+                        if raw_date_meta.get("is_expired")
+                        else "استبعاد بواسطة محرك الصياغة الأكاديمي (خبر قديم أو غير ذي فائدة للطلاب)"
+                    )
                     db.add_audit_log(
                         status="rejected",
                         title=first_line,
                         raw_content=raw_text,
-                        rejection_reason="استبعاد بواسطة محرك الصياغة الأكاديمي (خبر قديم أو منتهي أو غير ذي فائدة للطلاب)",
+                        rejection_reason=exp_reason,
                         source_type="crawler",
+                        source_origin=source_origin,
                         target_destination="محرك الصياغة الأكاديمي",
-                        target_univ=target_univ_name or "عام"
+                        target_univ=target_univ_name or "عام",
+                        post_links=raw_links_all,
+                        event_date=raw_date_meta.get("event_date") or "",
+                        is_future=False,
+                        source_published_at=source_published_at,
                     )
                     post_queue.task_done()
                     continue
 
-                # 5. النشر في القنوات المستهدفة المخصصة واستخراج الروابط الرسمية النظيفة
+                # تنظيف نهائي بالمانع لضمان عدم تسرب أي رابط محظور أو غير صحيح في تيليجرام
+                rephrased, _, _ = db.filter_blocked_urls_from_text(rephrased, increment_hit=True)
+                rephrased = self.to_safe_html(rephrased)
+
+                # 5. النشر في القنوات المستهدفة المخصصة واستخراج الروابط الرسمية الصالحة غير المحظورة
                 curr_tok = self.get_current_token()
                 if not curr_tok or curr_tok in _revoked:
                     logger.info("ℹ️ محرك النشر بانتظار إدخال توكن جديد ومصرح به من @BotFather لمتابعة النشر.")
@@ -3048,9 +3183,11 @@ class StandaloneTelegramEducationalBot:
                 post_links = self.extract_external_links(rephrased, target_univ_name) or self.extract_external_links(raw_text, target_univ_name)
                 post_kb = None
                 if post_links:
+                    btn_label = get_contextual_link_label(post_links[0], rephrased)
+                    btn_label = re.sub(r'[:：]\s*$', '', btn_label).strip() or "🔗 فتح الرابط الرسمي"
                     post_kb = {
                         "inline_keyboard": [
-                            [{"text": "🔗 فتح البوابة الإلكترونية الرسمية", "url": post_links[0]}]
+                            [{"text": btn_label[:48], "url": post_links[0]}]
                         ]
                     }
 
@@ -3093,8 +3230,9 @@ class StandaloneTelegramEducationalBot:
                 db.increment_setting("forwarded_count", 1)
                 db.increment_setting("processed_count", 1)
 
-                # 6. تسجيل الخبر في سجل الـ 24 ساعة لمنع التكرار
-                story_title = (rephrased.split("\n")[0] if rephrased else first_line)[:100]
+                # 6. تسجيل الخبر في سجل الـ 24 ساعة وفي سجل التدقيق الدائم مع التواريخ والروابط
+                story_title = self.strip_html(rephrased.split("\n")[0] if rephrased else first_line)[:100]
+                final_date_meta = db.extract_date_metadata(rephrased or raw_text, source_published_at)
                 if success_targets:
                     db.log_published_story(
                         post_id=str(int(time.time() * 1000)),
@@ -3103,7 +3241,6 @@ class StandaloneTelegramEducationalBot:
                         target_channel=success_targets[0],
                         target_univ=target_univ_name
                     )
-                    # توثيق النشر الناجح في سجل التدقيق الدائم
                     db.add_audit_log(
                         status="published",
                         title=story_title,
@@ -3111,10 +3248,34 @@ class StandaloneTelegramEducationalBot:
                         final_content=rephrased,
                         rejection_reason="",
                         source_type="direct" if task_type == "direct_post" else "crawler",
+                        source_origin=source_origin,
                         target_destination=", ".join(success_targets),
                         target_univ=target_univ_name or "عام",
                         media_type=media_type or ("photo" if photo else "text"),
-                        media_url=photo or video or ""
+                        media_url=photo or video or "",
+                        post_links=post_links or allowed_raw_links,
+                        event_date=final_date_meta.get("event_date") or "",
+                        is_future=final_date_meta.get("is_future"),
+                        source_published_at=source_published_at,
+                    )
+                elif failed_targets:
+                    fail_desc = " | ".join(f"{ch}: {desc}" for ch, desc in failed_targets if desc)[:240]
+                    db.add_audit_log(
+                        status="rejected",
+                        title=story_title,
+                        raw_content=raw_text,
+                        final_content=rephrased,
+                        rejection_reason=f"فشل الإرسال لتيليجرام: {fail_desc or 'تعذر التسليم للقناة'}",
+                        source_type="direct" if task_type == "direct_post" else "crawler",
+                        source_origin=source_origin,
+                        target_destination=", ".join(ch for ch, _ in failed_targets),
+                        target_univ=target_univ_name or "عام",
+                        media_type=media_type or ("photo" if photo else "text"),
+                        media_url=photo or video or "",
+                        post_links=post_links or allowed_raw_links,
+                        event_date=final_date_meta.get("event_date") or "",
+                        is_future=final_date_meta.get("is_future"),
+                        source_published_at=source_published_at,
                     )
 
                 # 7. النشر المزدوج المستقل على منصة تويتر (X) إذا كان مفعلاً
@@ -3130,23 +3291,23 @@ class StandaloneTelegramEducationalBot:
                                 final_content=tweet_content,
                                 rejection_reason="",
                                 source_type="twitter_dual",
+                                source_origin=source_origin,
                                 target_destination="منصة Twitter (X)",
                                 target_univ=target_univ_name or "عام",
                                 media_type="photo" if photo else "text",
-                                media_url=photo or ""
+                                media_url=photo or "",
+                                post_links=post_links or allowed_raw_links,
+                                event_date=final_date_meta.get("event_date") or "",
+                                is_future=final_date_meta.get("is_future"),
+                                source_published_at=source_published_at,
                             )
                     except Exception as e_tw_pub:
                         logger.warning(f"ملاحظة في النشر التلقائي لتويتر: {e_tw_pub}")
 
-                # 8. النشر الصامت التام: لا تظهر أي رسائل في البوت إطلاقاً تلبية لطلب المشرف الصارم
+                # 8. النشر الصامت التام
                 if success_targets:
                     logger.info(f"✅ تم النشر المباشر بنجاح في القنوات: {', '.join(success_targets)}")
                 if failed_targets:
-                    unauth = any("Unauthorized" in str(desc) for _, desc in failed_targets)
-                    if unauth:
-                        logger.info("ℹ️ لم يتم النشر لعدم توفر توكن مصرح به حالياً (401 Unauthorized).")
-                    else:
-                        logger.warning(f"⚠️ فشل النشر في بعض القنوات: {failed_targets}")
                     unauth = any("Unauthorized" in str(desc) for _, desc in failed_targets)
                     if unauth:
                         logger.info("ℹ️ لم يتم النشر لعدم توفر توكن مصرح به حالياً (401 Unauthorized).")
@@ -3545,12 +3706,25 @@ class StandaloneTelegramEducationalBot:
                     if text_m:
                         raw_h = text_m.group(1)
                         clean_h = re.sub(r'<br\s*/?>', '\n', raw_h)
-                        text_content = re.sub(r'<[^>]+>', '', clean_h).strip()
+                        text_content = html.unescape(re.sub(r'<[^>]+>', '', clean_h)).strip()
+
+                    # استخراج التاريخ والوقت الحقيقي لنشر المنشور في تيليجرام لترتيب المنشورات زمنياً بدقة
+                    pub_iso = ""
+                    pub_ts = 0.0
+                    dt_m = re.search(r'<time[^>]+datetime=[\'"]([^\'"]+)[\'"]', b, re.IGNORECASE)
+                    if dt_m:
+                        pub_iso = dt_m.group(1).strip()
+                        try:
+                            pub_ts = datetime.fromisoformat(pub_iso.replace("Z", "+00:00")).timestamp()
+                        except Exception:
+                            pub_ts = 0.0
 
                     if text_content or photo_url or video_url or media_group:
                         posts_extracted.append({
                             "id": pid,
                             "num_id": num_id,
+                            "published_at": pub_iso,
+                            "published_ts": pub_ts,
                             "photo": photo_url,
                             "video": video_url,
                             "media_group": media_group,
@@ -3560,8 +3734,8 @@ class StandaloneTelegramEducationalBot:
                 if not posts_extracted:
                     return
 
-                # ترتيب المنشورات تصاعدياً
-                posts_extracted.sort(key=lambda x: x["num_id"])
+                # ترتيب المنشورات تصاعدياً حسب الطابع الزمني الفعلي ثم رقم المنشور
+                posts_extracted.sort(key=lambda x: (x.get("published_ts", 0.0), x["num_id"]))
 
                 last_known = str(src.get("last_post_id") or "")
                 last_known_num = 0
@@ -3573,7 +3747,7 @@ class StandaloneTelegramEducationalBot:
                 # جلب الجامعة المعتمدة الافتراضية لضمان عدم ضياع أي خبر من المصدر
                 all_univs = db.get_university_projects()
                 active_univs = [u for u in all_univs if u.get("enabled", True)]
-                default_target_ch = db.get_target_channels()[0] if db.get_target_channels() else "@jhdhhdcj"
+                default_target_ch = db.get_target_channels()[0] if db.get_target_channels() else ""
                 fallback_univ = active_univs[0] if active_univs else {"name": "أخبار الجامعة", "target_channel": default_target_ch}
 
                 # إذا كانت أول مرة نسجل هذا المصدر: ننشر أحدث منشور متاح فوراً لتبدأ قناة الجامعة بالعمل مباشرة
@@ -3594,13 +3768,15 @@ class StandaloneTelegramEducationalBot:
                                 "video": latest.get("video"),
                                 "media_group": latest.get("media_group"),
                                 "media_type": "video" if latest.get("video") else ("photo" if latest.get("photo") else "text"),
-                                "targets": [matched_univ["target_channel"]],
+                                "targets": [matched_univ["target_channel"]] if matched_univ.get("target_channel") else [],
                                 "target_univ": matched_univ["name"],
+                                "source_origin": f"@{channel_name}",
+                                "source_published_at": latest.get("published_at", ""),
                                 "user_id": None
                             })
                     return
 
-                # حلقة فحص ونشر كافة المنشورات الجديدة المتراكمة
+                # حلقة فحص ونشر كافة المنشورات الجديدة المتراكمة بترتيبها الزمني الصحيح
                 new_posts = [p for p in posts_extracted if p["num_id"] > last_known_num]
                 for p in new_posts:
                     p_text = p.get("text", "")
@@ -3608,6 +3784,7 @@ class StandaloneTelegramEducationalBot:
                     p_video = p.get("video")
                     p_media_group = p.get("media_group")
                     p_id = p["id"]
+                    p_pub_at = p.get("published_at", "")
 
                     # استبعاد الإعلانات التجارية المنافسة والخدمات الطلابية فقط
                     is_ad = any(kw in p_text for kw in AD_KEYWORDS)
@@ -3635,8 +3812,10 @@ class StandaloneTelegramEducationalBot:
                         "video": p_video,
                         "media_group": p_media_group,
                         "media_type": "video" if p_video else ("photo" if p_photo else "text"),
-                        "targets": [matched_univ["target_channel"]],
+                        "targets": [matched_univ["target_channel"]] if matched_univ.get("target_channel") else [],
                         "target_univ": matched_univ["name"],
+                        "source_origin": f"@{channel_name}",
+                        "source_published_at": p_pub_at,
                         "user_id": None
                     })
 
@@ -3714,8 +3893,10 @@ class StandaloneTelegramEducationalBot:
                             "video": video_url,
                             "media_group": media_group,
                             "media_type": "video" if video_url else ("photo" if photo_url else "text"),
-                            "targets": [target_ch],
+                            "targets": [target_ch] if target_ch else [],
                             "target_univ": univ_name,
+                            "source_origin": f"X @{handle}",
+                            "source_published_at": str(tw.get("date") or ""),
                             "user_id": None
                         })
                         return
@@ -3727,8 +3908,8 @@ class StandaloneTelegramEducationalBot:
             tg_url = f"https://t.me/s/{handle}"
             req = urllib.request.Request(tg_url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
             with urllib.request.urlopen(req, context=ssl_ctx, timeout=8) as r:
-                html = r.read().decode("utf-8", errors="ignore")
-                blocks = re.split(r'<div[^>]*class=[\'"][^\'"]*tgme_widget_message_wrap', html)
+                raw_page = r.read().decode("utf-8", errors="ignore")
+                blocks = re.split(r'<div[^>]*class=[\'"][^\'"]*tgme_widget_message_wrap', raw_page)
                 if len(blocks) > 1:
                     last_block = blocks[-1]
                     post_id_m = re.search(r'data-post=[\'"]([^\'"]+)[\'"]', last_block)
@@ -3739,7 +3920,10 @@ class StandaloneTelegramEducationalBot:
                             text_m = re.search(r'class=[\'"][^\'"]*tgme_widget_message_text[^\'"]*[\'"][^>]*>(.*?)</div>', last_block, re.DOTALL)
                             clean_text = ""
                             if text_m:
-                                clean_text = re.sub(r'<[^>]+>', '', re.sub(r'<br\s*/?>', '\n', text_m.group(1))).strip()
+                                clean_text = html.unescape(re.sub(r'<[^>]+>', '', re.sub(r'<br\s*/?>', '\n', text_m.group(1)))).strip()
+
+                            dt_m = re.search(r'<time[^>]+datetime=[\'"]([^\'"]+)[\'"]', last_block, re.IGNORECASE)
+                            pub_iso = dt_m.group(1).strip() if dt_m else ""
 
                             photo_url = None
                             bg_m = re.search(r'background-image:\s*url\([\'"]?([^\'")\s]+)[\'"]?\)', last_block)
@@ -3762,8 +3946,10 @@ class StandaloneTelegramEducationalBot:
                                     "type": "twitter_post",
                                     "text": clean_text,
                                     "photo": photo_url,
-                                    "targets": [target_ch],
+                                    "targets": [target_ch] if target_ch else [],
                                     "target_univ": univ_name,
+                                    "source_origin": f"X @{handle}",
+                                    "source_published_at": pub_iso,
                                     "user_id": None
                                 })
                                 return
@@ -3771,7 +3957,7 @@ class StandaloneTelegramEducationalBot:
             logger.debug(f"Twitter mirror scrape note for @{handle}: {e}")
 
     def check_rss_feed(self, src: Dict[str, Any], is_manual: bool = False):
-        """يسحب الأخبار من روابط RSS مع استخراج الصور المرفقة الحقيقية"""
+        """يسحب الأخبار من روابط RSS مع استخراج الصور والتواريخ الحقيقية وترتيبها زمنياً"""
         url = src.get("target", "")
         if not url.startswith("http"):
             return
@@ -3790,16 +3976,26 @@ class StandaloneTelegramEducationalBot:
                     t = it.findtext("title") or ""
                     l = it.findtext("link") or ""
                     d = it.findtext("description") or ""
+                    pub_str = it.findtext("pubDate") or ""
+                    pub_iso = ""
+                    pub_ts = 0.0
+                    if pub_str:
+                        try:
+                            pub_dt = email.utils.parsedate_to_datetime(pub_str)
+                            pub_iso = pub_dt.isoformat()
+                            pub_ts = pub_dt.timestamp()
+                        except Exception:
+                            pass
                     photo_url = self.extract_image_from_xml_item(it, d)
                     pid = l or t
                     if pid == last_known:
                         break
-                    new_items.append((pid, t, d, photo_url))
+                    new_items.append((pid, t, d, photo_url, pub_iso, pub_ts))
 
                 if new_items:
                     db.update_source_last_id(src.get("target"), new_items[0][0])
                     if not last_known and is_manual:
-                        pid, t, d, photo_url = new_items[0]
+                        pid, t, d, photo_url, pub_iso, _ = new_items[0]
                         clean_d = re.sub(r'<[^>]+>', '', d).strip()
                         full_txt = f"{t}\n{clean_d}"
                         matched_univ = db.find_university_for_post(url, full_txt)
@@ -3813,11 +4009,15 @@ class StandaloneTelegramEducationalBot:
                                     "photo": photo_url,
                                     "targets": [matched_univ["target_channel"]],
                                     "target_univ": matched_univ["name"],
+                                    "source_origin": url,
+                                    "source_published_at": pub_iso,
                                     "user_id": ADMIN_ID
                                 })
                         return
 
-                    for pid, t, d, photo_url in reversed(new_items):
+                    # فرز تصاعدي حسب الطابع الزمني الفعلي (الأقدم ثم الأحدث)
+                    ordered_items = sorted(new_items, key=lambda item: item[5]) if any(item[5] > 0 for item in new_items) else list(reversed(new_items))
+                    for pid, t, d, photo_url, pub_iso, _ in ordered_items:
                         clean_d = re.sub(r'<[^>]+>', '', d).strip()
                         full_txt = f"{t}\n{clean_d}"
                         matched_univ = db.find_university_for_post(url, full_txt)
@@ -3832,6 +4032,8 @@ class StandaloneTelegramEducationalBot:
                                 "photo": photo_url,
                                 "targets": [matched_univ["target_channel"]],
                                 "target_univ": matched_univ["name"],
+                                "source_origin": url,
+                                "source_published_at": pub_iso,
                                 "user_id": ADMIN_ID
                             })
         except Exception as e:

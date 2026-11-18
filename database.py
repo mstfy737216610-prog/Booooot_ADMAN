@@ -13,6 +13,7 @@ import threading
 import logging
 import re
 import difflib
+import urllib.parse
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional, Tuple, Set
 
@@ -215,13 +216,48 @@ def init_db():
                 target_univ TEXT,
                 media_type TEXT DEFAULT 'text',
                 media_url TEXT,
+                notes TEXT DEFAULT '',
+                is_future INTEGER DEFAULT 0,
+                event_date TEXT DEFAULT '',
+                post_links TEXT DEFAULT '[]',
+                source_published_at TEXT DEFAULT '',
                 created_at TEXT,
                 published_at TEXT
             )
             """)
+            for col_def in [
+                "notes TEXT DEFAULT ''",
+                "is_future INTEGER DEFAULT 0",
+                "event_date TEXT DEFAULT ''",
+                "post_links TEXT DEFAULT '[]'",
+                "source_published_at TEXT DEFAULT ''"
+            ]:
+                try:
+                    cursor.execute(f"ALTER TABLE post_audit_log ADD COLUMN {col_def}")
+                except Exception:
+                    pass
+
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_status ON post_audit_log (status)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_time ON post_audit_log (created_at DESC)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_univ ON post_audit_log (target_univ)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_future ON post_audit_log (is_future)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_event_date ON post_audit_log (event_date)")
+
+            # 11.1 جدول مانع الروابط غير الصالحة والمحظورة المخصص (Custom Blocked Links)
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS blocked_links (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                pattern TEXT UNIQUE NOT NULL,
+                match_type TEXT DEFAULT 'contains',
+                reason TEXT DEFAULT '',
+                is_broken INTEGER DEFAULT 0,
+                hit_count INTEGER DEFAULT 0,
+                enabled INTEGER DEFAULT 1,
+                created_at TEXT,
+                updated_at TEXT
+            )
+            """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_blocked_links_enabled ON blocked_links (enabled)")
 
             # 12. جدول ذاكرة الأفكار والتغذية الراجعة الذكية (Feedback & Future Ideas Board)
             cursor.execute("""
@@ -2430,6 +2466,389 @@ def check_ai_health() -> Dict[str, Any]:
     return result
 
 
+# ----------------- محرك استخراج وفهم التواريخ والمؤشر المستقبلي (Smart Date Engine) -----------------
+
+_ARABIC_TO_WESTERN_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")
+
+_GREGORIAN_AR_MONTHS = {
+    "يناير": 1, "كانون الثاني": 1,
+    "فبراير": 2, "شباط": 2,
+    "مارس": 3, "آذار": 3, "اذار": 3,
+    "أبريل": 4, "ابريل": 4, "إبريل": 4, "نيسان": 4,
+    "مايو": 5, "أيار": 5, "ايار": 5,
+    "يونيو": 6, "حزيران": 6,
+    "يوليو": 7, "تموز": 7,
+    "أغسطس": 8, "اغسطس": 8, "آب": 8,
+    "سبتمبر": 9, "أيلول": 9, "ايلول": 9,
+    "أكتوبر": 10, "اكتوبر": 10, "تشرين الأول": 10, "تشرين الاول": 10,
+    "نوفمبر": 11, "تشرين الثاني": 11,
+    "ديسمبر": 12, "كانون الأول": 12, "كانون الاول": 12,
+}
+
+_GREGORIAN_EN_MONTHS = {
+    "jan": 1, "january": 1,
+    "feb": 2, "february": 2,
+    "mar": 3, "march": 3,
+    "apr": 4, "april": 4,
+    "may": 5,
+    "jun": 6, "june": 6,
+    "jul": 7, "july": 7,
+    "aug": 8, "august": 8,
+    "sep": 9, "sept": 9, "september": 9,
+    "oct": 10, "october": 10,
+    "nov": 11, "november": 11,
+    "dec": 12, "december": 12,
+}
+
+
+def normalize_digits(text: str) -> str:
+    return (text or "").translate(_ARABIC_TO_WESTERN_DIGITS)
+
+
+def extract_date_metadata(text: str, reference_iso: str = "") -> Dict[str, Any]:
+    """
+    استخراج التواريخ الميلادية والزمنية بدقة وتحديد هل الحدث مستقبلي أم منتهي.
+    يُرجع: detected_dates (list), event_date (YYYY-MM-DD), is_future (bool), is_expired (bool), summary (str).
+    """
+    norm = normalize_digits(text or "")
+    today = datetime.utcnow().date()
+    if reference_iso:
+        try:
+            today = datetime.fromisoformat(reference_iso.replace("Z", "")[:10]).date()
+        except Exception:
+            pass
+
+    found_dates: Set[str] = set()
+
+    # 1. YYYY-MM-DD أو YYYY/MM/DD
+    for m in re.finditer(r'\b(202[0-9])[-/](\d{1,2})[-/](\d{1,2})\b', norm):
+        try:
+            y, mo, d = int(m.group(1)), int(m.group(2)), int(m.group(3))
+            if 1 <= mo <= 12 and 1 <= d <= 31:
+                dt = datetime(y, mo, d).date()
+                found_dates.add(dt.isoformat())
+        except Exception:
+            pass
+
+    # 2. DD/MM/YYYY أو DD-MM-YYYY
+    for m in re.finditer(r'\b(\d{1,2})[-/](\d{1,2})[-/](202[0-9])\b', norm):
+        try:
+            a, b, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+            # معالجة DD/MM/YYYY أولاً ثم MM/DD/YYYY إذا كان الشهر أكبر من 12
+            if 1 <= b <= 12 and 1 <= a <= 31:
+                dt = datetime(y, b, a).date()
+                found_dates.add(dt.isoformat())
+            elif 1 <= a <= 12 and 1 <= b <= 31:
+                dt = datetime(y, a, b).date()
+                found_dates.add(dt.isoformat())
+        except Exception:
+            pass
+
+    # 3. الشهور العربية (مثل: 25 نوفمبر 2026 أو 25 نوفمبر)
+    ar_months_pattern = "|".join(sorted(_GREGORIAN_AR_MONTHS.keys(), key=len, reverse=True))
+    for m in re.finditer(rf'\b(\d{{1,2}})\s+({ar_months_pattern})(?:\s+(202[0-9]))?\b', norm):
+        try:
+            d = int(m.group(1))
+            mo = _GREGORIAN_AR_MONTHS[m.group(2)]
+            y = int(m.group(3)) if m.group(3) else today.year
+            dt = datetime(y, mo, d).date()
+            if not m.group(3) and (today - dt).days > 180:
+                dt = datetime(y + 1, mo, d).date()
+            found_dates.add(dt.isoformat())
+        except Exception:
+            pass
+
+    # 4. الشهور الإنجليزية (25 Nov 2026 أو November 25, 2026)
+    en_months_pattern = "|".join(sorted(_GREGORIAN_EN_MONTHS.keys(), key=len, reverse=True))
+    for m in re.finditer(rf'\b(\d{{1,2}})\s+({en_months_pattern})\.?(?:\s*,?\s*(202[0-9]))?\b', norm, re.IGNORECASE):
+        try:
+            d = int(m.group(1))
+            mo = _GREGORIAN_EN_MONTHS[m.group(2).lower()]
+            y = int(m.group(3)) if m.group(3) else today.year
+            dt = datetime(y, mo, d).date()
+            found_dates.add(dt.isoformat())
+        except Exception:
+            pass
+    for m in re.finditer(rf'\b({en_months_pattern})\.?\s+(\d{{1,2}})(?:\s*,?\s*(202[0-9]))?\b', norm, re.IGNORECASE):
+        try:
+            mo = _GREGORIAN_EN_MONTHS[m.group(1).lower()]
+            d = int(m.group(2))
+            y = int(m.group(3)) if m.group(3) else today.year
+            dt = datetime(y, mo, d).date()
+            found_dates.add(dt.isoformat())
+        except Exception:
+            pass
+
+    # 5. التعابير النسبية
+    low = norm.lower()
+    if any(k in low for k in ["بعد غد", "after tomorrow"]):
+        found_dates.add((today + timedelta(days=2)).isoformat())
+    elif any(k in low for k in ["غداً", "غدا", "بكرة", "بكره", "tomorrow"]):
+        found_dates.add((today + timedelta(days=1)).isoformat())
+    elif "الأسبوع القادم" in low or "الاسبوع القادم" in low or "next week" in low:
+        found_dates.add((today + timedelta(days=7)).isoformat())
+
+    sorted_dates = sorted(found_dates)
+    today_iso = today.isoformat()
+    upcoming = [d for d in sorted_dates if d >= today_iso]
+    past = [d for d in sorted_dates if d < today_iso]
+
+    future_cues = [
+        "يبدأ", "ستبدأ", "سيبدأ", "ينتهي", "آخر موعد", "اخر موعد", "موعد", "قريباً", "قريبا",
+        "القادم", "المقبل", "متاح حتى", "التسجيل مفتوح", "مواعيد الاختبار", "deadline", "upcoming"
+    ]
+    has_future_cue = any(c in low for c in future_cues)
+
+    event_date = upcoming[0] if upcoming else (past[-1] if past else "")
+    is_future = bool(upcoming) or (has_future_cue and not past)
+    # يُعد الخبر منتهياً فقط إذا احتوى تواريخ صريحة كلها في الماضي بأكثر من يومين ولم يذكر أي موعد قادم
+    is_expired = False
+    if past and not upcoming:
+        try:
+            latest_past = datetime.fromisoformat(past[-1]).date()
+            if (today - latest_past).days > 2:
+                is_expired = True
+        except Exception:
+            pass
+
+    return {
+        "detected_dates": sorted_dates,
+        "event_date": event_date,
+        "is_future": is_future,
+        "is_expired": is_expired,
+    }
+
+
+def _extract_urls_list(text: str) -> List[str]:
+    if not text:
+        return []
+    raw = re.findall(r'https?://[^\s<>"\'\u200f\u200e]+', text)
+    out: List[str] = []
+    for u in raw:
+        cu = u.rstrip(".,;!?)>]'\"")
+        if cu and cu not in out:
+            out.append(cu)
+    return out
+
+
+# ----------------- دوال مانع الروابط المخصص (Custom Blocked Links Manager) -----------------
+
+def _normalize_url_for_match(url: str) -> str:
+    u = (url or "").strip().lower()
+    u = re.sub(r'^https?://', '', u)
+    u = re.sub(r'^www\.', '', u)
+    return u.rstrip('/')
+
+
+def get_blocked_links(include_disabled: bool = True) -> List[Dict[str, Any]]:
+    """جلب قائمة قواعد الروابط المحظورة من SQLite"""
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            if include_disabled:
+                cursor.execute("SELECT * FROM blocked_links ORDER BY id DESC")
+            else:
+                cursor.execute("SELECT * FROM blocked_links WHERE enabled = 1 ORDER BY id DESC")
+            rows = []
+            for r in cursor.fetchall():
+                d = dict(r)
+                d["enabled"] = bool(d.get("enabled", 1))
+                d["is_broken"] = bool(d.get("is_broken", 0))
+                rows.append(d)
+            return rows
+        except Exception as e:
+            logger.error(f"❌ خطأ في get_blocked_links: {e}")
+            return []
+        finally:
+            conn.close()
+
+
+def add_blocked_link(
+    pattern: str,
+    reason: str = "",
+    match_type: str = "contains",
+    is_broken: bool = False
+) -> Optional[Dict[str, Any]]:
+    """إضافة رابط أو نطاق محظور إلى SQLite (أو تحديثه إن وجد)"""
+    clean_pat = (pattern or "").strip()
+    if not clean_pat:
+        return None
+    if match_type not in ("contains", "domain", "exact"):
+        match_type = "contains"
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            now_str = datetime.utcnow().isoformat()
+            cursor.execute("SELECT id FROM blocked_links WHERE lower(pattern) = lower(?)", (clean_pat,))
+            existing = cursor.fetchone()
+            if existing:
+                cursor.execute("""
+                UPDATE blocked_links
+                SET match_type = ?, reason = ?, is_broken = ?, enabled = 1, updated_at = ?
+                WHERE id = ?
+                """, (match_type, reason.strip(), 1 if is_broken else 0, now_str, existing["id"]))
+                link_id = existing["id"]
+            else:
+                cursor.execute("""
+                INSERT INTO blocked_links (pattern, match_type, reason, is_broken, hit_count, enabled, created_at, updated_at)
+                VALUES (?, ?, ?, ?, 0, 1, ?, ?)
+                """, (clean_pat, match_type, reason.strip(), 1 if is_broken else 0, now_str, now_str))
+                link_id = cursor.lastrowid
+            conn.commit()
+            cursor.execute("SELECT * FROM blocked_links WHERE id = ?", (link_id,))
+            row = cursor.fetchone()
+            if not row:
+                return None
+            d = dict(row)
+            d["enabled"] = bool(d.get("enabled", 1))
+            d["is_broken"] = bool(d.get("is_broken", 0))
+            return d
+        except Exception as e:
+            logger.error(f"❌ خطأ في add_blocked_link: {e}")
+            return None
+        finally:
+            conn.close()
+
+
+def toggle_blocked_link(link_id: int, enabled: bool) -> bool:
+    """تفعيل أو تعطيل قاعدة حظر رابط محدد"""
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            now_str = datetime.utcnow().isoformat()
+            cursor.execute(
+                "UPDATE blocked_links SET enabled = ?, updated_at = ? WHERE id = ?",
+                (1 if enabled else 0, now_str, int(link_id))
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+        except Exception as e:
+            logger.error(f"❌ خطأ في toggle_blocked_link: {e}")
+            return False
+        finally:
+            conn.close()
+
+
+def delete_blocked_link(link_id: int) -> bool:
+    """حذف رابط من قائمة الحظر"""
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM blocked_links WHERE id = ?", (int(link_id),))
+            conn.commit()
+            return cursor.rowcount > 0
+        except Exception as e:
+            logger.error(f"❌ خطأ في delete_blocked_link: {e}")
+            return False
+        finally:
+            conn.close()
+
+
+def is_url_blocked(url: str, increment_hit: bool = False) -> Tuple[bool, str]:
+    """فحص الرابط مقابل القواعد المخصصة والروابط التالفة والوهمية"""
+    if not url or not isinstance(url, str):
+        return False, ""
+    raw = url.strip()
+    low = raw.lower()
+    norm_u = _normalize_url_for_match(raw)
+
+    # فحص الصلاحية الهيكلية الأساسية للرابط
+    try:
+        parsed = urllib.parse.urlparse(raw)
+        host = (parsed.netloc or "").lower()
+        if parsed.scheme and parsed.scheme not in ("http", "https"):
+            return True, "بروتوكول رابط غير صالح"
+        if raw.startswith("http") and ("." not in host or len(host) < 4 or " " in raw):
+            return True, "صيغة رابط غير صحيحة"
+    except Exception:
+        return True, "رابط تالف أو غير صالح"
+
+    placeholder_domains = ["example.com", "google.com/search", "test.com", "edu.com"]
+    for pd in placeholder_domains:
+        if pd in low:
+            return True, f"نطاق وهمي ({pd})"
+
+    rules = get_blocked_links(include_disabled=False)
+    for rule in rules:
+        pat = (rule.get("pattern") or "").strip()
+        if not pat:
+            continue
+        mtype = rule.get("match_type") or "contains"
+        norm_p = _normalize_url_for_match(pat)
+        matched = False
+        if mtype == "exact":
+            matched = (low == pat.lower()) or (norm_u == norm_p)
+        elif mtype == "domain":
+            pat_host = norm_p.split("/")[0]
+            u_host = host.lstrip("www.") if host else norm_u.split("/")[0]
+            matched = bool(pat_host and (u_host == pat_host or u_host.endswith("." + pat_host)))
+        else:
+            matched = (pat.lower() in low) or (norm_p and norm_p in norm_u)
+
+        if matched:
+            if increment_hit and rule.get("id"):
+                try:
+                    with _db_lock:
+                        c2 = get_db_connection()
+                        c2.execute("UPDATE blocked_links SET hit_count = hit_count + 1 WHERE id = ?", (rule["id"],))
+                        c2.commit()
+                        c2.close()
+                except Exception:
+                    pass
+            reason = rule.get("reason") or ("رابط معطل/محظور" if rule.get("is_broken") else "رابط محظور بقائمة المنع")
+            return True, reason
+
+    return False, ""
+
+
+def filter_blocked_urls_from_text(text: str, increment_hit: bool = False) -> Tuple[str, List[str], List[Dict[str, str]]]:
+    """
+    حذف أي روابط محظورة أو تالفة من النص مع تنظيف العناوين اليتيمة التي تسبقها مباشرة.
+    يُرجع: (النص_المنظف, الروابط_المسموحة, الروابط_المحظورة)
+    """
+    if not text:
+        return "", [], []
+
+    urls = _extract_urls_list(text)
+    allowed: List[str] = []
+    blocked: List[Dict[str, str]] = []
+    cleaned = text
+
+    for u in urls:
+        is_blk, reason = is_url_blocked(u, increment_hit=increment_hit)
+        if is_blk:
+            blocked.append({"url": u, "reason": reason})
+            cleaned = cleaned.replace(u, "")
+        else:
+            if u not in allowed:
+                allowed.append(u)
+
+    if blocked:
+        # إزالة الأسطر اليتيمة التي كانت عنواناً للرابط المحظور فقط مثل "🔗 رابط التقديم:"
+        lines = cleaned.splitlines()
+        out_lines: List[str] = []
+        for idx, line in enumerate(lines):
+            st = line.strip()
+            is_orphan_link_label = bool(
+                re.match(r'^(?:🔗|🌐|📌|▫️)?\s*(?:\*{0,2}|<b>)?(?:رابط\s+[^\n:]{1,40}|الرابط\s*[^\n:]{0,20})(?:\*{0,2}|</b>)?\s*[:：]?\s*$', st)
+            )
+            if is_orphan_link_label:
+                next_non_empty = next((l.strip() for l in lines[idx + 1:] if l.strip()), "")
+                if not next_non_empty or not next_non_empty.startswith("http"):
+                    continue
+            # تنظيف أي وسم <a> فارغ إذا حُذف رابطه
+            st_fixed = re.sub(r'<a\s+href=[\'"]\s*[\'"]\s*>.*?</a>', '', line, flags=re.IGNORECASE)
+            out_lines.append(st_fixed)
+        cleaned = "\n".join(out_lines)
+        cleaned = re.sub(r'\n{3,}', '\n\n', cleaned).strip()
+
+    return cleaned, allowed, blocked
+
+
 # ----------------- دوال سجل التدقيق الشامل (Comprehensive Post Audit Log) -----------------
 
 def add_audit_log(
@@ -2444,21 +2863,38 @@ def add_audit_log(
     target_univ: str = "",
     media_type: str = "text",
     media_url: str = "",
-    post_id: Optional[str] = None
+    post_id: Optional[str] = None,
+    notes: str = "",
+    is_future: Optional[bool] = None,
+    event_date: Optional[str] = None,
+    post_links: Optional[List[str]] = None,
+    source_published_at: str = ""
 ) -> int:
-    """إضافة سجل منشور جديد (مقبول أو مرفوض) إلى جدول التدقيق الدائم"""
+    """إضافة سجل منشور جديد (مقبول أو مرفوض) إلى جدول التدقيق الدائم مع التحليل الزمني والروابط"""
     with _db_lock:
         conn = get_db_connection()
         try:
             cursor = conn.cursor()
             now_str = datetime.utcnow().isoformat()
+            combined_for_dates = f"{title or ''}\n{final_content or ''}\n{raw_content or ''}"
+            date_meta = extract_date_metadata(combined_for_dates, source_published_at)
+
+            resolved_event_date = event_date if event_date is not None else (date_meta.get("event_date") or "")
+            resolved_is_future = bool(is_future) if is_future is not None else bool(date_meta.get("is_future"))
+
+            if post_links is None:
+                links_found = _extract_urls_list(final_content or raw_content or "")
+            else:
+                links_found = [str(x).strip() for x in post_links if str(x).strip()]
+
             cursor.execute("""
             INSERT INTO post_audit_log (
                 post_id, status, title, raw_content, final_content, rejection_reason,
                 source_type, source_origin, target_destination, target_univ,
-                media_type, media_url, created_at, published_at
+                media_type, media_url, notes, is_future, event_date, post_links,
+                source_published_at, created_at, published_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 post_id or f"log_{int(datetime.utcnow().timestamp()*1000)}",
                 status,
@@ -2472,6 +2908,11 @@ def add_audit_log(
                 target_univ,
                 media_type,
                 media_url,
+                notes or "",
+                1 if resolved_is_future else 0,
+                resolved_event_date,
+                json.dumps(links_found, ensure_ascii=False),
+                source_published_at or "",
                 now_str,
                 now_str if status == "published" else None
             ))
@@ -2485,14 +2926,33 @@ def add_audit_log(
             conn.close()
 
 
+def _hydrate_audit_row(row: sqlite3.Row) -> Dict[str, Any]:
+    d = dict(row)
+    d["notes"] = d.get("notes") or ""
+    d["is_future"] = bool(d.get("is_future", 0))
+    d["event_date"] = d.get("event_date") or ""
+    d["source_published_at"] = d.get("source_published_at") or ""
+    raw_links = d.get("post_links") or "[]"
+    try:
+        parsed_links = json.loads(raw_links) if isinstance(raw_links, str) else raw_links
+        d["post_links"] = parsed_links if isinstance(parsed_links, list) else []
+    except Exception:
+        d["post_links"] = []
+    if not d["post_links"]:
+        d["post_links"] = _extract_urls_list((d.get("final_content") or "") + "\n" + (d.get("raw_content") or ""))
+    return d
+
+
 def get_audit_logs(
     limit: int = 100,
     offset: int = 0,
     status: Optional[str] = None,
     search: Optional[str] = None,
-    univ: Optional[str] = None
+    univ: Optional[str] = None,
+    future_only: bool = False,
+    sort_by: str = "newest"
 ) -> List[Dict[str, Any]]:
-    """جلب سجلات التدقيق مع إمكانية الفلترة والبحث"""
+    """جلب سجلات التدقيق مع الفلترة، الترتيب الزمني، والمؤشر المستقبلي"""
     with _db_lock:
         conn = get_db_connection()
         try:
@@ -2504,20 +2964,32 @@ def get_audit_logs(
                 query += " AND status = ?"
                 params.append(status)
 
+            if future_only:
+                query += " AND is_future = 1"
+
             if univ and univ != "all":
                 query += " AND (target_univ = ? OR source_origin LIKE ?)"
                 params.extend([univ, f"%{univ}%"])
 
             if search:
-                query += " AND (title LIKE ? OR raw_content LIKE ? OR final_content LIKE ? OR rejection_reason LIKE ?)"
+                query += " AND (title LIKE ? OR raw_content LIKE ? OR final_content LIKE ? OR rejection_reason LIKE ? OR notes LIKE ? OR event_date LIKE ?)"
                 kw = f"%{search}%"
-                params.extend([kw, kw, kw, kw])
+                params.extend([kw, kw, kw, kw, kw, kw])
 
-            query += " ORDER BY id DESC LIMIT ? OFFSET ?"
+            if sort_by == "oldest":
+                query += " ORDER BY COALESCE(NULLIF(source_published_at, ''), created_at) ASC, id ASC"
+            elif sort_by == "event_date":
+                query += " ORDER BY CASE WHEN COALESCE(event_date, '') = '' THEN 1 ELSE 0 END ASC, event_date ASC, id DESC"
+            elif sort_by == "future_first":
+                query += " ORDER BY is_future DESC, CASE WHEN COALESCE(event_date, '') = '' THEN 1 ELSE 0 END ASC, event_date ASC, id DESC"
+            else:
+                query += " ORDER BY id DESC"
+
+            query += " LIMIT ? OFFSET ?"
             params.extend([limit, offset])
 
             cursor.execute(query, params)
-            return [dict(r) for r in cursor.fetchall()]
+            return [_hydrate_audit_row(r) for r in cursor.fetchall()]
         except Exception as e:
             logger.error(f"❌ خطأ في get_audit_logs: {e}")
             return []
@@ -2525,23 +2997,73 @@ def get_audit_logs(
             conn.close()
 
 
+def update_audit_log(
+    audit_id: int,
+    notes: Optional[str] = None,
+    is_future: Optional[bool] = None,
+    event_date: Optional[str] = None,
+    status: Optional[str] = None,
+    rejection_reason: Optional[str] = None
+) -> Optional[Dict[str, Any]]:
+    """تحديث ملاحظات المنشور أو مؤشر «مستقبلي» أو تاريخ الحدث في SQLite مباشرة"""
+    with _db_lock:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            updates: List[str] = []
+            params: List[Any] = []
+
+            if notes is not None:
+                updates.append("notes = ?")
+                params.append(str(notes))
+            if is_future is not None:
+                updates.append("is_future = ?")
+                params.append(1 if bool(is_future) else 0)
+            if event_date is not None:
+                updates.append("event_date = ?")
+                params.append(str(event_date).strip())
+            if status is not None and status in ("published", "rejected", "pending"):
+                updates.append("status = ?")
+                params.append(status)
+            if rejection_reason is not None:
+                updates.append("rejection_reason = ?")
+                params.append(str(rejection_reason))
+
+            if updates:
+                params.append(int(audit_id))
+                cursor.execute(f"UPDATE post_audit_log SET {', '.join(updates)} WHERE id = ?", params)
+                conn.commit()
+
+            cursor.execute("SELECT * FROM post_audit_log WHERE id = ?", (int(audit_id),))
+            row = cursor.fetchone()
+            return _hydrate_audit_row(row) if row else None
+        except Exception as e:
+            logger.error(f"❌ خطأ في update_audit_log: {e}")
+            return None
+        finally:
+            conn.close()
+
+
 def get_audit_log_counts() -> Dict[str, int]:
-    """إحصائيات إجمالية للمنشورات المقبولة والمرفوضة"""
+    """إحصائيات إجمالية للمنشورات المقبولة والمرفوضة والمستقبلية"""
     with _db_lock:
         conn = get_db_connection()
         try:
             cursor = conn.cursor()
             cursor.execute("SELECT status, COUNT(*) as cnt FROM post_audit_log GROUP BY status")
-            counts = {"total": 0, "published": 0, "rejected": 0, "pending": 0}
+            counts = {"total": 0, "published": 0, "rejected": 0, "pending": 0, "future": 0}
             for r in cursor.fetchall():
                 st = r["status"]
                 cnt = r["cnt"]
                 counts[st] = cnt
                 counts["total"] += cnt
+            cursor.execute("SELECT COUNT(*) as cnt FROM post_audit_log WHERE is_future = 1")
+            f_row = cursor.fetchone()
+            counts["future"] = f_row["cnt"] if f_row else 0
             return counts
         except Exception as e:
             logger.error(f"❌ خطأ في get_audit_log_counts: {e}")
-            return {"total": 0, "published": 0, "rejected": 0, "pending": 0}
+            return {"total": 0, "published": 0, "rejected": 0, "pending": 0, "future": 0}
         finally:
             conn.close()
 

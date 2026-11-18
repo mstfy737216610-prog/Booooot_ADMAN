@@ -319,7 +319,7 @@ print(json.dumps({"success": True, **res}))
   }
 });
 // ==========================================
-// 3.2 Comprehensive Post Audit Log API
+// 3.2 Comprehensive Post Audit Log & Blocked Links API
 // ==========================================
 app.get('/api/audit-logs', (req: Request, res: Response) => {
   try {
@@ -328,6 +328,8 @@ app.get('/api/audit-logs', (req: Request, res: Response) => {
     const status = (req.query.status as string) || 'all';
     const search = (req.query.search as string) || '';
     const univ = (req.query.univ as string) || 'all';
+    const futureOnly = String(req.query.futureOnly || 'false') === 'true';
+    const sortBy = (req.query.sortBy as string) || 'newest';
 
     const pyScript = `
 import database as db, json, sys
@@ -336,19 +338,152 @@ offset = int(sys.argv[2])
 status = sys.argv[3]
 search = sys.argv[4]
 univ = sys.argv[5]
+future_only = sys.argv[6] == 'true'
+sort_by = sys.argv[7]
 
 logs = db.get_audit_logs(
     limit=limit,
     offset=offset,
     status=status if status != 'all' else None,
     search=search if search else None,
-    univ=univ if univ != 'all' else None
+    univ=univ if univ != 'all' else None,
+    future_only=future_only,
+    sort_by=sort_by
 )
 counts = db.get_audit_log_counts()
 print(json.dumps({"success": True, "logs": logs, "counts": counts}, ensure_ascii=False))
 `;
-    const out = execFileSync('python3', ['-c', pyScript, String(limit), String(offset), status, search, univ], { timeout: 7000 }).toString().trim();
-    res.json(JSON.parse(out || '{"success":true,"logs":[],"counts":{"total":0,"published":0,"rejected":0}}'));
+    const out = execFileSync(
+      'python3',
+      ['-c', pyScript, String(limit), String(offset), status, search, univ, String(futureOnly), sortBy],
+      { timeout: 7000 }
+    ).toString().trim();
+    res.json(JSON.parse(out || '{"success":true,"logs":[],"counts":{"total":0,"published":0,"rejected":0,"future":0}}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+app.patch('/api/audit-logs/:id', (req: Request, res: Response) => {
+  try {
+    const auditId = Number(req.params.id);
+    if (!auditId) {
+      res.status(400).json({ success: false, error: "معرف السجل مطلوب" });
+      return;
+    }
+    const { notes, is_future, event_date, status, rejection_reason } = req.body || {};
+    const pyScript = `
+import database as db, sys, json
+aid = int(sys.argv[1])
+payload = json.loads(sys.argv[2])
+updated = db.update_audit_log(
+    aid,
+    notes=payload.get("notes") if "notes" in payload else None,
+    is_future=payload.get("is_future") if "is_future" in payload else None,
+    event_date=payload.get("event_date") if "event_date" in payload else None,
+    status=payload.get("status") if "status" in payload else None,
+    rejection_reason=payload.get("rejection_reason") if "rejection_reason" in payload else None
+)
+counts = db.get_audit_log_counts()
+print(json.dumps({"success": bool(updated), "log": updated, "counts": counts}, ensure_ascii=False))
+`;
+    const out = execFileSync(
+      'python3',
+      ['-c', pyScript, String(auditId), JSON.stringify({ notes, is_future, event_date, status, rejection_reason })],
+      { timeout: 5000 }
+    ).toString().trim();
+    res.json(JSON.parse(out || '{"success":false}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+app.post('/api/audit-logs/update', (req: Request, res: Response) => {
+  try {
+    const { id, notes, is_future, event_date, status, rejection_reason } = req.body || {};
+    const auditId = Number(id);
+    if (!auditId) {
+      res.status(400).json({ success: false, error: "معرف السجل مطلوب" });
+      return;
+    }
+    const pyScript = `
+import database as db, sys, json
+aid = int(sys.argv[1])
+payload = json.loads(sys.argv[2])
+updated = db.update_audit_log(
+    aid,
+    notes=payload.get("notes") if "notes" in payload else None,
+    is_future=payload.get("is_future") if "is_future" in payload else None,
+    event_date=payload.get("event_date") if "event_date" in payload else None,
+    status=payload.get("status") if "status" in payload else None,
+    rejection_reason=payload.get("rejection_reason") if "rejection_reason" in payload else None
+)
+counts = db.get_audit_log_counts()
+print(json.dumps({"success": bool(updated), "log": updated, "counts": counts}, ensure_ascii=False))
+`;
+    const out = execFileSync(
+      'python3',
+      ['-c', pyScript, String(auditId), JSON.stringify({ notes, is_future, event_date, status, rejection_reason })],
+      { timeout: 5000 }
+    ).toString().trim();
+    res.json(JSON.parse(out || '{"success":false}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+app.post('/api/audit-logs', (req: Request, res: Response) => {
+  try {
+    const payload = req.body || {};
+    if (!payload.title && !payload.raw_content && !payload.final_content) {
+      res.status(400).json({ success: false, error: "يجب تزويد عنوان أو محتوى للمنشور" });
+      return;
+    }
+    const pyScript = `
+import database as db, sys, json
+p = json.loads(sys.argv[1])
+raw_txt = p.get("raw_content") or p.get("final_content") or p.get("title") or ""
+title = p.get("title") or (raw_txt.splitlines()[0][:90] if raw_txt else "منشور يدوي")
+new_id = db.add_audit_log(
+    status=p.get("status", "published"),
+    title=title,
+    raw_content=raw_txt,
+    final_content=p.get("final_content", ""),
+    rejection_reason=p.get("rejection_reason", ""),
+    source_type=p.get("source_type", "manual"),
+    source_origin=p.get("source_origin", "لوحة التحكم"),
+    target_destination=p.get("target_destination", ""),
+    target_univ=p.get("target_univ", "عام"),
+    notes=p.get("notes", ""),
+    is_future=p.get("is_future") if "is_future" in p else None,
+    event_date=p.get("event_date") if "event_date" in p else None
+)
+logs = db.get_audit_logs(limit=1)
+counts = db.get_audit_log_counts()
+print(json.dumps({"success": new_id > 0, "id": new_id, "log": logs[0] if logs else None, "counts": counts}, ensure_ascii=False))
+`;
+    const out = execFileSync('python3', ['-c', pyScript, JSON.stringify(payload)], { timeout: 5000 }).toString().trim();
+    res.json(JSON.parse(out || '{"success":false}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+app.post('/api/audit-logs/analyze-dates', (req: Request, res: Response) => {
+  try {
+    const { text = '' } = req.body || {};
+    const pyScript = `
+import database as db, sys, json
+meta = db.extract_date_metadata(sys.argv[1])
+cleaned, allowed, blocked = db.filter_blocked_urls_from_text(sys.argv[1], increment_hit=False)
+print(json.dumps({"success": True, "dateMeta": meta, "allowedLinks": allowed, "blockedLinks": blocked, "cleanedText": cleaned}, ensure_ascii=False))
+`;
+    const out = execFileSync('python3', ['-c', pyScript, text], { timeout: 5000 }).toString().trim();
+    res.json(JSON.parse(out || '{"success":false}'));
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     res.status(500).json({ success: false, error: message });
@@ -365,7 +500,8 @@ app.post('/api/audit-logs/delete', (req: Request, res: Response) => {
     const pyScript = `
 import database as db, sys, json
 ok = db.delete_audit_log(int(sys.argv[1]))
-print(json.dumps({"success": ok}))
+counts = db.get_audit_log_counts()
+print(json.dumps({"success": ok, "counts": counts}))
 `;
     const out = execFileSync('python3', ['-c', pyScript, String(id)], { timeout: 5000 }).toString().trim();
     res.json(JSON.parse(out || '{"success":true}'));
@@ -381,7 +517,8 @@ app.post('/api/audit-logs/clear', (req: Request, res: Response) => {
     const pyScript = `
 import database as db, sys, json
 ok = db.clear_audit_logs(sys.argv[1] if sys.argv[1] != 'all' else None)
-print(json.dumps({"success": ok}))
+counts = db.get_audit_log_counts()
+print(json.dumps({"success": ok, "counts": counts}))
 `;
     const out = execFileSync('python3', ['-c', pyScript, status], { timeout: 5000 }).toString().trim();
     res.json(JSON.parse(out || '{"success":true}'));
@@ -405,6 +542,151 @@ print(json.dumps({"success": bool(idea_id), "idea_id": idea_id}))
 `;
     const out = execFileSync('python3', ['-c', pyScript, String(id), notes], { timeout: 5000 }).toString().trim();
     res.json(JSON.parse(out || '{"success":true}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+// ==========================================
+// 3.2.1 Custom Blocked Links Manager API
+// ==========================================
+app.get('/api/blocked-links', (_req: Request, res: Response) => {
+  try {
+    const pyScript = `
+import database as db, json
+links = db.get_blocked_links(include_disabled=True)
+print(json.dumps({"success": True, "links": links}, ensure_ascii=False))
+`;
+    const out = execFileSync('python3', ['-c', pyScript], { timeout: 5000 }).toString().trim();
+    res.json(JSON.parse(out || '{"success":true,"links":[]}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+app.post('/api/blocked-links', (req: Request, res: Response) => {
+  try {
+    const { pattern = '', reason = '', match_type = 'contains', is_broken = false } = req.body || {};
+    if (!pattern.trim()) {
+      res.status(400).json({ success: false, error: "يرجى إدخال الرابط أو النطاق المراد حظره" });
+      return;
+    }
+    const pyScript = `
+import database as db, sys, json
+p = json.loads(sys.argv[1])
+item = db.add_blocked_link(
+    pattern=p.get("pattern", ""),
+    reason=p.get("reason", ""),
+    match_type=p.get("match_type", "contains"),
+    is_broken=bool(p.get("is_broken", False))
+)
+links = db.get_blocked_links(include_disabled=True)
+print(json.dumps({"success": bool(item), "link": item, "links": links}, ensure_ascii=False))
+`;
+    const out = execFileSync(
+      'python3',
+      ['-c', pyScript, JSON.stringify({ pattern, reason, match_type, is_broken })],
+      { timeout: 5000 }
+    ).toString().trim();
+    res.json(JSON.parse(out || '{"success":false}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+app.patch('/api/blocked-links/:id', (req: Request, res: Response) => {
+  try {
+    const linkId = Number(req.params.id);
+    const { enabled = true } = req.body || {};
+    const pyScript = `
+import database as db, sys, json
+ok = db.toggle_blocked_link(int(sys.argv[1]), sys.argv[2] == 'true')
+links = db.get_blocked_links(include_disabled=True)
+print(json.dumps({"success": ok, "links": links}, ensure_ascii=False))
+`;
+    const out = execFileSync('python3', ['-c', pyScript, String(linkId), String(Boolean(enabled))], { timeout: 5000 }).toString().trim();
+    res.json(JSON.parse(out || '{"success":false}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+app.delete('/api/blocked-links/:id', (req: Request, res: Response) => {
+  try {
+    const linkId = Number(req.params.id);
+    const pyScript = `
+import database as db, sys, json
+ok = db.delete_blocked_link(int(sys.argv[1]))
+links = db.get_blocked_links(include_disabled=True)
+print(json.dumps({"success": ok, "links": links}, ensure_ascii=False))
+`;
+    const out = execFileSync('python3', ['-c', pyScript, String(linkId)], { timeout: 5000 }).toString().trim();
+    res.json(JSON.parse(out || '{"success":false}'));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+app.post('/api/blocked-links/check', async (req: Request, res: Response) => {
+  try {
+    const { url = '', probeLive = true } = req.body || {};
+    const targetUrl = String(url).trim();
+    if (!targetUrl) {
+      res.status(400).json({ success: false, error: "الرابط مطلوب للفحص" });
+      return;
+    }
+
+    const pyScript = `
+import database as db, sys, json
+blocked, reason = db.is_url_blocked(sys.argv[1], increment_hit=False)
+print(json.dumps({"blocked": blocked, "reason": reason}, ensure_ascii=False))
+`;
+    const out = execFileSync('python3', ['-c', pyScript, targetUrl], { timeout: 4000 }).toString().trim();
+    const blkCheck = JSON.parse(out || '{"blocked":false,"reason":""}');
+
+    let reachable: boolean | null = null;
+    let httpStatus: number | null = null;
+    let probeError = '';
+
+    if (probeLive && /^https?:\/\//i.test(targetUrl)) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 5000);
+      try {
+        const resp = await fetch(targetUrl, {
+          method: 'HEAD',
+          redirect: 'follow',
+          signal: controller.signal,
+          headers: { 'User-Agent': 'Mozilla/5.0' }
+        });
+        httpStatus = resp.status;
+        reachable = resp.status < 400 || resp.status === 405;
+        if (resp.status === 405) {
+          const respGet = await fetch(targetUrl, { method: 'GET', redirect: 'follow', signal: controller.signal });
+          httpStatus = respGet.status;
+          reachable = respGet.status < 400;
+        }
+      } catch (e: unknown) {
+        reachable = false;
+        probeError = e instanceof Error ? e.message : 'تعذر الوصول للرابط';
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
+    res.json({
+      success: true,
+      url: targetUrl,
+      blocked: blkCheck.blocked,
+      blockReason: blkCheck.reason,
+      reachable,
+      httpStatus,
+      probeError
+    });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     res.status(500).json({ success: false, error: message });
@@ -2820,11 +3102,24 @@ app.post('/api/ai/rephrase', async (req: Request, res: Response) => {
     }
 
     let finalRephrased = rephrasedText ? rephrasedText.trim() : '';
-    // Ensure all portal/registration links from original text are preserved
+    // Apply custom SQLite blocked links filter & preserve valid links cleanly
+    try {
+      const filterPy = `
+import database as db, sys, json
+cleaned, allowed, blocked = db.filter_blocked_urls_from_text(sys.argv[1], increment_hit=False)
+print(json.dumps({"cleaned": cleaned, "allowed": allowed, "blocked": blocked}, ensure_ascii=False))
+`;
+      const fOut = execFileSync('python3', ['-c', filterPy, finalRephrased], { timeout: 4000 }).toString().trim();
+      const fParsed = JSON.parse(fOut || '{}');
+      if (typeof fParsed.cleaned === 'string') {
+        finalRephrased = fParsed.cleaned;
+      }
+    } catch {}
+
     const extLinks = extractExternalLinks(text);
     for (const link of extLinks) {
       if (!finalRephrased.includes(link)) {
-        finalRephrased += `\n\n🔗 **رابط التقديم / البوابة الإلكترونية المباشرة:**\n${link}`;
+        finalRephrased += `\n\n🔗 رابط البوابة / التقديم المباشر:\n${link}`;
       }
     }
 
@@ -3082,9 +3377,22 @@ ${text}
 function extractExternalLinks(text: string): string[] {
   if (!text) return [];
   const matches = text.match(/https?:\/\/[^\s<>"]+/g) || [];
-  return matches
+  const rawLinks = matches
     .map(u => u.replace(/[.,;!?)>\]'"]+$/, ''))
     .filter(u => !u.includes('t.me/') && !u.includes('telegram.me/'));
+  if (rawLinks.length === 0) return [];
+  try {
+    const pyCheck = `
+import database as db, sys, json
+urls = json.loads(sys.argv[1])
+allowed = [u for u in urls if not db.is_url_blocked(u, increment_hit=False)[0]]
+print(json.dumps(allowed, ensure_ascii=False))
+`;
+    const out = execFileSync('python3', ['-c', pyCheck, JSON.stringify(rawLinks)], { timeout: 4000 }).toString().trim();
+    const parsed = JSON.parse(out);
+    if (Array.isArray(parsed)) return parsed;
+  } catch {}
+  return rawLinks;
 }
 
 function cleanWebGarbage(txt: string): string {
